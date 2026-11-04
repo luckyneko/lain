@@ -22,10 +22,12 @@ namespace
 	class BlankSource : public media::FrameSource
 	{
 	public:
-		BlankSource(std::string uri, std::size_t frames)
+		BlankSource(std::string uri, std::size_t frames, bool container = false)
 			: FrameSource{core::Uri{uri}, spec(), frames}
+			, m_container{container}
 		{
 		}
+		bool isContainer() const override { return m_container; }
 		static media::FrameSpec spec()
 		{
 			media::FrameSpec s;
@@ -36,11 +38,21 @@ namespace
 
 	protected:
 		image::Image decodeFrame(std::size_t) const override { return image::Image{32, 24, image::PixelFormat::Gray8}; }
+
+	private:
+		bool m_container = false;
 	};
 
+	// Footage from one source that is not a container: what io::image::open makes of a folder of stills.
 	media::FrameSequence footage(const std::string& uri, std::size_t frames)
 	{
 		return media::FrameSequence::over(std::make_shared<BlankSource>(uri, frames));
+	}
+
+	// Footage from one container: what io::video::open makes of a video file.
+	media::FrameSequence video(const std::string& uri, std::size_t frames)
+	{
+		return media::FrameSequence::over(std::make_shared<BlankSource>(uri, frames, true));
 	}
 
 	// A camera's stills as single-frame sources, one per still, `folder`/0000.png onwards: footage
@@ -212,11 +224,11 @@ TEST_CASE("by-position grouping says why a position made no group", "[camera][ca
 
 TEST_CASE("a camera is named by where its footage lies within the folder its rig lies in", "[camera][capture][location]")
 {
-	SECTION("video files")
+	SECTION("video files, named less their extensions")
 	{
-		const std::vector<media::FrameSequence> rig{footage("/data/rig/cam0.mp4", 3), footage("/data/rig/cam1.mp4", 3)};
+		const std::vector<media::FrameSequence> rig{video("/data/rig/cam0.mp4", 3), video("/data/rig/cam1.mp4", 3)};
 		CHECK(footageRoot(rig) == "/data/rig");
-		CHECK(names(rig) == std::vector<std::string>{"cam0.mp4", "cam1.mp4"});
+		CHECK(names(rig) == std::vector<std::string>{"cam0", "cam1"});
 	}
 	SECTION("folders of stills")
 	{
@@ -226,15 +238,36 @@ TEST_CASE("a camera is named by where its footage lies within the folder its rig
 	}
 	SECTION("cameras at different depths keep their paths below the root")
 	{
-		const std::vector<media::FrameSequence> rig{stills("/data/rig/left/cam0", 2), footage("/data/rig/cam1.mp4", 2)};
+		const std::vector<media::FrameSequence> rig{stills("/data/rig/left/cam0", 2), video("/data/rig/cam1.mp4", 2)};
 		CHECK(footageRoot(rig) == "/data/rig");
-		CHECK(names(rig) == std::vector<std::string>{"left/cam0", "cam1.mp4"});
+		CHECK(names(rig) == std::vector<std::string>{"left/cam0", "cam1"});
 	}
 	SECTION("one camera is named within the folder holding it")
 	{
 		CHECK(names({stills("/data/rig/cam0", 3)}) == std::vector<std::string>{"cam0"});
-		CHECK(names({footage("/data/clip.mp4", 3)}) == std::vector<std::string>{"clip.mp4"});
-		CHECK(footageRoot({footage("/data/clip.mp4", 3)}) == "/data");
+		CHECK(names({video("/data/clip.mp4", 3)}) == std::vector<std::string>{"clip"});
+		CHECK(footageRoot({video("/data/clip.mp4", 3)}) == "/data");
+	}
+	SECTION("only a container loses its extension")
+	{
+		// A folder of stills whose name has a dot in it, and a numbered pattern, are sources that are not
+		// containers, so keep their whole names; a video named so loses its last extension only.
+		CHECK(names({footage("/data/rig/cam.left", 2), footage("/data/rig/shot.<frame:04>.png", 2),
+					 video("/data/rig/take.2.mp4", 2)}) ==
+			  std::vector<std::string>{"cam.left", "shot.<frame:04>.png", "take.2"});
+		// Footage composed of several videos lies at the folder holding them, which keeps its name.
+		std::optional<media::FrameSequence> takes =
+			media::concat(video("/data/rig/cam0.v1/take1.mp4", 1), video("/data/rig/cam0.v1/take2.mp4", 1));
+		REQUIRE(takes.has_value());
+		CHECK(names({*takes, video("/data/rig/cam1.mp4", 1)}) == std::vector<std::string>{"cam0.v1", "cam1"});
+	}
+	SECTION("cameras that would share a name keep their extensions")
+	{
+		// Told apart by their first frames, which for a video or a folder of stills is the whole location.
+		CHECK(names({video("/data/rig/cam0.mp4", 2), video("/data/rig/cam0.mov", 2), video("/data/rig/cam1.mp4", 2)}) ==
+			  std::vector<std::string>{"cam0.mp4", "cam0.mov", "cam1"});
+		CHECK(names({footage("/data/rig/cam0", 2), video("/data/rig/cam0.mp4", 2)}) ==
+			  std::vector<std::string>{"cam0", "cam0.mp4"});
 	}
 	SECTION("two cameras sharing a folder are told apart by their first frame")
 	{
@@ -249,8 +282,8 @@ TEST_CASE("a camera is named by where its footage lies within the folder its rig
 	}
 	SECTION("empty footage names nobody, and the others are still named")
 	{
-		CHECK(names({footage("/data/rig/cam0.mp4", 2), media::FrameSequence{}, footage("/data/rig/cam1.mp4", 2)}) ==
-			  std::vector<std::string>{"cam0.mp4", "", "cam1.mp4"});
+		CHECK(names({video("/data/rig/cam0.mp4", 2), media::FrameSequence{}, video("/data/rig/cam1.mp4", 2)}) ==
+			  std::vector<std::string>{"cam0", "", "cam1"});
 		CHECK(footageRoot({}).empty());
 	}
 }
@@ -258,16 +291,16 @@ TEST_CASE("a camera is named by where its footage lies within the folder its rig
 TEST_CASE("a camera of one frame is named by its source, as one of many is", "[camera][capture][location]")
 {
 	// A folder of stills opened by io::image::open is one source named by the folder, so one still is
-	// named by its folder and a video of one frame by its file, as their longer kin are. apps/flowview's
-	// camerafiles cases hold the opener and this rule to it on real files.
+	// named by its folder and a video of one frame by its file less its extension, as their longer kin
+	// are. apps/flowview's camerafiles cases hold the openers and this rule to it on real files.
 	CHECK(names({footage("/data/rig/cam0", 1), footage("/data/rig/cam1", 1)}) == std::vector<std::string>{"cam0", "cam1"});
 	CHECK(names({footage("/data/rig/cam0", 1)}) == std::vector<std::string>{"cam0"});
-	CHECK(names({footage("/data/rig/cam0.mp4", 1), footage("/data/rig/cam1.mp4", 1)}) ==
-		  std::vector<std::string>{"cam0.mp4", "cam1.mp4"});
+	CHECK(names({video("/data/rig/cam0.mp4", 1), video("/data/rig/cam1.mp4", 1)}) ==
+		  std::vector<std::string>{"cam0", "cam1"});
 
-	// A still that is a source of its own is named by its file, since nothing in a frame's identity tells
-	// it from a video of one frame, which must be. No opener makes one: a lone still does not open as a
-	// sequence.
+	// A still that is a source of its own is located at its file, since nothing in a uri tells one still
+	// from a folder of them, and it is no container, so keeps its extension. No opener makes one: a lone
+	// still does not open as a sequence.
 	CHECK(names({stills("/data/rig/cam0", 1), stills("/data/rig/cam1", 1)}) ==
 		  std::vector<std::string>{"cam0/0000.png", "cam1/0000.png"});
 }

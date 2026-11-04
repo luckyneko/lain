@@ -17,8 +17,12 @@
 #include <lain/image/image.h>
 #include <lain/io/image/codecs.h>
 #include <lain/io/image/save.h>
+#include <lain/io/sequence/open.h>
 #include <lain/io/sequence/openers.h>
+#include <lain/io/video/codecs.h>
+#include <lain/io/video/save.h>
 #include <lain/media/framesequence.h>
+#include <lain/media/framespec.h>
 #include <lain/testing/scratch.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -28,6 +32,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <memory>
 #include <optional>
 #include <string>
 #include <typeinfo>
@@ -43,6 +48,7 @@ static void ensureRegistered()
 	static const bool once = []
 	{
 		io::image::registerImageCodecs();
+		io::video::registerVideoCodecs();
 		io::sequence::registerSequenceOpeners();
 		flowview::registerSceneSerialization(); // the json codec
 		return true;
@@ -114,6 +120,25 @@ static void writeStills(const fs::path& folder, int width, int count = 2)
 		const fs::path still = folder / ("frame.000" + std::to_string(i) + ".png");
 		REQUIRE(io::image::save(core::Uri::fromPath(still), image::Image(width, 8)));
 	}
+}
+
+// One camera's footage as a video file: `frames` lossless frames `width` pixels wide. False when this
+// build has no video writer.
+static bool writeVideo(const fs::path& file, int width, int frames)
+{
+	media::FrameSpec spec;
+	spec.extent = {width, 8};
+	spec.pixelFormat = image::PixelFormat::Gray8;
+	spec.colorSpace = image::ColorSpace::sRGB;
+	spec.rate = {24, 1};
+	io::video::VideoWriterOptions options;
+	options.codec = io::video::VideoCodec::FFV1;
+	const std::unique_ptr<io::video::VideoWriter> writer = io::video::openWriter(core::Uri::fromPath(file), spec, options);
+	if (!writer)
+		return false;
+	for (int i = 0; i < frames; ++i)
+		REQUIRE(writer->encode(image::Image(width, 8, image::PixelFormat::Gray8, image::ColorSpace::sRGB)));
+	return writer->finish();
 }
 
 // What a graph names each camera of a rig's footage: capture::identitiesByLocation, the routine the
@@ -315,8 +340,8 @@ TEST_CASE("a rig's footage and models pair by camera name, however the names sor
 
 TEST_CASE("a camera with no partner in the other folder is named", "[flowview][camerafiles]")
 {
-	// Listed, never opened, so the entries need hold nothing. A video is named by its file, extension and
-	// all, as a graph names it, so its model is c.mp4.json: c.json would be another camera's.
+	// Listed, never opened, so the entries need hold nothing. A video is named less its extension, as a
+	// graph names it, so c.mp4's model is c.json.
 	ensureRegistered();
 	const fs::path dir = freshDir("camerafiles-rig-partners");
 	const fs::path rig = dir / "rig";
@@ -332,14 +357,18 @@ TEST_CASE("a camera with no partner in the other folder is named", "[flowview][c
 	CHECK(flowview::unpairedCameras(rig, models) ==
 		  std::vector<std::string>{
 			  "b: footage " + (rig / "b").string() + " has no camera model " + (models / "b.json").string(),
-			  "c: camera model " + (models / "c.json").string() + " has no footage " + (rig / "c").string(),
-			  "c.mp4: footage " + (rig / "c.mp4").string() + " has no camera model " + (models / "c.mp4.json").string(),
-			  "d: camera model " + (models / "d.json").string() + " has no footage " + (rig / "d").string()});
+			  "d: camera model " + (models / "d.json").string() + " has no footage named d in " + rig.string()});
 
 	// Named alike, the two pair.
-	fs::rename(models / "c.json", models / "c.mp4.json");
 	fs::rename(models / "d.json", models / "b.json");
 	CHECK(flowview::unpairedCameras(rig, models).empty());
+
+	// A model named for the video's file is another camera's.
+	fs::rename(models / "c.json", models / "c.mp4.json");
+	CHECK(flowview::unpairedCameras(rig, models) ==
+		  std::vector<std::string>{
+			  "c: footage " + (rig / "c.mp4").string() + " has no camera model " + (models / "c.json").string(),
+			  "c.mp4: camera model " + (models / "c.mp4.json").string() + " has no footage named c.mp4 in " + rig.string()});
 
 	// A folder that cannot be listed is the loaders' to report, not this.
 	CHECK(flowview::unpairedCameras(dir / "absent", models).empty());
@@ -365,4 +394,74 @@ TEST_CASE("a camera of one still is named by the folder holding it", "[flowview]
 	CHECK(cameraNames(*opened.value) == std::vector<std::string>{"cam0", "cam1", "cam2"});
 	// One camera alone, as a calibration node names its camera.
 	CHECK(cameraNames({(*opened.value)[0]}) == std::vector<std::string>{"cam0"});
+}
+
+TEST_CASE("two footage entries that would be one camera are named, every one", "[flowview][camerafiles]")
+{
+	// Listed, never opened. A folder cam0 and a video cam0.mp4 are both camera cam0, and so are two videos
+	// cam0.mov and cam0.mp4: a model cam0.json could not say which it is for.
+	ensureRegistered();
+	const fs::path dir = freshDir("camerafiles-rig-shared");
+	const fs::path rig = dir / "rig";
+	const fs::path models = dir / "models";
+	fs::create_directories(rig / "cam0");
+	for (const char* name : {"cam0.mov", "cam0.mp4", "cam1.mp4"})
+		writeText(rig / name, "");
+	fs::create_directories(models);
+	for (const char* name : {"cam0.json", "cam1.json"})
+		writeText(models / name, "{}");
+
+	CHECK(flowview::unpairedCameras(rig, models) ==
+		  std::vector<std::string>{"cam0: " + (rig / "cam0").string() + ", " + (rig / "cam0.mov").string() + " and " +
+								   (rig / "cam0.mp4").string() +
+								   " would each be camera cam0, and a model cam0.json could not say which it is for"});
+}
+
+TEST_CASE("a video camera is named less its extension, and pairs with its model by that name", "[flowview][camerafiles]")
+{
+	// The repo owner's rule: a camera is named the same whatever it was captured to, so a video cam1.mkv
+	// is camera cam1 and its model cam1.json, as a folder of stills cam1 would be.
+	ensureRegistered();
+	const fs::path dir = freshDir("camerafiles-rig-video");
+	const fs::path rig = dir / "rig";
+	const fs::path models = dir / "models";
+	writeStills(rig / "cam0", 16);
+	if (!writeVideo(rig / "cam1.mkv", 24, 3))
+		SKIP("this build has no video writer");
+	fs::create_directories(models);
+	REQUIRE(flowview::saveCameraModel(core::Uri::fromPath(models / "cam0.json"), pinhole(500.0)));
+	REQUIRE(flowview::saveCameraModel(core::Uri::fromPath(models / "cam1.json"), pinhole(510.0)));
+
+	const flowview::FileResult<std::vector<media::FrameSequence>> footage = flowview::openRigFootage(rig);
+	const flowview::FileResult<std::vector<camera::CameraModel>> loaded = flowview::loadRigModels(models);
+	REQUIRE(footage.value.has_value());
+	REQUIRE(loaded.value.has_value());
+	REQUIRE(footage.value->size() == 2);
+	REQUIRE(loaded.value->size() == 2);
+	CHECK(cameraNames(*footage.value) == std::vector<std::string>{"cam0", "cam1"});
+	CHECK((*footage.value)[1].size() == 3);
+	CHECK((*footage.value)[1].frame(0).source.extension() == "mkv"); // the video, opened as one
+	CHECK((*loaded.value)[0].intrinsics().fx == 500.0);
+	CHECK((*loaded.value)[1].intrinsics().fx == 510.0);
+	CHECK(flowview::unpairedCameras(rig, models).empty());
+
+	// Beside a folder of stills named cam1, the video would be the same camera: refused, both named. A
+	// graph that opens them another way keeps them apart by their whole names.
+	writeStills(rig / "cam1", 24);
+	const std::string shared = "cam1: " + (rig / "cam1").string() + " and " + (rig / "cam1.mkv").string() +
+							   " would each be camera cam1, and a model cam1.json could not say which it is for";
+	CHECK(flowview::unpairedCameras(rig, models) == std::vector<std::string>{shared});
+	const flowview::FileResult<std::vector<media::FrameSequence>> refused = flowview::openRigFootage(rig);
+	CHECK_FALSE(refused.value.has_value());
+	CHECK(refused.problems == std::vector<std::string>{shared});
+	CHECK_FALSE(builtIn().bind(typeid(std::vector<media::FrameSequence>), rig.string()).has_value());
+
+	std::vector<media::FrameSequence> apart;
+	for (const char* name : {"cam0", "cam1", "cam1.mkv"})
+	{
+		std::optional<media::FrameSequence> one = io::sequence::open(core::Uri::fromPath(rig / name));
+		REQUIRE(one.has_value());
+		apart.push_back(std::move(*one));
+	}
+	CHECK(cameraNames(apart) == std::vector<std::string>{"cam0", "cam1", "cam1.mkv"});
 }

@@ -478,9 +478,14 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   an identity that digests a frame spells its source relative to that folder too
   (`capture/location.h`). So the same footage gets the same identities, and the same held-out evidence,
   wherever it sits on disk; where it sits is still a path, and not durable across a rename. A folder of
-  stills is one source whatever its length, so a camera of one still is `cam0` too. A rig's models
-  folder names each camera the same way, `cam0.json` and `cam0.mp4.json`, and flowview pairs a rig's
-  footage with its models by that name (2026-11-03).
+  stills is one source whatever its length, so a camera of one still is `cam0` too. *Since 2026-11-04 a
+  video is named less its extension*, so `cam0.mp4` is camera `cam0` (the repo owner's choice: a camera
+  is named the same whatever it was captured to). Only the medium can say a source is one file holding
+  every frame (`media::FrameSource::isContainer`), so a folder of stills whose name has a dot keeps its
+  whole name. Cameras that would then share a name (`cam0.mp4` beside `cam0.mov`, or beside a folder
+  `cam0`) are told apart by their whole locations, extensions and all. A rig's models folder names
+  each camera the same way, `cam0.json`, and flowview pairs a rig's footage with its models by that
+  name, refusing two footage entries that would be one camera (2026-11-03).
 - **Frame identity** — the loader-assigned opaque identity of one frame within its camera source,
   stable across repeated processing and paired with camera identity for global uniqueness. It is not
   inferred from container position or timestamp. _Avoid_: frame index when decoding order is not the
@@ -1564,6 +1569,8 @@ question "shouldn't this live under video?" is what the layering answers:
   source holds *open* is per medium — a video source holds a `Stream` and is what a handle pool
   would pool, while an image-sequence source holds nothing but a list of paths, since a still is
   read whole by `io::read` and only a container that must be seeked into needs anything kept open.
+  A source says which it is (`isContainer`, 2026-11-04): a uri cannot, since a folder's name may have
+  a dot in it, and a camera is named by its source, a container's less its extension.
 
 - **Frame table** — the per-source record built **at open**: one entry per frame with its offset,
   presentation timestamp and keyframe flag, produced by a **decode-free demux scan** of every packet.

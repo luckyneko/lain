@@ -9608,6 +9608,9 @@ have fixed targetless registration only, and left the gui's bindings out.
   - **`identitiesByLocation`** names each camera by its location relative to the root: `cam0`, or
     `cam0.mp4`, or `left/cam0` for cameras at different depths. Two cameras sharing a location (two
     numbered patterns in one folder) are named by their first frame relative to the root instead;
+    *(Amended 2026-11-04: a video is now named less its extension, `cam0`, and cameras that would share
+    a name, not only a location, are named by their first frame; see *A video camera is named less its
+    extension*.)*
   - **`relativeTo`** spells a source relative to a root it lies strictly within, and whole otherwise.
 
   A uri is read as components split at '/' and '\', whatever its scheme, so no filesystem is touched.
@@ -9749,8 +9752,9 @@ capture manifest, stays deferred.
   was expected).
 - **Fixed in the binder, not the node.** Pairing by position is ADR-0016's (it composes with a map), and
   a `vector<CameraModel>` carries no names. So each entry names its camera: a footage entry by its whole
-  name, the identity a graph gives the camera (`cam0`, `cam0.mp4`), and a model document by its name
-  less `.json` (`cam0.json`, `cam0.mp4.json`). Both folders list in the order of those names, so
+  name, the identity a graph gives the camera (`cam0`, `cam0.mp4`; a video less its extension since
+  2026-11-04), and a model document by its name less `.json` (`cam0.json`, `cam0.mp4.json`; `cam0.json`
+  for both since 2026-11-04). Both folders list in the order of those names, so
   position is name whenever the two name the same cameras. One listing (`rigCameras`) serves both
   loaders, so the cli's binders and the gui's editors both get it.
 - **What the order cannot catch is named: `unpairedCameras(footage, models)`**, each camera one folder
@@ -9761,7 +9765,10 @@ capture manifest, stays deferred.
   sees the other's. Trigger: a gui rig paired wrongly, or the capture manifest.
 - **A video camera's model is `cam0.mp4.json`**, named for the camera's identity, extension and all, as
   reports and rig documents name it. A stem rule (`cam0.json`) would be a second spelling of one camera.
-  No test or example pairs a video rig with models yet. **For the repo owner to confirm.**
+  No test or example pairs a video rig with models yet. **For the repo owner to confirm.** *(Settled
+  2026-11-04 the other way, by the repo owner: a video is named less its extension, in the identity
+  as well, so its model is `cam0.json` and there is still one spelling. See *A video camera is named
+  less its extension*.)*
 - **The one-frame camera did not reproduce.** M15 read `location()` as naming a camera of one still by
   its file (`cam0/frame.0000.png`). That holds only of a still that is a source of its own, which the
   test stand-ins make and no opener does: `io::image::open` opens a folder of stills as ONE source named
@@ -9792,6 +9799,62 @@ capture manifest, stays deferred.
 - `ctest -j6` **1348/1348** Release with video, camera and Ceres on (+6; 1342 before, measured on the
   unchanged branch); warning-clean, format-check clean. Not run: the builds with video, camera and Ceres
   off, and gui-mode.
+
+### A video camera is named less its extension (built 2026-11-04)
+
+The repo owner's answer to the question the binder fix left open: a camera is named the same whatever
+it was captured to, so a video `cam0.mp4` is camera `cam0`, its model `cam0.json`, and `cam0` in a
+report and a rig document, as a folder of stills `cam0` is.
+
+- **In the library, not only the binder** (`capture::identitiesByLocation`), so a report, a rig
+  document and a model folder spell a camera one way.
+- **Whether a location is a video is the medium's to say.** A uri cannot: a folder of stills may be
+  named `cam.left`, and a numbered pattern `shot.<frame:04>.png`, and stripping by extension renamed
+  both. So `media::FrameSource` gains `isContainer()` (false by default; `io::video`'s source says
+  true), and a camera is stripped only when every frame comes from one source that is a container.
+  Footage composed of several videos is located at the folder holding them, which keeps its name.
+- **Cameras that would then share a name** (`cam0.mp4` beside `cam0.mov`, or beside a folder `cam0`)
+  fall to the rule already there for cameras sharing a location: each is named by its first frame's
+  source relative to the root, which for a video or a folder of stills is its whole location,
+  extension and all. So the library never gives two cameras one identity. A pass of its own that kept
+  colliding cameras' extensions was built first and removed: it differed from the existing rule only
+  for footage composed of several sources.
+- **The binder** names a footage entry as the library does: a folder by its whole name, a file (a
+  video) less its extension. It refuses a rig folder holding two entries of one name, naming them all:
+  *"cam0: rig/cam0 and rig/cam0.mkv would each be camera cam0, and a model cam0.json could not say
+  which it is for"*. `openRigFootage` refuses it, so the gui does too; `unpairedCameras` reports it
+  first. Entries of one name list in their own order, so the listing is deterministic either way.
+- **What moved, measured:** with the stand-in videos made containers and the old expectations kept,
+  exactly the five video-name assertions in the location cases failed, and nothing else. Every stills
+  name, `footageRoot`, and the pinned capture-group digest held. No pinned digest, golden or committed
+  example names a video camera, so none moved. Through the real binary, eight outputs of the stills
+  examples (board and targetless registration reports and rig documents, a calibration's report and
+  model, calibrate-and-register's report and rig) are byte-identical before and after.
+- **Tests:** two location sections (only a container loses its extension; colliding names keep their
+  extensions), the video expectations updated; two camerafiles cases (entries of one name refused,
+  every one named; a real FFV1 video beside a stills folder, named `cam1`, paired with `cam1.json`,
+  refused beside a stills folder `cam1`, and kept apart as `cam1` and `cam1.mkv` when opened another
+  way), the partner case updated; one vertical (the board rig re-encoded as FFV1 videos registers Ready
+  relative to `cam0` within the stills' bounds, its rig document naming `cam0`..`cam2`).
+- **Six sabotages, all caught:**
+  - nothing stripped: two location cases, the video camerafiles case and the video vertical;
+  - every single source stripped by extension: the location cases alone (`cam.left` became `cam`, the
+    pattern lost `.png`, composed takes lost their folder's dot);
+  - colliding video names not told apart: the location collision section and the real-file case (two
+    cameras named `cam1`);
+  - the binder naming a footage file whole again: four cases, the video vertical by the refusal;
+  - the binder not refusing entries of one name: the two cases that make one;
+  - `io::video`'s source not saying it is a container: the real-file case and the video vertical only,
+    since the library's stand-ins say it themselves.
+- **Through the real binary**, on the drawn board rig encoded by an outside ffmpeg (8.1.2) as FFV1
+  `cam0.mkv`..`cam2.mkv`, models `cam0.json`..`cam2.json`: Ready relative to `cam0`, the rig document
+  naming `cam0`..`cam2`. With a stills folder `cam0` beside `cam0.mkv`: exit 1, both named.
+- `ctest -j6` **1364/1365** Release with video, camera and Ceres on (+3; 1361/1362 before). The one
+  failure is feature/M9's own, from `ce537b2`, in `libs/math`, which nothing here touches:
+  `test_angles.cpp:52`, `rotationBetween(a, -a)` is 1e-17 where it checks exactly 0, on Apple clang 21,
+  arm64.
+  Warning-clean, format-check clean. Not run: the builds with video, camera and Ceres off, and
+  gui-mode.
 
 ### Not in this milestone
 
@@ -15126,9 +15189,9 @@ row here**. A row is cheap to delete and expensive to leave.
        owed (item 3).
      **The rig binder's two findings from M15, settled 2026-11-03** (*The rig binder pairs by name*):
      a rig's footage and models list in camera-name order and `run` refuses folders that name different
-     cameras; the one-frame camera did not reproduce. Left open: the gui's partner check (trigger: a
-     gui rig paired wrongly, or the capture manifest), and a video camera's model being `cam0.mp4.json`,
-     for the repo owner to confirm.
+     cameras; the one-frame camera did not reproduce. A video is named less its extension, its model
+     `cam0.json` (the repo owner's choice, 2026-11-04, *A video camera is named less its extension*).
+     Left open: the gui's partner check (trigger: a gui rig paired wrongly, or the capture manifest).
   2. **Owed by the repo owner.**
      - **The real-camera capture** for slice 1, sub-slice 8, guided by
        `plugins/camera/test/fixtures/README.md`. It is all that is left of slice 1.

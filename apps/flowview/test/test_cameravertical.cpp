@@ -48,8 +48,10 @@
 #include <lain/io/data/save.h>
 #include <lain/io/image/codecs.h>
 #include <lain/io/image/save.h>
+#include <lain/io/sequence/open.h>
 #include <lain/io/sequence/openers.h>
 #include <lain/io/video/codecs.h>
+#include <lain/io/video/save.h>
 #include <lain/math/angles.h>
 #include <lain/math/rigidtransform.h>
 #include <lain/media/framesequence.h>
@@ -66,6 +68,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <memory>
 #include <optional>
 #include <string>
 #include <variant>
@@ -473,6 +476,79 @@ TEST_CASE("run registers each camera with its own model, however the names sort 
 	INFO("scale " << difference.scale << ", worst rotation " << difference.worstRotation * 1000.0
 				  << " mrad, worst centre " << difference.worstCentre * 1000.0 << " mm");
 	// The bounds the rig vertical above holds the same footage to.
+	CHECK(std::abs(difference.scale - 1.0) < 0.005);
+	CHECK(difference.worstRotation < 0.002);
+	CHECK(difference.worstCentre < 0.001);
+}
+
+// The board rig captured to video: each of cam0..cam2's stills in `dir`/rig encoded losslessly (FFV1)
+// as cam0.mkv..cam2.mkv beside them, and the stills removed. False when this build has no video writer.
+static bool boardRigAsVideo(const fs::path& dir)
+{
+	for (std::size_t c = 0; c < 3; ++c)
+	{
+		const std::string name = "cam" + std::to_string(c);
+		const std::optional<media::FrameSequence> stills = io::sequence::open(core::Uri::fromPath(dir / "rig" / name));
+		REQUIRE(stills.has_value());
+		media::FrameSpec spec = stills->spec();
+		spec.rate = {24, 1};
+		if (spec.colorSpace == image::ColorSpace::Unspecified)
+			spec.colorSpace = image::ColorSpace::sRGB; // what the renderer drew in
+		io::video::VideoWriterOptions options;
+		options.codec = io::video::VideoCodec::FFV1;
+		const std::unique_ptr<io::video::VideoWriter> writer =
+			io::video::openWriter(core::Uri::fromPath(dir / "rig" / (name + ".mkv")), spec, options);
+		if (!writer)
+			return false;
+		for (std::size_t k = 0; k < stills->size(); ++k)
+		{
+			image::Image frame = stills->image(k);
+			frame.setColorSpace(spec.colorSpace);
+			REQUIRE(writer->encode(frame));
+		}
+		REQUIRE(writer->finish());
+		fs::remove_all(dir / "rig" / name);
+	}
+	return true;
+}
+
+TEST_CASE("run registers a rig of videos, each camera named less its extension", "[camera][runmode]")
+{
+	// The repo owner's rule: a camera is named the same whatever it was captured to, so cam0.mkv is camera
+	// cam0, pairs with cam0.json, and is cam0 in the report and the rig document.
+	ensureRegistered();
+	if (!haveRegistrationBackends())
+		SKIP("a build without the registration backends: the names are test_camerafiles' to show");
+	const fs::path dir = lain::testing::scratchDir() / "rig-video-vertical";
+	fs::remove_all(dir);
+	fs::create_directories(dir);
+	cameraFootage::writeBoardRig(dir, 16, true);
+	if (!boardRigAsVideo(dir))
+		SKIP("this build has no video writer");
+
+	core::Factory<flow::Node> factory;
+	flowview::registerExampleNodes(factory, 8);
+	flowview::BoundaryBinders binders;
+	flowview::registerBoundaryBinders(binders);
+	flowview::RunOptions options;
+	options.graphPath = exampleDocument("register").string();
+	const fs::path reportText = dir / "report.txt";
+	const fs::path rigFile = dir / "rig.json";
+	options.bindings = {"--footage", (dir / "rig").string(), "--models", (dir / "models").string(), "--report",
+						reportText.string(), "--rig", rigFile.string()};
+	REQUIRE(flowview::runGraph(options, factory, binders) == 0);
+
+	const std::string report = readText(reportText);
+	INFO("report: " << report);
+	CHECK(report.rfind("Ready: 3 cameras relative to cam0, metric", 0) == 0);
+	const std::optional<camera::registration::RegisteredRig> rig = readRig(rigFile);
+	REQUIRE(rig.has_value());
+	INFO("rig: " << rig->toString());
+	const camera::testing::RigDifference difference =
+		rigAgainstTruth(*rig, {cameraFootage::boardRigCamera(0), cameraFootage::boardRigCamera(1), cameraFootage::boardRigCamera(2)});
+	INFO("scale " << difference.scale << ", worst rotation " << difference.worstRotation * 1000.0
+				  << " mrad, worst centre " << difference.worstCentre * 1000.0 << " mm");
+	// The bounds the rig vertical above holds the same footage, as stills, to.
 	CHECK(std::abs(difference.scale - 1.0) < 0.005);
 	CHECK(difference.worstRotation < 0.002);
 	CHECK(difference.worstCentre < 0.001);

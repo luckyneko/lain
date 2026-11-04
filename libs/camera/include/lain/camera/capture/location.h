@@ -26,10 +26,10 @@ namespace lain::camera::capture
 	// ONE source named by the folder however many stills it holds (a numbered pattern is likewise one
 	// source, named by its pattern). So a folder of stills is located at itself and a video at its file,
 	// whatever their lengths, and the folder rule serves footage composed of several sources, such as
-	// takes concatenated. A still that was a source of its own would be named by its file, since nothing
-	// in a frame's identity tells it from a video of one frame; no opener makes one. The root is the
-	// deepest folder holding every camera's location strictly within it, so each camera keeps a name
-	// under it: one camera's root is the folder its location is in. Empty when no camera has a frame.
+	// takes concatenated. A still that was a source of its own would be located at its file, since nothing
+	// in a uri tells one still from a folder of them; no opener makes one. The root is the deepest folder
+	// holding every camera's location strictly within it, so each camera keeps a name under it: one
+	// camera's root is the folder its location is in. Empty when no camera has a frame.
 	std::string footageRoot(const std::vector<media::FrameSequence>& footage);
 
 	// `source` spelled relative to `root`, its components joined by '/'; spelled whole when `root` is
@@ -37,8 +37,14 @@ namespace lain::camera::capture
 	std::string relativeTo(const core::Uri& source, std::string_view root);
 
 	// Each camera named by its location relative to the footage's root: "cam0" for a folder of stills,
-	// "cam0.mp4" for a video. Two cameras sharing one location, such as two composed from sources in one
-	// folder, are named by their first frame's source relative to the root instead. Empty footage names
-	// nobody, so its identity is empty.
+	// and "cam0" for a video cam0.mp4 too, since a CONTAINER's file is named less its extension
+	// (media::FrameSource::isContainer). The repo owner's choice (2026-11-04): a camera is named the same
+	// whatever it was captured to, so its model document is cam0.json and a rig document says cam0
+	// either way. Only the medium can say a source is a container, so a folder of stills whose name has a
+	// dot in it, or a numbered pattern, keeps its whole name. Cameras that would share a name are named by
+	// their first frame's source relative to the root instead: two sharing one location, such as two
+	// composed from sources in one folder, and a video beside another of its name (cam0.mp4 and cam0.mov)
+	// or beside a folder of stills of its name, whose first frames spell their whole locations, extensions
+	// and all, so no two are given one identity. Empty footage names nobody, so its identity is empty.
 	std::vector<CameraIdentity> identitiesByLocation(const std::vector<media::FrameSequence>& footage);
 } // namespace lain::camera::capture

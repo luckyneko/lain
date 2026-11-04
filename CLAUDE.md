@@ -1400,6 +1400,30 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-04 — M9: a video camera is named less its extension
+
+The repo owner's answer to the binder fix's open question: a camera is named the same whatever it was
+captured to, so a video `cam0.mp4` is camera `cam0`, its model `cam0.json`, and `cam0` in a report and a
+rig document. `ctest -j6` **1364/1365** Release with video, camera and Ceres on (+3); the one failure
+is feature/M9's own, from `ce537b2` in `libs/math`, which nothing here touches (`test_angles.cpp:52`,
+`rotationBetween(a, -a)` 1e-17 against an exact 0, on Apple clang 21). Warning-clean, format-check
+clean. Full notes in
+WORK.md's *A video camera is named less its extension*, under M9.
+
+- **In the library** (`capture::identitiesByLocation`), so every surface spells a camera one way.
+- **Whether a location is a video is the medium's to say:** `media::FrameSource::isContainer()`, true
+  for `io::video`'s source. Stripping by a uri's extension renamed a stills folder `cam.left` and a
+  numbered pattern, so the uri was refused as the judge.
+- **Cameras that would share a name** (`cam0.mp4` beside `cam0.mov`, or beside a folder `cam0`) fall
+  to the existing rule for a shared location: named by their first frame, which for a video or a stills
+  folder is its whole location, extension and all. The library never gives two cameras one identity.
+- **The binder** names entries as the library does, and refuses a rig folder holding two of one name,
+  naming every one and the model that could not choose; `openRigFootage` refuses, so the gui does too.
+- **What moved:** exactly the five video-name assertions in the location cases. Every stills name, the
+  pinned capture-group digest and every golden held; no committed example names a video camera. Eight
+  stills outputs of the real binary are byte-identical before and after. Six sabotages, all caught; an
+  outside ffmpeg's FFV1 rig registers Ready as `cam0`..`cam2` through the real binary.
+
 ### Update 2026-11-03 — M9's rig binder pairs a rig's footage and models by name
 
 Two defects M15 recorded as owed to this binder, both symptoms of a binder that does not read a
@@ -1414,7 +1438,8 @@ clean. Full notes in WORK.md's *The rig binder pairs by name*, under M9.
 - **Fixed in the binder; the node still pairs by position (ADR-0016, amended).** Each entry names its
   camera, a footage entry by its whole name (the identity a graph gives it) and a model by its name
   less `.json`, so `cam0.mp4`'s model is `cam0.mp4.json` (for the repo owner to confirm). Both folders
-  list in name order through one listing, so the cli and the gui both get it.
+  list in name order through one listing, so the cli and the gui both get it. *(Settled the next day the
+  other way: a video is camera `cam0` and its model `cam0.json`; see the entry above.)*
 - **`unpairedCameras(footage, models)` names each camera with no partner**, and `run` refuses a rig's
   two folders that do not name the same cameras, exit 1, nothing run or written. The gui does not check
   yet: an editor sees one folder.

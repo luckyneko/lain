@@ -48,10 +48,13 @@ namespace flowview
 	[[nodiscard]] bool saveRegisteredRig(const lain::core::Uri& uri, const lain::camera::registration::RegisteredRig& rig);
 
 	// A rig folder holds one entry per camera, every entry whose name does not start with '.', and each
-	// entry NAMES its camera. A footage entry is named by its whole name, which is what a graph names
-	// that camera (capture::identitiesByLocation: "cam0" for a folder of stills, "cam0.mp4" for a video).
-	// A model document is named by its name less ".json", so the models of those two are cam0.json and
-	// cam0.mp4.json: a models folder names each camera as a report and a rig document do.
+	// entry NAMES its camera, as a graph names it (capture::identitiesByLocation): a folder of stills by
+	// its whole name, a video file less its extension, so cam0/ and cam0.mp4 are both camera cam0. A model
+	// document is named by its name less ".json", so either camera's model is cam0.json: a models folder
+	// names each camera as a report and a rig document do. Two footage entries that would be one camera
+	// (cam0/ beside cam0.mp4, or cam0.mp4 beside cam0.mov) are refused, naming both, since a model named
+	// cam0.json could not say which it is for; a graph built another way keeps them apart by their whole
+	// names.
 	//
 	// Both folders list their cameras in the order of those NAMES, so element i is the same camera on
 	// every run, and a camera's footage and its model sit at the same position whenever the two folders
@@ -66,18 +69,20 @@ namespace flowview
 	FileResult<std::vector<lain::camera::CameraModel>> loadRigModels(const std::filesystem::path& folder);
 
 	// A rig's footage: every entry opened as one camera's sequence (a folder of stills, or a video file).
-	// Refused, with every problem, when any of them does not open, or when there is none.
+	// Refused, with every problem, when any of them does not open, when two would be one camera, or when
+	// there is none.
 	FileResult<std::vector<lain::media::FrameSequence>> openRigFootage(const std::filesystem::path& folder);
 
 	// Every camera one of a rig's two folders names and the other does not, by name, one problem each:
-	// footage with no model, and a model with no footage, each naming the entry it has and the one it
-	// lacks. Empty when the two name the same cameras, which is when pairing them by position pairs each
-	// camera with its own model; with the same number of cameras named differently, position would pair
-	// the rest wrongly and say nothing. Lists the folders without opening an entry, so one that would not
-	// open, or a folder that cannot be listed, is the loaders' to report, not this.
+	// footage with no model, and a model with no footage, each naming the entry it has and what it lacks;
+	// and before them, each name two footage entries would share. Empty when the two folders name the same
+	// cameras, once each, which is when pairing them by position pairs each camera with its own model;
+	// with the same number of cameras named differently, position would pair the rest wrongly and say
+	// nothing. Lists the folders without opening an entry, so one that would not open, or a folder that
+	// cannot be listed, is the loaders' to report, not this.
 	//
 	// The cli asks it whenever a run binds one rig's footage and models from two folders (runmode.cpp).
 	// The gui does not yet: an Interface-pane editor binds one input from one folder, and never sees the
-	// other's.
+	// other's. (Footage entries sharing a name it does refuse, since openRigFootage does.)
 	std::vector<std::string> unpairedCameras(const std::filesystem::path& footage, const std::filesystem::path& models);
 } // namespace flowview
