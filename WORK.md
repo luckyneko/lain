@@ -15002,6 +15002,23 @@ defects).
   in `test-camera-opencv-features`. Deleting its `.ilk` and objects fixed it. Restored headers were
   touched a second after the copy and rebuilt before the clean run.
 
+### CI's first run of it
+
+[Run 41597659039](https://github.com/luckyneko/lain/actions/runs/41597659039) on `f7b2c69`, the first
+Release and GCC build of this work. Linux Debug passed 1348/1348 and Windows Release 1356/1356. Two
+things failed, each fixed in its own commit:
+
+- **macOS Release, 1355/1356: a check of mine was too strict.** `rotationBetween(a, -a) == 0.0` reads
+  1e-17 on macOS arm64 and exactly 0 on x64. It now asks for less than 1e-15. Without the absolute value
+  on `w`, which is the rule the case is about, it reads 2π, so the check still sees that. Every
+  Release-only case passed on this leg.
+- **All three Linux Release legs, at Build: GCC 13's false `-Wmaybe-uninitialized`.** It fired on
+  copying a `FrameSequence` from `calibrateScene`'s empty `std::optional`, behind the check that it is
+  not empty. The same helper had already been rewritten once for this warning, on 2026-10-21, and neither
+  it nor `framesequence.h` changed here, so another change in these commits moved GCC's inlining. Which
+  one is not known. `calibrateFootage` now takes the footage directly and `calibrateScene` passes the
+  scene's, so no optional reaches the copy.
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because

@@ -1477,6 +1477,10 @@ follow-ups, in WORK.md's *NOTES.txt (2026-11-02)*.
   tests**: nothing observes which root is kept, so the rule is unpinned determinism insurance.
 - **Found, recorded as a known defect:** board registration whitens a detector's covariance without
   checking it is positive definite.
+- **CI's first run (41597659039 on `f7b2c69`) found two things, each fixed in its own commit:** a check of
+  mine too strict for macOS arm64 (`rotationBetween(a, -a)` reads 1e-17, not 0), and GCC 13's false
+  `-Wmaybe-uninitialized` on `calibrateScene`'s empty optional, which stopped all three Linux Release
+  builds. Linux Debug passed 1348/1348 and Windows Release 1356/1356.
 
 ### Update 2026-10-21 — M9: a no-refiner CI leg, and the footprint measured again (P4)
 

@@ -25,6 +25,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <utility>
 #include <variant>
 
 using namespace lain;
@@ -64,11 +65,13 @@ namespace
 		standin::refinerScript().finalCost = nullptr;
 	}
 
-	// calibrateCameraTargetless with `footage` bound (the scene's when not given), `imported` wired when
-	// given, and `configure` applied to the node; the report, run.
+	// calibrateCameraTargetless with `footage` bound, `imported` wired when given, and `configure` applied
+	// to the node; the report, run. The footage is not an optional, since GCC 13 at -O3 calls a copy from
+	// an empty one maybe uninitialized, even behind the check that it is not empty (CI, 2026-10-21 and
+	// 2026-11-03).
 	template <typename Configure>
-	Report calibrateScene(Configure configure, std::optional<media::FrameSequence> footage = std::nullopt,
-						  std::optional<camera::CameraModel> imported = std::nullopt)
+	Report calibrateFootage(Configure configure, const media::FrameSequence& footage,
+							std::optional<camera::CameraModel> imported = std::nullopt)
 	{
 		flow::Graph graph;
 		const flow::NodeId node = graph.add<camera::CalibrateCameraTargetlessNode>();
@@ -86,14 +89,8 @@ namespace
 		configure(graph, node);
 
 		flow::Evaluation evaluation{graph};
-		// Set in two branches, not through a conditional's temporary: GCC 13 at -O3 calls the
-		// temporary copied from an empty `footage` maybe uninitialized, though that arm is never taken
-		// (CI, 2026-10-21).
 		flow::PortValue f;
-		if (footage)
-			f.set(*footage);
-		else
-			f.set(scene::sequenceFootage().footage);
+		f.set(footage);
 		evaluation.bind({in.id(), footagePin}, std::move(f));
 		if (imported)
 		{
@@ -105,6 +102,13 @@ namespace
 		const flow::PortValue& report = evaluation.value(flow::PortAddress{node, graph.node(node).output(0).id()});
 		REQUIRE(report.holds<Report>());
 		return report.get<Report>();
+	}
+
+	// The same over the scene's own footage.
+	template <typename Configure>
+	Report calibrateScene(Configure configure, std::optional<camera::CameraModel> imported = std::nullopt)
+	{
+		return calibrateFootage(configure, scene::sequenceFootage().footage, std::move(imported));
 	}
 
 	const targetless::Settings& settingsOf(const Report& report)
@@ -268,7 +272,7 @@ TEST_CASE("calibrating through calibrateCameraTargetless is calling the method",
 TEST_CASE("calibrateCameraTargetless refuses empty footage as the method does", "[camera][flow]")
 {
 	setUp();
-	const Report report = calibrateScene([](flow::Graph&, flow::NodeId) {}, media::FrameSequence{});
+	const Report report = calibrateFootage([](flow::Graph&, flow::NodeId) {}, media::FrameSequence{});
 	CHECK(report.status == camera::calibration::CalibrationStatus::Failed);
 	REQUIRE_FALSE(report.failures.empty());
 	CHECK(report.failures.front().failure == camera::calibration::Failure::NoFootage);
@@ -288,7 +292,7 @@ TEST_CASE("an imported model takes part through calibrateCameraTargetless's poli
 				setParam(graph, id, "model", camera::DistortionModel::None);
 				setParam(graph, id, "importedPolicy", camera::calibration::ImportedModelPolicy::HoldAndValidate);
 			},
-			std::nullopt, truth);
+			truth);
 		INFO(report.toString());
 		REQUIRE(report.reproducibility.request.imported.has_value());
 		REQUIRE(report.model.has_value());
