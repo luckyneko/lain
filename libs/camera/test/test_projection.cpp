@@ -8,8 +8,12 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <cmath>
+#include <cstddef>
 #include <limits>
+#include <type_traits>
+#include <variant>
 
 using namespace lain::camera;
 using namespace lain::camera::testing;
@@ -116,10 +120,47 @@ TEST_CASE("projection success says nothing about the image rectangle", "[camera]
 	CHECK_FALSE(contains(model, 320.0, -0.51));
 }
 
+TEST_CASE("the parameter path is the model path", "[camera][projection]")
+{
+	// project(model, ...) is the parameter overload with the model's own doubles, so the two must
+	// agree EXACTLY: then differentiating the parameter door is differentiating the model door, in
+	// every build, Ceres or not. The intrinsics array is spelled out here, so it also pins their order.
+	const std::array<std::array<double, 2>, 3> pixels = {{{320.5, 239.5}, {450.0, 120.0}, {40.0, 440.0}}};
+	for (int m = 0; m < kModelCount; ++m)
+	{
+		const CameraModel model = cameraWith(everyModel(m));
+		INFO(displayName(model.distortion()));
+		const Intrinsics& k = model.intrinsics();
+		const std::array<double, 4> intrinsics = {k.fx, k.fy, k.cx, k.cy};
+		for (const auto& pixel : pixels)
+		{
+			for (const double depth : {0.4, 1.7, 6.0})
+			{
+				const Unprojection<double> ray = unproject(model, pixel[0], pixel[1]);
+				REQUIRE(ray.ok());
+				const double x = ray.x / ray.z * depth, y = ray.y / ray.z * depth;
+				const Projection<double> byModel = project(model, x, y, depth);
+				const Projection<double> byParameters = std::visit(
+					[&](const auto& d)
+					{
+						using Model = std::decay_t<decltype(d)>;
+						return project<Model>(intrinsics, d.coefficients(), model.domain(), x, y, depth);
+					},
+					model.distortion());
+				REQUIRE(byModel.ok());
+				REQUIRE(byParameters.status == byModel.status);
+				CHECK(byParameters.u == byModel.u);
+				CHECK(byParameters.v == byModel.v);
+			}
+		}
+	}
+}
+
 TEST_CASE("the kernels are scalar-generic: float runs the same code", "[camera][projection]")
 {
-	// A real automatic-differentiation scalar is slice 2's; float is the witness here that nothing in
-	// the kernels is secretly double.
+	// Ceres' Jet is the real automatic-differentiation scalar (plugins/camera/ceres); float is the
+	// witness here, in every build, that nothing in the kernels is secretly double: as the point, and
+	// as the coefficients through the parameter overload.
 	for (const Distortion& distortion : {Distortion{brownConrady()}, Distortion{kannalaBrandt()}, Distortion{inverseBrownConrady()}})
 	{
 		const CameraModel model = cameraWith(distortion);
@@ -132,5 +173,22 @@ TEST_CASE("the kernels are scalar-generic: float runs the same code", "[camera][
 		const Unprojection<float> ray = unproject(model, single.u, single.v);
 		REQUIRE(ray.ok());
 		CHECK(ray.x / ray.z == Catch::Approx(0.3).margin(1e-4));
+
+		const Intrinsics& k = model.intrinsics();
+		const std::array<float, 4> intrinsics = {float(k.fx), float(k.fy), float(k.cx), float(k.cy)};
+		const Projection<float> parameters = std::visit(
+			[&](const auto& d)
+			{
+				using Model = std::decay_t<decltype(d)>;
+				const auto held = d.coefficients();
+				typename Model::template Coefficients<float> c{};
+				for (std::size_t i = 0; i < c.size(); ++i)
+					c[i] = float(held[i]);
+				return project<Model>(intrinsics, c, model.domain(), 0.3f, -0.2f, 1.0f);
+			},
+			model.distortion());
+		REQUIRE(parameters.ok());
+		CHECK(parameters.u == Catch::Approx(exact.u).margin(1e-3));
+		CHECK(parameters.v == Catch::Approx(exact.v).margin(1e-3));
 	}
 }

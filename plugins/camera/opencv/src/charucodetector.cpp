@@ -1,8 +1,7 @@
 #include "charucodetector.h"
 
 #include "charucoboard.h"
-
-#include <lain/image/convert.h>
+#include "imageprep.h"
 
 #include <opencv2/core/utility.hpp>
 #include <opencv2/imgproc.hpp>
@@ -18,61 +17,6 @@
 namespace lain::camera::opencv
 {
 	// --- file-local helpers (named static, not an anonymous namespace) ----------
-
-	// An 8-bit single-channel picture of the image to look for features in. It is an INTENSITY
-	// image, not a luminance measurement, so any colour space serves: 8-bit formats are read as they
-	// are, and wider ones are brought to 8 bits first by lain's own conversion. Empty when the image
-	// is unusable.
-	static cv::Mat intensity(const image::Image& source)
-	{
-		if (!source.valid())
-			return {};
-		const int w = source.width();
-		const int h = source.height();
-		// Read-only views over lain's tightly packed pixels; nothing below writes through them.
-		auto* data = const_cast<std::uint8_t*>(source.data());
-		cv::Mat grey;
-		switch (source.pixelFormat())
-		{
-			case image::PixelFormat::Gray8:
-				return cv::Mat(h, w, CV_8UC1, data);
-			case image::PixelFormat::GrayAlpha8:
-				cv::extractChannel(cv::Mat(h, w, CV_8UC2, data), grey, 0);
-				return grey;
-			case image::PixelFormat::RGB8:
-				cv::cvtColor(cv::Mat(h, w, CV_8UC3, data), grey, cv::COLOR_RGB2GRAY);
-				return grey;
-			case image::PixelFormat::RGBA8:
-				cv::cvtColor(cv::Mat(h, w, CV_8UC4, data), grey, cv::COLOR_RGBA2GRAY);
-				return grey;
-			case image::PixelFormat::Gray16:
-			case image::PixelFormat::Gray32F:
-			case image::PixelFormat::GrayAlpha16:
-			case image::PixelFormat::GrayAlpha32F:
-			{
-				const image::Image narrowed = image::convert(source, image::PixelFormat::Gray8);
-				return narrowed.valid() ? intensity(narrowed).clone() : cv::Mat{};
-			}
-			case image::PixelFormat::RGB16:
-			case image::PixelFormat::RGB32F:
-			case image::PixelFormat::RGBA16:
-			case image::PixelFormat::RGBA32F:
-			{
-				// Narrowed per channel, not reduced to grey: lain's reduction to grey is a luminance and
-				// rightly insists on linear light, which a picture to find corners in does not need.
-				const image::Image narrowed = image::convert(source, image::PixelFormat::RGB8);
-				return narrowed.valid() ? intensity(narrowed).clone() : cv::Mat{};
-			}
-		}
-		return {};
-	}
-
-	// A pixel of an image resized by (sx, sy) back to source pixels. Pixel centres, not corners,
-	// correspond: the centre of reduced pixel x sits at (x + 0.5) / sx - 0.5 in the source.
-	static cv::Point2f toSource(const cv::Point2f& p, double sx, double sy)
-	{
-		return {float((p.x + 0.5) / sx - 0.5), float((p.y + 0.5) / sy - 0.5)};
-	}
 
 	// Half the refinement window, in source pixels. It must stay inside the GAP between a chessboard
 	// corner and the nearest marker, (1 - markerToSquare) / 2 of a square: a marker's edges inside
@@ -110,23 +54,12 @@ namespace lain::camera::opencv
 			return report;
 		}
 
-		// Search a reduced image when asked, and record the factors actually used: rounding to whole
-		// pixels makes them differ slightly from the request and from each other.
-		cv::Mat searched = grey;
-		double sx = 1.0, sy = 1.0;
-		if (scale < 1.0)
-		{
-			const int rw = std::max(1, int(std::lround(grey.cols * scale)));
-			const int rh = std::max(1, int(std::lround(grey.rows * scale)));
-			if (rw < grey.cols || rh < grey.rows)
-			{
-				cv::resize(grey, searched, cv::Size(rw, rh), 0, 0, cv::INTER_AREA);
-				sx = double(rw) / grey.cols;
-				sy = double(rh) / grey.rows;
-			}
-		}
+		// Search a reduced image when asked, and record the factors actually used.
+		const Searched reduced = searchedAt(grey, scale);
+		const cv::Mat& searched = reduced.image;
+		const double sx = reduced.sx, sy = reduced.sy;
 		report.transform = {sx, sy};
-		const bool native = sx == 1.0 && sy == 1.0;
+		const bool native = reduced.native();
 
 		const board::Pattern& pattern = specification.pattern();
 		const cv::aruco::CharucoBoard cvBoard =

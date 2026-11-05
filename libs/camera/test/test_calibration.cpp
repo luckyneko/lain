@@ -12,6 +12,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <set>
 
 using namespace lain;
@@ -24,7 +25,35 @@ namespace
 {
 	Report run(const Request& request = {})
 	{
-		return method::calibrate(footage(scene().frames), specification(), request);
+		return method::calibrate(footage(boardScene().frames), specification(), camera::board::DetectionRequest{}, request);
+	}
+
+	// A search unlike the default in every field.
+	camera::board::DetectionRequest unusualSearch()
+	{
+		camera::board::DetectionRequest search;
+		search.scale = camera::board::LongestSide{800};
+		search.refineAtNativeResolution = false;
+		search.detail = camera::board::DetailLevel::Detailed;
+		search.minimumCorners = 6;
+		return search;
+	}
+
+	bool isUnusualSearch(const camera::board::DetectionRequest& search)
+	{
+		const auto* longest = std::get_if<camera::board::LongestSide>(&search.scale);
+		return longest != nullptr && longest->pixels == 800 && !search.refineAtNativeResolution &&
+			   search.detail == camera::board::DetailLevel::Detailed && search.minimumCorners == 6;
+	}
+
+	const BoardRecord& boardRecord(const Report& report)
+	{
+		return std::get<BoardRecord>(report.reproducibility.method);
+	}
+
+	const BoardDiagnostics& boardDiagnostics(const Report& report)
+	{
+		return std::get<BoardDiagnostics>(report.diagnostics.method);
 	}
 
 	bool failedWith(const Report& report, Failure failure)
@@ -45,7 +74,7 @@ TEST_CASE("the built-in fitness profile resolves, with overrides on its Ready ti
 	const std::optional<FitnessProfile> profile = fitnessProfile("reconstruction/1");
 	REQUIRE(profile.has_value());
 	CHECK_FALSE(fitnessProfile("reconstruction/0").has_value());
-	CHECK(fitnessProfileNames() == std::vector<std::string>{"reconstruction/1"});
+	CHECK(fitnessProfileNames() == std::vector<std::string>{"reconstruction/1", "reconstruction-targetless/1"});
 
 	FitnessOverrides overrides;
 	overrides.minimumViews = 25;
@@ -53,6 +82,28 @@ TEST_CASE("the built-in fitness profile resolves, with overrides on its Ready ti
 	CHECK(resolved.ready.minimumViews == 25);
 	CHECK(resolved.ready.minimumCoverage == profile->ready.minimumCoverage);
 	CHECK(resolved.exploratory.minimumViews == profile->exploratory.minimumViews);
+}
+
+TEST_CASE("an empty profile is the method's own, and naming that profile judges the same", "[camera][calibration]")
+{
+	// The empty name is a request's way of asking for the method's own profile, never a profile's name.
+	CHECK_FALSE(fitnessProfile("").has_value());
+
+	resetScene();
+	const Report defaulted = run();
+	Request named;
+	named.fitnessProfile = "reconstruction/1";
+	const Report explicitly = run(named);
+	REQUIRE(defaulted.status == CalibrationStatus::Succeeded);
+	REQUIRE(explicitly.status == CalibrationStatus::Succeeded);
+
+	// Recorded as asked, judged alike.
+	CHECK(defaulted.reproducibility.request.fitnessProfile.empty());
+	CHECK(explicitly.reproducibility.request.fitnessProfile == "reconstruction/1");
+	CHECK(defaulted.thresholds.name == "reconstruction/1");
+	CHECK(explicitly.thresholds.name == "reconstruction/1");
+	CHECK(defaulted.verdict == explicitly.verdict);
+	CHECK(defaulted.fitnessNotes == explicitly.fitnessNotes);
 }
 
 TEST_CASE("a clean scene calibrates Ready, with every section present", "[camera][calibration]")
@@ -66,9 +117,9 @@ TEST_CASE("a clean scene calibrates Ready, with every section present", "[camera
 	CHECK(report.fitnessNotes.empty());
 
 	const Diagnostics& d = report.diagnostics;
-	CHECK(d.framesExamined == 40);
-	CHECK(d.framesUsable == 40);
-	CHECK(d.detections.size() == 40);
+	CHECK(boardDiagnostics(report).framesExamined == 40);
+	CHECK(boardDiagnostics(report).framesUsable == 40);
+	CHECK(boardDiagnostics(report).detections.size() == 40);
 	CHECK(d.viewsHeldOut == 8); // every fifth of 40
 	CHECK(d.viewsSelected == 30);
 	CHECK(d.coverage > 0.6);
@@ -89,12 +140,58 @@ TEST_CASE("a clean scene calibrates Ready, with every section present", "[camera
 	REQUIRE(resampling != nullptr);
 	CHECK(resampling->resamples == 20);
 	CHECK(resampling->focalVariation == 0.0);
+	// Board calibration estimates the principal point, so it always measures how it varies.
+	const double* principalPoint = std::get_if<double>(&resampling->principalPointVariation);
+	REQUIRE(principalPoint != nullptr);
+	CHECK(*principalPoint < 1e-12);
 
 	CHECK(report.thresholds.name == "reconstruction/1");
 	CHECK(report.reproducibility.sources == std::vector<std::string>{"/synthetic/calibration"});
-	CHECK(report.reproducibility.detector.backend == "truth");
+	CHECK(boardRecord(report).detector.backend == "truth");
 	CHECK(report.reproducibility.estimator.backend == "scripted");
 	CHECK(report.reproducibility.request.seed == 1);
+}
+
+TEST_CASE("footage is searched as asked, and the record says how", "[camera][calibration]")
+{
+	resetScene();
+	const Report report = method::calibrate(footage(boardScene().frames), specification(), unusualSearch(), Request{});
+	REQUIRE(report.status == CalibrationStatus::Succeeded);
+
+	// The search reaches every frame's detection, and the record says what it was.
+	REQUIRE(boardDiagnostics(report).detections.size() == 40);
+	for (const camera::board::DetectionReport& d : boardDiagnostics(report).detections)
+		CHECK(isUnusualSearch(d.request));
+	REQUIRE(boardRecord(report).detection.has_value());
+	CHECK(isUnusualSearch(*boardRecord(report).detection));
+
+	SECTION("a request refused before anything is detected still says what would have been searched with")
+	{
+		Request request;
+		request.fitnessProfile = "reconstruction/99";
+		const Report refused = method::calibrate(footage(boardScene().frames), specification(), unusualSearch(), request);
+		REQUIRE(failedWith(refused, Failure::UnknownFitnessProfile));
+		CHECK(boardDiagnostics(refused).detections.empty());
+		REQUIRE(boardRecord(refused).detection.has_value());
+		CHECK(isUnusualSearch(*boardRecord(refused).detection));
+	}
+}
+
+TEST_CASE("a calibration over given detections records the search they report", "[camera][calibration]")
+{
+	resetScene();
+	const media::FrameSequence frames = footage(boardScene().frames);
+	std::vector<camera::board::DetectionReport> detections;
+	for (std::size_t i = 0; i < frames.size(); ++i)
+		detections.push_back(camera::board::detect(frames.image(i), frames.frame(i), specification(), unusualSearch()));
+
+	// The calibration's own request holds no search at all: what the detections were made with is
+	// theirs to say.
+	const Report report = method::calibrate(detections, trueCamera().image, specification(), Request{});
+	REQUIRE(report.status == CalibrationStatus::Succeeded);
+	REQUIRE(boardRecord(report).detection.has_value());
+	CHECK(isUnusualSearch(*boardRecord(report).detection));
+	CHECK(boardRecord(report).detector.backend == "truth");
 }
 
 TEST_CASE("a model whose held-out rays miss is not Ready, and the notes say why", "[camera][calibration]")
@@ -122,7 +219,8 @@ TEST_CASE("a model whose held-out rays miss is not Ready, and the notes say why"
 TEST_CASE("the resampling draws are seeded, and the same under either execution policy", "[camera][calibration]")
 {
 	// The stand-in's focal length depends on WHICH views it was handed, so the stability evidence is
-	// a fingerprint of the draws.
+	// a fingerprint of the draws. Through the views' ordinals too, not their count alone: the spread
+	// is a median absolute deviation, and over whole numbers two seeds' draws would often give the same.
 	resetScene();
 	script().answer = [](const std::vector<camera::board::Observation>& views)
 	{
@@ -131,22 +229,28 @@ TEST_CASE("the resampling draws are seeded, and the same under either execution 
 			distinct.insert(v.frame.ordinal);
 		CameraModelParameters p = trueCamera();
 		p.intrinsics.fx += double(distinct.size());
+		for (const std::size_t ordinal : distinct)
+			p.intrinsics.fx += 1e-3 * double(ordinal * ordinal);
 		return std::optional<CameraModelParameters>{p};
 	};
 	Request request;
 	std::size_t normalThreads = 0;
 	Report normal;
 	{
-		// A started pool, or "Normal" would run inline and prove nothing about parallel execution.
+		// A started pool, or "Normal" would run inline and prove nothing about parallel execution; and
+		// detections that take a moment, as the flow scheduler's own case does, so its workers have
+		// work left to take when they wake (on Windows CI the caller once ran all 40 frames alone).
 		const lain::testing::ThreadPool pool{3};
+		boardScene().detectionTime = std::chrono::milliseconds{2};
 		normal = run(request);
-		normalThreads = scene().threads.size();
+		normalThreads = boardScene().threads.size();
 	}
-	scene().threads.clear();
+	boardScene().detectionTime = std::chrono::milliseconds{0};
+	boardScene().threads.clear();
 	request.execution = ExecutionPolicy::DeterministicDebug;
 	const Report serial = run(request);
-	CHECK(normalThreads > 1);			// frames really were detected on several threads...
-	CHECK(scene().threads.size() == 1); // ...and deterministic-debug really is serial
+	CHECK(normalThreads > 1);				 // frames really were detected on several threads...
+	CHECK(boardScene().threads.size() == 1); // ...and deterministic-debug really is serial
 	request.seed = 2;
 	const Report reseeded = run(request);
 
@@ -160,22 +264,54 @@ TEST_CASE("the resampling draws are seeded, and the same under either execution 
 	CHECK(normal.diagnostics.heldOut == serial.diagnostics.heldOut);
 }
 
+TEST_CASE("one resample far from the others does not decide the stability", "[camera][calibration]")
+{
+	// A bootstrap draw can leave too few views to condition the model, and its estimate then lies far
+	// from every other: on rendered footage one draw of twenty was 89% out, and as a standard deviation
+	// it decided the verdict (M9 slice 4, sub-slice 10e). The stand-in answers each draw a little
+	// differently, by which views it was handed, and one resample half as long again.
+	resetScene();
+	std::size_t calls = 0;
+	script().answer = [&calls](const std::vector<camera::board::Observation>& views)
+	{
+		std::set<std::size_t> distinct;
+		for (const camera::board::Observation& v : views)
+			distinct.insert(v.frame.ordinal);
+		CameraModelParameters p = trueCamera();
+		for (const std::size_t ordinal : distinct)
+			p.intrinsics.fx += 1e-4 * double(ordinal);
+		if (++calls == 5) // the estimate, then the fourth resample
+			p.intrinsics.fx *= 1.5;
+		return std::optional<CameraModelParameters>{p};
+	};
+	Request request;
+	request.execution = ExecutionPolicy::DeterministicDebug;
+	const Report report = run(request);
+	REQUIRE(report.model);
+	CHECK(report.model->intrinsics().fx == Catch::Approx(900.0).margin(0.1));
+	const ResamplingEvidence& e = std::get<ResamplingEvidence>(report.resampling);
+	CAPTURE(e.focalVariation, report.fitnessNotes);
+	CHECK(e.resamples == 20);
+	CHECK(e.focalVariation < 1e-4);
+	CHECK(report.verdict == Verdict::Ready);
+}
+
 TEST_CASE("frames without a board are examined and never chosen", "[camera][calibration]")
 {
 	resetScene();
-	scene().boardless = {0, 1, 2, 17, 33};
+	boardScene().boardless = {0, 1, 2, 17, 33};
 	const Report report = run();
 	REQUIRE(report.status == CalibrationStatus::Succeeded);
-	CHECK(report.diagnostics.framesExamined == 40);
-	CHECK(report.diagnostics.framesUsable == 35);
-	for (const std::size_t skip : scene().boardless)
+	CHECK(boardDiagnostics(report).framesExamined == 40);
+	CHECK(boardDiagnostics(report).framesUsable == 35);
+	for (const std::size_t skip : boardScene().boardless)
 	{
 		const std::uint32_t position = std::uint32_t(skip);
 		CHECK(std::find(report.diagnostics.selected.begin(), report.diagnostics.selected.end(), position) ==
 			  report.diagnostics.selected.end());
 		CHECK(std::find(report.diagnostics.heldOut.begin(), report.diagnostics.heldOut.end(), position) ==
 			  report.diagnostics.heldOut.end());
-		CHECK(report.diagnostics.detections[skip].status == camera::board::DetectionStatus::Failed);
+		CHECK(boardDiagnostics(report).detections[skip].status == camera::board::DetectionStatus::Failed);
 	}
 }
 
@@ -250,7 +386,7 @@ TEST_CASE("every failure is a report with a reason, never a throw", "[camera][ca
 	SECTION("no footage")
 	{
 		resetScene();
-		scene().frames = 0;
+		boardScene().frames = 0;
 		CHECK(failedWith(run(), Failure::NoFootage));
 	}
 	SECTION("holding a model that was not given")
@@ -273,7 +409,7 @@ TEST_CASE("every failure is a report with a reason, never a throw", "[camera][ca
 	SECTION("too few usable views")
 	{
 		resetScene();
-		scene().frames = 2;
+		boardScene().frames = 2;
 		CHECK(failedWith(run(), Failure::TooFewViews));
 	}
 	SECTION("an estimator that fails")
@@ -344,4 +480,142 @@ TEST_CASE("coverage counts the image-grid cells the views reach", "[camera][cali
 	outside.features = {{0, {-5.0, 300.0}, std::nullopt}}; // off the image: no cell
 	CHECK(method::coverage({&corner}, corner.image) == Catch::Approx(1.0 / 48));
 	CHECK(method::coverage({&corner, &opposite, &outside}, corner.image) == Catch::Approx(2.0 / 48));
+}
+
+// --- judge: the verdict over hand-built evidence -------------------------------------
+//
+// Nothing produces a held principal point until targetless calibration (M9 slice 4, sub-slice 9),
+// so the rule is tested here, on the function both methods call. Every variant is constructed, never
+// reassigned: GCC 13 at -O3 raised a false -Wmaybe-uninitialized on a reassigned report variant in
+// registration's slice 3.
+
+namespace
+{
+	FitnessProfile reconstruction1()
+	{
+		const std::optional<FitnessProfile> profile = fitnessProfile("reconstruction/1");
+		REQUIRE(profile.has_value());
+		return *profile;
+	}
+
+	// Well inside reconstruction/1's Ready tier (0.6 mrad).
+	std::variant<HeldOutEvidence, Unavailable> goodHeldOut()
+	{
+		return HeldOutEvidence{8, 192, 0, 0.0003, 0.3, 0.6};
+	}
+
+	bool startsWith(const std::string& text, const std::string& prefix)
+	{
+		return text.compare(0, prefix.size(), prefix) == 0;
+	}
+
+	FitnessProfile targetless1()
+	{
+		const std::optional<FitnessProfile> profile = fitnessProfile("reconstruction-targetless/1");
+		REQUIRE(profile.has_value());
+		return *profile;
+	}
+
+	// A wide lens's held-out evidence: 2.2 mrad, which an angle bound of 1.5 refused, at a whitened
+	// RMS of `whitened` (unset: an observation stated no covariance).
+	std::variant<HeldOutEvidence, Unavailable> wideHeldOut(std::optional<double> whitened)
+	{
+		HeldOutEvidence evidence{8, 4500, 0, 0.0022, 0.74, 3.5};
+		evidence.rmsWhitened = whitened;
+		return evidence;
+	}
+
+	const std::variant<ResamplingEvidence, Unavailable> stableResampling{ResamplingEvidence{20, 0.001, 0.0008}};
+} // namespace
+
+TEST_CASE("the targetless profile judges the held-out residual whitened, not its angle", "[camera][calibration][judge]")
+{
+	SECTION("within 4 of the stated precision is Ready, whatever the angle")
+	{
+		const Judgement judgement = judge(targetless1(), 30, 0.9, wideHeldOut(2.9), stableResampling);
+		INFO("notes: " << (judgement.notes.empty() ? std::string("none") : judgement.notes.front()));
+		CHECK(judgement.verdict == Verdict::Ready);
+		CHECK(judgement.notes.empty());
+	}
+	SECTION("past 4 is Exploratory, noted for the whitened residual alone")
+	{
+		const Judgement judgement = judge(targetless1(), 30, 0.9, wideHeldOut(5.0), stableResampling);
+		CHECK(judgement.verdict == Verdict::Exploratory);
+		REQUIRE(judgement.notes.size() == 1);
+		CHECK(startsWith(judgement.notes[0], "Ready: held-out whitened RMS "));
+	}
+	SECTION("past 8 is Rejected")
+	{
+		const Judgement judgement = judge(targetless1(), 30, 0.9, wideHeldOut(9.0), stableResampling);
+		CHECK(judgement.verdict == Verdict::Rejected);
+		REQUIRE(judgement.notes.size() == 2);
+		CHECK(startsWith(judgement.notes[1], "Exploratory: held-out whitened RMS "));
+	}
+	SECTION("board's profile judges the angle and leaves the whitened residual alone")
+	{
+		const Judgement judgement = judge(reconstruction1(), 30, 0.9, wideHeldOut(9.0), stableResampling);
+		CHECK(judgement.verdict == Verdict::Rejected);
+		for (const std::string& note : judgement.notes)
+			CHECK(note.find("whitened") == std::string::npos);
+	}
+}
+
+TEST_CASE("missing whitened evidence refuses the targetless profile's Ready and leaves Exploratory open",
+		  "[camera][calibration][judge]")
+{
+	const Judgement judgement = judge(targetless1(), 30, 0.9, wideHeldOut(std::nullopt), stableResampling);
+	CHECK(judgement.verdict == Verdict::Exploratory);
+	REQUIRE(judgement.notes.size() == 1);
+	CHECK(judgement.notes[0] == "Ready: no whitened held-out evidence: an observation states no covariance");
+}
+
+TEST_CASE("a held principal point does not keep an estimate from Ready", "[camera][calibration][judge]")
+{
+	const std::variant<ResamplingEvidence, Unavailable> resampling{ResamplingEvidence{10, 0.001, Held{}}};
+	const Judgement judgement = judge(reconstruction1(), 20, 0.9, goodHeldOut(), resampling);
+	INFO("notes: " << (judgement.notes.empty() ? std::string("none") : judgement.notes.front()));
+	CHECK(judgement.verdict == Verdict::Ready);
+	CHECK(judgement.notes.empty());
+}
+
+TEST_CASE("a held principal point beside an unstable focal length is noted for the focal length alone",
+		  "[camera][calibration][judge]")
+{
+	// 1% is over Ready's 0.5% and inside Exploratory's 2%.
+	const std::variant<ResamplingEvidence, Unavailable> resampling{ResamplingEvidence{10, 0.01, Held{}}};
+	const Judgement judgement = judge(reconstruction1(), 20, 0.9, goodHeldOut(), resampling);
+	CHECK(judgement.verdict == Verdict::Exploratory);
+	REQUIRE(judgement.notes.size() == 1);
+	CHECK(startsWith(judgement.notes[0], "Ready: focal variation "));
+}
+
+TEST_CASE("missing resampling evidence refuses Ready with its reason and leaves Exploratory open",
+		  "[camera][calibration][judge]")
+{
+	const std::variant<ResamplingEvidence, Unavailable> resampling{Unavailable{"resampling was not requested"}};
+	const Judgement judgement = judge(reconstruction1(), 20, 0.9, goodHeldOut(), resampling);
+	CHECK(judgement.verdict == Verdict::Exploratory);
+	REQUIRE(judgement.notes.size() == 1);
+	CHECK(judgement.notes[0] == "Ready: no resampling evidence: resampling was not requested");
+}
+
+TEST_CASE("a rejected estimate's notes give Ready's shortfalls, then Exploratory's", "[camera][calibration][judge]")
+{
+	// Every criterion fails both tiers: 4 views, 20% coverage, 3 mrad held out, 3% focal and 20 mrad of
+	// principal point.
+	const std::variant<HeldOutEvidence, Unavailable> heldOut{HeldOutEvidence{8, 192, 0, 0.003, 3.0, 6.0}};
+	const std::variant<ResamplingEvidence, Unavailable> resampling{ResamplingEvidence{10, 0.03, 0.02}};
+	const Judgement judgement = judge(reconstruction1(), 4, 0.2, heldOut, resampling);
+	CHECK(judgement.verdict == Verdict::Rejected);
+	const std::vector<std::string> expected = {"views, fewer than", "coverage ", "held-out RMS angle ",
+											   "focal variation ", "principal point variation "};
+	REQUIRE(judgement.notes.size() == 2 * expected.size());
+	for (std::size_t i = 0; i < expected.size(); ++i)
+	{
+		INFO("note " << i << ": " << judgement.notes[i] << " / " << judgement.notes[expected.size() + i]);
+		CHECK(startsWith(judgement.notes[i], "Ready: "));
+		CHECK(judgement.notes[i].find(expected[i]) != std::string::npos);
+		CHECK(startsWith(judgement.notes[expected.size() + i], "Exploratory: "));
+		CHECK(judgement.notes[expected.size() + i].find(expected[i]) != std::string::npos);
+	}
 }

@@ -1,0 +1,202 @@
+{
+  "version": 2,
+  "nodes": [
+    {
+      "id": "00000000-0000-7000-8000-000000000001",
+      "kind": "groupInput",
+      "name": "GroupInput",
+      "dynamicPins": [
+        {
+          "name": "footage",
+          "type": "ListOfFrameSequence"
+        },
+        {
+          "name": "models",
+          "type": "ListOfCameraModel"
+        }
+      ]
+    },
+    {
+      "id": "00000000-0000-7000-8000-000000000002",
+      "kind": "groupOutput",
+      "name": "GroupOutput",
+      "dynamicPins": [
+        {
+          "name": "report",
+          "type": "RegistrationReport"
+        },
+        {
+          "name": "rig",
+          "type": "RegisteredRig"
+        }
+      ]
+    },
+    {
+      "id": "00000000-0000-7000-8000-000000000003",
+      "kind": "registerCamerasTargetless",
+      "name": "RegisterCamerasTargetless",
+      "params": [
+        {
+          "name": "reference",
+          "type": "string",
+          "value": ""
+        },
+        {
+          "name": "unknownApplicability",
+          "type": "applicabilityPolicy",
+          "value": "Accept"
+        },
+        {
+          "name": "loss",
+          "type": "lossFamily",
+          "value": "Cauchy"
+        },
+        {
+          "name": "lossScale",
+          "type": "float",
+          "value": 3.0
+        },
+        {
+          "name": "fitnessProfile",
+          "type": "string",
+          "value": ""
+        },
+        {
+          "name": "heldOutFraction",
+          "type": "float",
+          "value": 0.20000000298023224
+        },
+        {
+          "name": "resamples",
+          "type": "int",
+          "value": 10
+        },
+        {
+          "name": "seed",
+          "type": "int",
+          "value": 1
+        },
+        {
+          "name": "maximumIterations",
+          "type": "int",
+          "value": 100
+        },
+        {
+          "name": "deterministic",
+          "type": "bool",
+          "value": false
+        },
+        {
+          "name": "longestSide",
+          "type": "int",
+          "value": 1920
+        },
+        {
+          "name": "sampledGroups",
+          "type": "int",
+          "value": 5
+        },
+        {
+          "name": "featureCap",
+          "type": "int",
+          "value": 8192
+        },
+        {
+          "name": "matchSearch",
+          "type": "matchSearch",
+          "value": "Exact"
+        },
+        {
+          "name": "matchRatio",
+          "type": "float",
+          "value": 0.800000011920929
+        },
+        {
+          "name": "inlierAngleMrad",
+          "type": "float",
+          "value": 4.0
+        },
+        {
+          "name": "minimumPairInliers",
+          "type": "int",
+          "value": 15
+        }
+      ]
+    },
+    {
+      "id": "00000000-0000-7000-8000-000000000004",
+      "kind": "registeredRig",
+      "name": "RegisteredRig"
+    }
+  ],
+  "edges": [
+    {
+      "from": {
+        "node": "00000000-0000-7000-8000-000000000001",
+        "port": "footage"
+      },
+      "to": {
+        "node": "00000000-0000-7000-8000-000000000003",
+        "port": "footage"
+      }
+    },
+    {
+      "from": {
+        "node": "00000000-0000-7000-8000-000000000001",
+        "port": "models"
+      },
+      "to": {
+        "node": "00000000-0000-7000-8000-000000000003",
+        "port": "models"
+      }
+    },
+    {
+      "from": {
+        "node": "00000000-0000-7000-8000-000000000003",
+        "port": "report"
+      },
+      "to": {
+        "node": "00000000-0000-7000-8000-000000000004",
+        "port": "report"
+      }
+    },
+    {
+      "from": {
+        "node": "00000000-0000-7000-8000-000000000003",
+        "port": "report"
+      },
+      "to": {
+        "node": "00000000-0000-7000-8000-000000000002",
+        "port": "report"
+      }
+    },
+    {
+      "from": {
+        "node": "00000000-0000-7000-8000-000000000004",
+        "port": "rig"
+      },
+      "to": {
+        "node": "00000000-0000-7000-8000-000000000002",
+        "port": "rig"
+      }
+    }
+  ],
+  "editor": {
+    "00000000-0000-7000-8000-000000000001": {
+      "x": 40.0,
+      "y": 40.0
+    },
+    "00000000-0000-7000-8000-000000000002": {
+      "x": 730.0,
+      "y": 40.0
+    },
+    "00000000-0000-7000-8000-000000000003": {
+      "x": 270.0,
+      "y": 40.0
+    },
+    "00000000-0000-7000-8000-000000000004": {
+      "x": 500.0,
+      "y": 190.0
+    }
+  }
+}

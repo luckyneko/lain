@@ -3,6 +3,7 @@
 #include "lain/camera/board/observation.h"
 #include "lain/camera/board/specification.h"
 #include "lain/camera/provenance.h"
+#include "lain/camera/scalepolicy.h"
 
 #include <lain/core/factory.h>
 #include <lain/core/time.h>
@@ -20,24 +21,14 @@ namespace lain::camera::board
 {
 	// --- the request ------------------------------------------------------------
 
-	// The image scale to look for board features at (CONTEXT.md, "Detection scale policy"). It
-	// changes the cost and maybe the accuracy of finding features, and never the coordinate system
-	// of an observation, which is always the source image's.
-	struct NativeScale // the source resolution
-	{
-	};
-	struct ScaleFactor // a fixed factor in (0, 1]; larger is taken as 1
-	{
-		double factor = 1.0;
-	};
-	struct LongestSide // at most this many pixels on the longer side; never enlarged
-	{
-		std::uint32_t pixels = 1920;
-	};
-	using ScalePolicy = std::variant<NativeScale, ScaleFactor, LongestSide>;
-
-	// The factor a policy asks for on an image of this geometry, in (0, 1].
-	double resolveScale(const ScalePolicy& policy, const ImageGeometry& image);
+	// The scale to look for the board's features at. The policy is the camera module's
+	// (scalepolicy.h), since scene features are found at a scale too; it is named here as well, where
+	// a board detection's callers look for it.
+	using camera::LongestSide;
+	using camera::NativeScale;
+	using camera::resolveScale;
+	using camera::ScaleFactor;
+	using camera::ScalePolicy;
 
 	enum class DetailLevel
 	{

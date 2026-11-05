@@ -1,11 +1,12 @@
-// Unit tests for lain::math::RigidTransform: composition order, inversion, and the matrix door that
-// refuses anything that is not rigid.
+// Unit tests for lain::math::RigidTransform: composition order, inversion, the matrix door that
+// refuses anything that is not rigid, and lookingAt, which aims a frame at a point.
 
 #include "lain/math/rigidtransform.h"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <cmath>
+#include <optional>
 
 using namespace lain::math;
 
@@ -95,4 +96,67 @@ TEST_CASE("fromMatrix refuses a matrix that is not rigid", "[rigidtransform]")
 	Mat4d projective{1.0};
 	projective[2][3] = 0.1; // a non-zero bottom row entry
 	REQUIRE_FALSE(RigidTransformd::fromMatrix(projective).has_value());
+}
+
+// A frame with Z up, as a room is drawn: X right, Y forward.
+static AxisConvention zUp()
+{
+	return *AxisConvention::create(AxisDirection::Right, AxisDirection::Forward, AxisDirection::Up);
+}
+
+TEST_CASE("lookingAt points the camera frame at its target, upright", "[rigidtransform]")
+{
+	const Vec3d position{0, -2, 1};
+	const std::optional<RigidTransformd> camera = lookingAt(position, Vec3d{0, 0, 1}, zUp());
+	REQUIRE(camera.has_value());
+	REQUIRE(near(camera->translation(), position));
+	// The camera frame's right, down and forward, in the reference.
+	REQUIRE(near(camera->rotate(Vec3d{1, 0, 0}), Vec3d{1, 0, 0}));
+	REQUIRE(near(camera->rotate(Vec3d{0, 1, 0}), Vec3d{0, 0, -1}));
+	REQUIRE(near(camera->rotate(Vec3d{0, 0, 1}), Vec3d{0, 1, 0}));
+	REQUIRE(near(camera->apply(Vec3d{0, 0, 2}), Vec3d{0, 0, 1}));
+}
+
+TEST_CASE("lookingAt keeps any aimed frame level and upright", "[rigidtransform]")
+{
+	const Vec3d up{0, 0, 1};
+	const Vec3d position{0.3, -1.7, 2.2}, target{-0.8, 0.9, 0.4};
+	const Vec3d forward = normalize(target - position);
+
+	SECTION("the camera frame")
+	{
+		const std::optional<RigidTransformd> camera = lookingAt(position, target, zUp());
+		REQUIRE(camera.has_value());
+		REQUIRE(near(camera->rotate(Vec3d{0, 0, 1}), forward));
+		REQUIRE(std::abs(dot(camera->rotate(Vec3d{1, 0, 0}), up)) < 1e-15); // right is level
+		REQUIRE(dot(camera->rotate(Vec3d{0, 1, 0}), up) < 0.0);				// down is down
+	}
+	SECTION("the graphics camera frame, looking down -Z")
+	{
+		const std::optional<RigidTransformd> camera =
+			lookingAt(position, target, zUp(), AxisConvention::XRightYUpZBackward());
+		REQUIRE(camera.has_value());
+		REQUIRE(near(camera->rotate(Vec3d{0, 0, -1}), forward));
+		REQUIRE(std::abs(dot(camera->rotate(Vec3d{1, 0, 0}), up)) < 1e-15);
+		REQUIRE(dot(camera->rotate(Vec3d{0, 1, 0}), up) > 0.0);
+	}
+}
+
+TEST_CASE("lookingAt reads up from the reference's convention", "[rigidtransform]")
+{
+	// A reference in the camera frame's own convention has +Y down, so a camera behind the origin
+	// looking along +Z is the identity.
+	const std::optional<RigidTransformd> camera =
+		lookingAt(Vec3d{0, 0, -1}, Vec3d{0.0}, AxisConvention::XRightYDownZForward());
+	REQUIRE(camera.has_value());
+	for (const Vec3d& d : {Vec3d{1, 0, 0}, Vec3d{0, 1, 0}, Vec3d{0, 0, 1}})
+		REQUIRE(near(camera->rotate(d), d));
+}
+
+TEST_CASE("lookingAt refuses where no turn about forward is upright", "[rigidtransform]")
+{
+	const Vec3d p{0.5, 1.0, 2.0};
+	REQUIRE_FALSE(lookingAt(p, p, zUp()).has_value());
+	REQUIRE_FALSE(lookingAt(p, p + Vec3d{0, 0, 3}, zUp()).has_value());
+	REQUIRE_FALSE(lookingAt(p, p - Vec3d{0, 0, 0.5}, zUp()).has_value());
 }

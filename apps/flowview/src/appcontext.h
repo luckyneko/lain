@@ -182,9 +182,9 @@ namespace flowview
 
 		// --- Graph-adjacent metadata (extra data sitting alongside the graph) ---
 		int addCounter = 0; // palette-added nodes cascade their grid position (menu Add + Nodes palette)
-		// The chosen save format per image output pin (the inline dropdown's selection), by format key
-		// ("png" / "jpg" / …). Robust to the savable list changing — an entry not (or no longer) in a
-		// port's list falls back to that list's first format.
+		// The chosen save format per output pin (the inline dropdown's selection), by format key ("png" /
+		// "jpg" / … for an image, "json" for a camera model). Robust to the savable list changing — an
+		// entry not (or no longer) in a port's list falls back to that list's first format.
 		std::map<PinKey, std::string> saveFormat;
 		// How that pin's Save... should encode, per pin for the same reason the format is: two image
 		// outputs of one graph are two different pictures going to two different places. An entry

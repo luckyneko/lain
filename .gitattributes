@@ -3,3 +3,7 @@
 # this, a Windows checkout with core.autocrlf (GitHub's Windows runners set it) turns them CRLF
 # and every built example reads as stale.
 apps/flowview/examples/*.json text eol=lf
+
+# The board registration golden (libs/camera/test/test_registrationgolden.cpp) is compared byte for
+# byte too, for the same reason.
+libs/camera/test/golden/*.txt text eol=lf

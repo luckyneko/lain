@@ -1,9 +1,9 @@
 #pragma once
 
-#include "lain/camera/board/detection.h"
 #include "lain/camera/calibration/fitness.h"
 #include "lain/camera/cameramodel.h"
 #include "lain/camera/distortion.h"
+#include "lain/camera/method.h"
 
 #include <cstdint>
 #include <optional>
@@ -20,13 +20,13 @@ namespace lain::camera::calibration
 		HoldAndValidate, // keep it exactly, and only validate it against the footage
 	};
 
-	enum class ExecutionPolicy
-	{
-		Normal,				// frames and resamples in parallel on the process pool
-		DeterministicDebug, // the same work, serially, in canonical order
-	};
+	// Frames and resamples in parallel on the process pool, or serially in canonical order
+	// (method.h).
+	using camera::ExecutionPolicy;
 
-	// A board calibration request (CONTEXT.md, "Calibration request").
+	// A calibration request (CONTEXT.md, "Calibration request"): what every calibration method is
+	// asked. What only one method uses is an argument of that method's entry point, as board
+	// calibration's detection request is calibration::board::calibrate's.
 	struct Request
 	{
 		// The distortion model to estimate, stated explicitly: automatic selection is opt-in and not
@@ -36,15 +36,19 @@ namespace lain::camera::calibration
 		std::optional<CameraModel> imported;
 		ImportedModelPolicy importedPolicy = ImportedModelPolicy::Ignore;
 
-		std::string fitnessProfile = "reconstruction/1";
+		// The fitness profile the verdict is judged by. Empty is the method's own: reconstruction/1
+		// for a board calibration, reconstruction-targetless/1 for a targetless one. Either profile may
+		// judge either method, since both judge the same criteria. The report records the request
+		// exactly as given, and the profile it resolved to in its thresholds.
+		std::string fitnessProfile;
 		FitnessOverrides overrides;
 
-		camera::board::DetectionRequest detection; // how each frame is searched
-
-		std::uint32_t maximumViews = 30; // calibration views selected, at most
-		double heldOutFraction = 0.2;	 // of the usable views, kept out of estimation to validate on
-		std::uint32_t resamples = 20;	 // bootstrap re-estimations for the stability evidence; 0 skips it
-		std::uint64_t seed = 1;			 // for the resampling draws, recorded in the report
+		// Calibration views selected, at most. Board calibration's alone: a targetless calibration
+		// selects no views, since its frames are the extraction's samples.
+		std::uint32_t maximumViews = 30;
+		double heldOutFraction = 0.2; // of the usable views, or the sampled frames, kept out of estimation to validate on
+		std::uint32_t resamples = 20; // bootstrap re-estimations for the stability evidence; 0 skips it
+		std::uint64_t seed = 1;		  // for the resampling draws and the geometry's sampling, recorded in the report
 
 		ExecutionPolicy execution = ExecutionPolicy::Normal;
 	};

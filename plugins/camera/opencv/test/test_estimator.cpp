@@ -74,7 +74,7 @@ namespace
 		{
 			const double u1 = (double(m_engine() >> 11) + 0.5) / 9007199254740992.0;
 			const double u2 = double(m_engine() >> 11) / 9007199254740992.0;
-			return sigma * std::sqrt(-2 * std::log(u1)) * std::cos(6.283185307179586 * u2);
+			return sigma * std::sqrt(-2 * std::log(u1)) * std::cos(math::two_pi<double>() * u2);
 		}
 
 	private:
@@ -366,9 +366,9 @@ TEST_CASE("footage of a distorted camera calibrates to that camera, end to end",
 		media::FrameSequence::over(std::make_shared<DistortedFootage>(*rendering, spec, truth, 30));
 	Request request;
 	request.resamples = 8;
-	const Report report = method::calibrate(footage, spec, request);
+	const Report report = method::calibrate(footage, spec, cb::DetectionRequest{}, request);
 
-	CHECK(report.diagnostics.framesUsable >= 25);
+	CHECK(std::get<BoardDiagnostics>(report.diagnostics.method).framesUsable >= 25);
 	requireRecovered(report, truth);
 	const auto* heldOut = std::get_if<HeldOutEvidence>(&report.heldOut);
 	REQUIRE(heldOut != nullptr);
@@ -376,5 +376,5 @@ TEST_CASE("footage of a distorted camera calibrates to that camera, end to end",
 	CHECK(heldOut->rmsPixels < 0.25);
 	INFO("notes: " << (report.fitnessNotes.empty() ? std::string("none") : report.fitnessNotes.front()));
 	CHECK(report.verdict == Verdict::Ready);
-	CHECK(report.reproducibility.detector.backend == "opencv");
+	CHECK(std::get<BoardRecord>(report.reproducibility.method).detector.backend == "opencv");
 }

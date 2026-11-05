@@ -4,15 +4,27 @@
 #include "testboard.h"
 
 #include <lain/camera/board/detection.h>
+#include <lain/camera/board/pose.h>
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/calibration/board.h>
 #include <lain/camera/calibration/estimator.h>
+#include <lain/camera/calibration/targetless.h>
+#include <lain/camera/feature/extraction.h>
+#include <lain/camera/feature/features.h>
+#include <lain/camera/feature/geometry.h>
+#include <lain/camera/feature/matching.h>
+#include <lain/camera/feature/sequenceextraction.h>
+#include <lain/camera/refinement/refiner.h>
+#include <lain/camera/registration/board.h>
+#include <lain/camera/registration/targetless.h>
 #include <lain/media/framesequence.h>
 #include <lain/media/framesource.h>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstddef>
 #include <memory>
+#include <variant>
 
 using namespace lain;
 using namespace lain::camera::board;
@@ -67,9 +79,200 @@ TEST_CASE("with no backend, render says the capability is missing", "[camera][bo
 TEST_CASE("with no backend, calibration fails with the missing capability", "[camera][calibration]")
 {
 	const media::FrameSequence footage = media::FrameSequence::over(std::make_shared<StillSource>());
-	const calibration::Report report = calibration::board::calibrate(footage, specification(), {});
+	const calibration::Report report =
+		calibration::board::calibrate(footage, specification(), DetectionRequest{}, calibration::Request{});
 	CHECK(report.status == calibration::CalibrationStatus::Failed);
 	REQUIRE_FALSE(report.failures.empty());
 	CHECK(report.failures[0].failure == calibration::Failure::NoDetector);
 	CHECK_FALSE(calibration::canEstimate());
+	// Nothing was searched, and the record still says what would have been.
+	CHECK(std::get<calibration::BoardRecord>(report.reproducibility.method).detection.has_value());
+}
+
+TEST_CASE("with no backend, a board pose says the capability is missing", "[camera][board]")
+{
+	REQUIRE_FALSE(canSolvePose());
+	camera::CameraModelParameters p;
+	p.image = {64, 48};
+	p.intrinsics = {60.0, 60.0, 31.5, 23.5};
+	const camera::CameraModel model = *camera::CameraModel::create(p).model;
+	Observation view;
+	for (std::uint32_t id = 0; id < 6; ++id)
+		view.features.push_back({id, {10.0 + id, 12.0 + id}, std::nullopt});
+	const PoseResult result = pose(model, specification(), view);
+	CHECK(result.status == PoseStatus::NoBackend);
+	CHECK_FALSE(result.pose.has_value());
+	CHECK(result.detail.find("no board pose solver") != std::string::npos);
+}
+
+TEST_CASE("with no backend, a held model fails for want of a pose solver", "[camera][calibration]")
+{
+	camera::CameraModelParameters p;
+	p.image = {64, 48};
+	p.intrinsics = {60.0, 60.0, 31.5, 23.5};
+	calibration::Request request;
+	request.imported = *camera::CameraModel::create(p).model;
+	request.importedPolicy = calibration::ImportedModelPolicy::HoldAndValidate;
+	const calibration::Report report = calibration::board::calibrate({}, {64, 48}, specification(), request);
+	CHECK(report.status == calibration::CalibrationStatus::Failed);
+	REQUIRE_FALSE(report.failures.empty());
+	CHECK(report.failures[0].failure == calibration::Failure::NoPoseSolver);
+	// No detection was given, so none says how it was searched for.
+	CHECK_FALSE(std::get<calibration::BoardRecord>(report.reproducibility.method).detection.has_value());
+}
+
+TEST_CASE("with no backend, a refinement says the capability is missing", "[camera][refinement]")
+{
+	namespace refinement = lain::camera::refinement;
+	REQUIRE_FALSE(refinement::canRefine());
+	const refinement::Solution solution = refinement::refine(refinement::Problem{});
+	CHECK(solution.status == refinement::Status::NoBackend);
+	CHECK_FALSE(solution.usable());
+	// Calibration and registration both read it, so it names neither.
+	CHECK(solution.detail.find("no refiner") != std::string::npos);
+	CHECK(solution.detail.find("LAIN_CAMERA_CERES") != std::string::npos);
+	// Nor can it estimate any model.
+	for (std::size_t m = 0; m < std::variant_size_v<lain::camera::Distortion>; ++m)
+	{
+		const lain::camera::DistortionModel model = lain::camera::DistortionModel(m);
+		INFO(lain::camera::displayName(model));
+		CHECK_FALSE(refinement::canEstimate(model));
+	}
+}
+
+TEST_CASE("with no backend, a registration fails for want of a pose solver, or a detector", "[camera][registration]")
+{
+	namespace registration = lain::camera::registration;
+	camera::CameraModelParameters p;
+	p.image = {64, 48};
+	p.intrinsics = {60.0, 60.0, 31.5, 23.5};
+	const camera::CameraModel model = *camera::CameraModel::create(p).model;
+	const std::vector<registration::board::RigCamera> cameras{{camera::capture::CameraIdentity{"a"}, model},
+															  {camera::capture::CameraIdentity{"b"}, model}};
+	const registration::Report fromDetections =
+		registration::board::registerCameras(cameras, {}, specification(), registration::Request{});
+	REQUIRE(fromDetections.status == registration::RegistrationStatus::Failed);
+	CHECK(fromDetections.failures.front().failure == registration::Failure::NoPoseSolver);
+	// No detection was given, so none says how it was searched for.
+	CHECK_FALSE(std::get<registration::BoardRecord>(fromDetections.reproducibility.method).detection.has_value());
+
+	const media::FrameSequence footage = media::FrameSequence::over(std::make_shared<StillSource>());
+	const std::vector<registration::board::RigFootage> rig{{camera::capture::CameraIdentity{"a"}, model, footage},
+														   {camera::capture::CameraIdentity{"b"}, model, footage}};
+	camera::board::DetectionRequest search;
+	search.minimumCorners = 9;
+	const registration::Report fromFootage =
+		registration::board::registerCameras(rig, {}, specification(), search, registration::Request{});
+	REQUIRE(fromFootage.status == registration::RegistrationStatus::Failed);
+	CHECK(fromFootage.failures.front().failure == registration::Failure::NoDetector);
+	CHECK(fromFootage.failures.front().detail.find("no board detector") != std::string::npos);
+	// Refused before a frame was decoded, and still saying what it would have searched with.
+	const auto& searched = std::get<registration::BoardRecord>(fromFootage.reproducibility.method).detection;
+	REQUIRE(searched.has_value());
+	CHECK(searched->minimumCorners == 9);
+}
+
+TEST_CASE("with no backend, a targetless registration fails for want of an extractor, or a geometry solver",
+		  "[camera][registration]")
+{
+	namespace registration = lain::camera::registration;
+	camera::CameraModelParameters p;
+	p.image = {64, 48};
+	p.intrinsics = {60.0, 60.0, 31.5, 23.5};
+	const camera::CameraModel model = *camera::CameraModel::create(p).model;
+	const std::vector<registration::RigCamera> cameras{{camera::capture::CameraIdentity{"a"}, model},
+													   {camera::capture::CameraIdentity{"b"}, model}};
+	camera::feature::TrackSet tracks;
+	tracks.views = {{camera::capture::CameraIdentity{"a"}, {64, 48}, {}}, {camera::capture::CameraIdentity{"b"}, {64, 48}, {}}};
+	const registration::Report fromTracks = registration::targetless::registerCameras(cameras, tracks, registration::Request{});
+	REQUIRE(fromTracks.status == registration::RegistrationStatus::Failed);
+	CHECK(fromTracks.failures.front().failure == registration::Failure::NoGeometrySolver);
+
+	const media::FrameSequence footage = media::FrameSequence::over(std::make_shared<StillSource>());
+	const std::vector<registration::RigFootage> rig{{camera::capture::CameraIdentity{"a"}, model, footage},
+													{camera::capture::CameraIdentity{"b"}, model, footage}};
+	camera::feature::ExtractionRequest extraction;
+	extraction.samples = 3;
+	const registration::Report fromFootage =
+		registration::targetless::registerCameras(rig, {}, extraction, registration::Request{});
+	REQUIRE(fromFootage.status == registration::RegistrationStatus::Failed);
+	CHECK(fromFootage.failures.front().failure == registration::Failure::NoFeatureExtractor);
+	CHECK(fromFootage.failures.front().detail.find("no feature extractor") != std::string::npos);
+	// Refused before a frame was decoded, and still saying what it would have extracted with.
+	const auto& asRun = std::get<registration::TargetlessRecord>(fromFootage.reproducibility.method).extraction;
+	REQUIRE(asRun.has_value());
+	CHECK(asRun->samples == 3);
+}
+
+TEST_CASE("with no backend, a targetless calibration fails for want of an extractor, or a geometry solver",
+		  "[camera][calibration]")
+{
+	namespace targetless = lain::camera::calibration::targetless;
+	const media::FrameSequence footage = media::FrameSequence::over(std::make_shared<StillSource>());
+	targetless::Settings settings;
+	settings.extraction.samples = 3;
+	const calibration::Report fromFootage = targetless::calibrate(
+		camera::capture::CameraFootage{camera::capture::CameraIdentity{"a"}, footage}, settings, calibration::Request{});
+	REQUIRE(fromFootage.status == calibration::CalibrationStatus::Failed);
+	CHECK(fromFootage.failures.front().failure == calibration::Failure::NoFeatureExtractor);
+	CHECK(fromFootage.failures.front().detail.find("no feature extractor") != std::string::npos);
+	// Refused before a frame was decoded, and still saying what it would have extracted with.
+	CHECK(std::get<calibration::TargetlessRecord>(fromFootage.reproducibility.method).settings.extraction.samples == 3);
+
+	// Tracks already extracted need no extractor, but every frame must still be posed.
+	camera::feature::TrackSet tracks;
+	for (std::size_t k = 0; k < 3; ++k)
+	{
+		media::FrameRef frame;
+		frame.source = core::Uri{"/still"};
+		frame.ordinal = k;
+		tracks.views.push_back({camera::capture::CameraIdentity{"a"}, {64, 48}, {frame}});
+	}
+	const calibration::Report fromTracks = targetless::calibrate(tracks, targetless::Settings{}, calibration::Request{});
+	REQUIRE(fromTracks.status == calibration::CalibrationStatus::Failed);
+	CHECK(fromTracks.failures.front().failure == calibration::Failure::NoGeometrySolver);
+}
+
+TEST_CASE("with no backend, the feature facades say the capability is missing", "[camera][feature]")
+{
+	namespace feature = lain::camera::feature;
+	CHECK_FALSE(feature::canExtract());
+	CHECK_FALSE(feature::canMatch());
+	CHECK_FALSE(feature::canSolveGeometry());
+
+	const feature::ExtractResult extracted = feature::extract(image::Image{64, 48, image::PixelFormat::Gray8});
+	CHECK(extracted.status == feature::Status::NoBackend);
+	CHECK(extracted.detail.find("LAIN_CAMERA_OPENCV") != std::string::npos);
+
+	feature::Features features;
+	features.kind = "sift";
+	CHECK(feature::match(features, features).status == feature::Status::NoBackend);
+
+	const std::vector<feature::RayPair> pairs(5);
+	CHECK(feature::relativePose(pairs).status == feature::Status::NoBackend);
+	const std::vector<feature::PointRay> pointRays(4);
+	CHECK(feature::absolutePose(pointRays).status == feature::Status::NoBackend);
+	const std::vector<feature::PixelPair> pixelPairs(8);
+	const feature::FundamentalResult fundamental = feature::fundamental(pixelPairs);
+	CHECK(fundamental.status == feature::Status::NoBackend);
+	CHECK(fundamental.detail.find("LAIN_CAMERA_OPENCV") != std::string::npos);
+	const feature::HomographyResult homography = feature::homography(std::vector<feature::PixelPair>(4));
+	CHECK(homography.status == feature::Status::NoBackend);
+	CHECK(homography.detail.find("LAIN_CAMERA_OPENCV") != std::string::npos);
+}
+
+TEST_CASE("with no backend, track extraction says the capability is missing", "[camera][feature]")
+{
+	namespace feature = lain::camera::feature;
+	// Refused before anything about the dataset is asked: a build with no extractor cannot extract.
+	const feature::ExtractionResult extracted = feature::extractTracks({}, {});
+	CHECK(extracted.status == feature::Status::NoBackend);
+	CHECK(extracted.detail.find("no feature extractor") != std::string::npos);
+	CHECK(extracted.trackSet.tracks.empty());
+
+	// A moving camera's extraction the same: no footage is looked at.
+	const feature::SequenceExtractionResult sequence = feature::extractSequenceTracks({});
+	CHECK(sequence.status == feature::Status::NoBackend);
+	CHECK(sequence.detail.find("no feature extractor") != std::string::npos);
+	CHECK(sequence.trackSet.tracks.empty());
 }

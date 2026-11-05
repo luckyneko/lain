@@ -28,6 +28,10 @@ namespace flowview::examples
 		// loads whole (a kind is vocabulary, ADR-0016 amended) and its nodes report the missing backend
 		// when run, exactly as needsVideo's do. Last, so the entries that do not need it need not say so.
 		bool needsCamera = false;
+		// Its boundary inputs are the caller's to bind (footage, a method), and unbound it attempts
+		// nothing, so the example test loads it and checks every input can be bound from a command line
+		// rather than running it. A vertical runs it, with what it needs bound.
+		bool needsInputs = false;
 	};
 
 	// Every example, in the order they are written. A linked template precedes the documents that

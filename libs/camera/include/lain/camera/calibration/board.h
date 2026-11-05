@@ -15,19 +15,24 @@
 // so it is the same whichever backend runs.
 namespace lain::camera::calibration::board
 {
-	// Calibrate a camera from footage of a known board: detect it in every frame, hold some usable
-	// views out, select calibration views from the rest, estimate through the registered backend,
-	// validate on the held-out views with lain's own projection, resample for stability, and give a
-	// verdict. Always a report, successful or failed.
+	// Calibrate a camera from footage of a known board: detect it in every frame, searching as
+	// `detection` says, hold some usable views out, select calibration views from the rest, estimate
+	// through the registered backend, validate on the held-out views with lain's own projection,
+	// resample for stability, and give a verdict. Always a report, successful or failed, whose
+	// BoardRecord holds `detection` even when nothing was decoded.
 	//
+	// Every check that needs no frame comes first, so a request that cannot succeed decodes nothing.
 	// Frames are decoded one per task and released, so memory is a frame per worker however long
 	// the footage is. With ExecutionPolicy::DeterministicDebug the same work runs serially.
 	Report calibrate(const media::FrameSequence& footage, const camera::board::Specification& board,
-					 const Request& request);
+					 const camera::board::DetectionRequest& detection, const Request& request);
 
 	// The same from detections already made: one report per frame, measured in `image`. What
 	// calibrate(footage) does after detecting; useful on its own to calibrate stored detections again
 	// with another model or profile without decoding a frame.
+	//
+	// It searches nothing, so it takes no detection request: the report's BoardRecord holds what the
+	// first detection reports it was made with, as it holds that detection's detector.
 	Report calibrate(const std::vector<camera::board::DetectionReport>& detections, const ImageGeometry& image,
 					 const camera::board::Specification& board, const Request& request);
 
@@ -45,8 +50,10 @@ namespace lain::camera::calibration::board
 	ViewSplit splitViews(const std::vector<camera::board::DetectionReport>& detections,
 						 const camera::board::Specification& board, const Request& request);
 
-	// The fraction of an 8 x 6 grid over `image` in which at least one of the views has a corner.
-	constexpr int kCoverageColumns = 8;
-	constexpr int kCoverageRows = 6;
+	// The fraction of the coverage grid over `image` (calibration/fitness.h, 8 x 6) in which at least
+	// one of the views has a corner. Every calibration method counts coverage on that one grid; it is
+	// named here too, where board calibration's callers look for it.
+	using calibration::kCoverageColumns;
+	using calibration::kCoverageRows;
 	double coverage(const std::vector<const camera::board::Observation*>& views, const ImageGeometry& image);
 } // namespace lain::camera::calibration::board

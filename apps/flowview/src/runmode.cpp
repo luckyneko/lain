@@ -1,5 +1,6 @@
 #include "runmode.h"
 
+#include "camerafiles.h" // saveCameraModel / saveRegisteredRig — a model or rig output's document
 #include "clibinders.h"
 #include "dump.h"
 #include "framepattern.h"
@@ -7,7 +8,6 @@
 #include "scene.h"
 #include "validation.h" // collectFailures — the Issues pane's failure rows, reused for stderr
 
-#include <lain/camera/serialize/cameramodel.h> // cameraModelToValue — a model output's document
 #include <lain/flow/boundary.h>
 #include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
@@ -127,6 +127,16 @@ namespace flowview
 		}
 	}
 
+	// A type's accepted spellings as one line, "board | targetless | board-then-targetless": what `list`
+	// prints after an enum input's type, and what a refused value is told it could have been.
+	static std::string choiceList(const std::vector<std::string>& choices)
+	{
+		std::string line;
+		for (const std::string& choice : choices)
+			line += (line.empty() ? "" : " | ") + choice;
+		return line;
+	}
+
 	// Bind one boundary input from a cli value via the type's registered binder. A failed parse and
 	// an unbindable type are distinct diagnostics.
 	static bool bindBoundaryInput(flow::Evaluation& evaluation, const flow::BoundaryInput& in,
@@ -138,11 +148,54 @@ namespace flowview
 			return true;
 		}
 		if (binders.has(in.type))
-			log::error("flowview: could not parse '{}' for --{} as {}", value, in.name, in.typeName);
+		{
+			const std::vector<std::string>& choices = binders.spellings(in.type);
+			if (choices.empty())
+				log::error("flowview: could not parse '{}' for --{} as {}", value, in.name, in.typeName);
+			else
+				log::error("flowview: could not parse '{}' for --{} as {}: one of {}", value, in.name, in.typeName,
+						   choiceList(choices));
+		}
 		else
 			log::error("flowview: --{} has type {}, which is not cli-bindable", in.name, in.typeName);
 		return false;
 	}
+
+	// The folders a run binds a rig's footage and its models from (camerafiles.h), the inputs found BY
+	// TYPE as a sweep's frame positions are. The registration nodes pair the two collections by position,
+	// and both folders list their cameras in name order, so position is name exactly when the folders
+	// name the same cameras. A camera one names and the other does not leaves the rest paired wrongly
+	// whenever the counts still agree, so paired() names each and refuses the run. Asked only when the run
+	// binds exactly one of each: with two of either, which goes with which is the graph's to say, not the
+	// command line's.
+	struct RigFolders
+	{
+		std::vector<std::pair<std::string, std::string>> footage; // {input name, folder}
+		std::vector<std::pair<std::string, std::string>> models;  // {input name, folder}
+
+		void note(const flow::BoundaryInput& in, const std::string& folder)
+		{
+			if (in.type == typeid(std::vector<media::FrameSequence>))
+				footage.emplace_back(in.name, folder);
+			else if (in.type == typeid(std::vector<camera::CameraModel>))
+				models.emplace_back(in.name, folder);
+		}
+
+		// False, with each camera that has no partner logged, when the run's one rig does not pair by name.
+		bool paired() const
+		{
+			if (footage.size() != 1 || models.size() != 1)
+				return true;
+			const std::vector<std::string> unpaired = unpairedCameras(footage.front().second, models.front().second);
+			if (unpaired.empty())
+				return true;
+			for (const std::string& problem : unpaired)
+				log::error("flowview: {}", problem);
+			log::error("flowview: --{} and --{} do not name the same cameras, so they cannot be paired — nothing was run",
+					   footage.front().first, models.front().first);
+			return false;
+		}
+	};
 
 	// The boundary inputs a sweep drives. Found BY TYPE, never by pin name: a magic name breaks the
 	// moment a linked group renames its interface, and being able to find the loop counter without
@@ -227,9 +280,19 @@ namespace flowview
 		// file has to hold the model and not a summary of it.
 		if (delivered.holds<camera::CameraModel>())
 		{
-			if (io::data::save(path, camera::cameraModelToValue(delivered.get<camera::CameraModel>())))
+			if (saveCameraModel(path, delivered.get<camera::CameraModel>()))
 				return true;
 			log::error("flowview: could not write --{} camera model to {}", out.name, path);
+			return false;
+		}
+
+		// A registered rig likewise, as a rig DOCUMENT: every camera's transform is what a registration
+		// is run for, and its report's one line holds none of them.
+		if (delivered.holds<camera::registration::RegisteredRig>())
+		{
+			if (saveRegisteredRig(path, delivered.get<camera::registration::RegisteredRig>()))
+				return true;
+			log::error("flowview: could not write --{} rig to {}", out.name, path);
 			return false;
 		}
 
@@ -637,6 +700,7 @@ namespace flowview
 		const std::vector<flow::BoundaryInput> positions = framePositionInputs(graph);
 
 		int status = 0;
+		RigFolders rigFolders;
 
 		// Bind inputs from --<name>; an unbound image input on the example gets a default gradient
 		// (so it runs out of the box), on a loaded graph is left empty with a warning.
@@ -647,6 +711,8 @@ namespace flowview
 			{
 				if (!bindBoundaryInput(evaluation, in, arg->second, binders))
 					status = 1;
+				else
+					rigFolders.note(in, arg->second);
 				args.erase(arg);
 			}
 			else if (options.graphPath.empty() && bindDefaultInput(in, evaluation, options.exampleSize))
@@ -662,6 +728,11 @@ namespace flowview
 				log::warn("flowview: input --{} not bound — leaving it empty", in.name);
 			}
 		}
+
+		// Refused before anything runs or is written, as a document that did not load whole is: run, it
+		// would register cameras with each other's models.
+		if (!rigFolders.paired())
+			return 1;
 
 		// Collect the output bindings once — which boundary outputs were asked for, and where.
 		std::vector<std::pair<flow::BoundaryOutput, std::string>> writes;
@@ -738,6 +809,8 @@ namespace flowview
 			std::cout << "  --" << in.name << " : " << in.typeName;
 			if (!binders.has(in.type))
 				std::cout << "  (not cli-bindable)";
+			else if (!binders.spellings(in.type).empty())
+				std::cout << "  (" << choiceList(binders.spellings(in.type)) << ")";
 			std::cout << "\n";
 		}
 		std::cout << "outputs:\n";

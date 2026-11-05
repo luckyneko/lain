@@ -1,7 +1,5 @@
 #include "opencvestimator.h"
 
-#include <lain/camera/projection.h>
-
 #include <opencv2/calib3d.hpp>
 #include <opencv2/core/utility.hpp>
 
@@ -157,49 +155,5 @@ namespace lain::camera::opencv
 			out.failure = std::string("OpenCV could not calibrate: ") + e.what();
 		}
 		return out;
-	}
-
-	std::optional<math::RigidTransformd> OpenCVEstimator::boardPose(const CameraModel& model,
-																	const board::Specification& board,
-																	const board::Observation& view) const
-	{
-		// Pinhole normalised coordinates of each corner's ray, through lain's own model.
-		std::vector<cv::Point3d> objects;
-		std::vector<cv::Point2d> normalised;
-		for (const board::FeatureObservation& f : view.features)
-		{
-			const std::optional<math::Vec3d> p = board.cornerPosition(f.id);
-			const Unprojection<double> ray = unproject(model, f.pixel.x, f.pixel.y);
-			if (!p || !ray.ok())
-				continue;
-			objects.emplace_back(p->x, p->y, p->z);
-			normalised.emplace_back(ray.x / ray.z, ray.y / ray.z);
-		}
-		if (objects.size() < 4)
-			return std::nullopt;
-
-		try
-		{
-			// IPPE is exact for a planar target; a Levenberg-Marquardt pass then refines it.
-			cv::Vec3d rotation, translation;
-			const cv::Matx33d identity = cv::Matx33d::eye();
-			if (!cv::solvePnP(objects, normalised, identity, cv::noArray(), rotation, translation, false, cv::SOLVEPNP_IPPE))
-				return std::nullopt;
-			cv::solvePnPRefineLM(objects, normalised, identity, cv::noArray(), rotation, translation);
-
-			cv::Matx33d r;
-			cv::Rodrigues(rotation, r);
-			math::Mat3d m; // GLM is column-major: m[column][row]
-			for (int row = 0; row < 3; ++row)
-			{
-				for (int col = 0; col < 3; ++col)
-					m[col][row] = r(row, col);
-			}
-			return math::RigidTransformd{math::quat_cast(m), math::Vec3d{translation[0], translation[1], translation[2]}};
-		}
-		catch (const cv::Exception&)
-		{
-			return std::nullopt;
-		}
 	}
 } // namespace lain::camera::opencv

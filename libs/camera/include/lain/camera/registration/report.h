@@ -1,0 +1,317 @@
+#pragma once
+
+#include "lain/camera/board/detection.h"
+#include "lain/camera/cameramodel.h"
+#include "lain/camera/capture/capturegroup.h"
+#include "lain/camera/feature/extraction.h"
+#include "lain/camera/feature/tracks.h"
+#include "lain/camera/method.h"
+#include "lain/camera/provenance.h"
+#include "lain/camera/registration/fitness.h"
+#include "lain/camera/registration/refiner.h"
+#include "lain/camera/registration/request.h"
+
+#include <lain/core/time.h>
+#include <lain/math/rigidtransform.h>
+
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <utility>
+#include <variant>
+#include <vector>
+
+namespace lain::camera::registration
+{
+	enum class RegistrationStatus
+	{
+		Succeeded, // every camera has a registered transform; the verdict says what it is fit for
+		Failed,	   // none is authoritative
+	};
+
+	enum class Failure
+	{
+		NoDetector,					// this build cannot detect boards
+		NoPoseSolver,				// this build cannot solve board poses
+		NoFeatureExtractor,			// this build cannot extract features
+		NoFeatureMatcher,			// this build cannot match features
+		NoGeometrySolver,			// this build cannot pose cameras from rays
+		NoRefiner,					// this build has no global refinement
+		UnknownFitnessProfile,		// the request names a profile this build does not know
+		IncompatibleFitnessProfile, // the profile counts another method's evidence unit
+		InvalidDataset,				// two cameras with one identity, a member of no camera, a frame its footage lacks
+		IncompatibleModel,			// a camera model's geometry is not its footage's
+		UnknownApplicability,		// a model's applicability is Unknown and the request refuses that
+		UnknownReference,			// the requested reference camera is not in the dataset
+		TooFewCameras,				// fewer than two cameras share any evidence
+		Disconnected,				// the camera graph falls apart into components, or a camera cannot be placed
+		InitialisationFailed,		// a relative pose could not be estimated
+		RefinementFailed,			// the global refinement produced no usable solution
+		ResourceExhausted,			// the machine ran out of memory
+		ExtractionFailed,			// feature-track extraction refused or failed, not for its dataset
+	};
+
+	struct FailureReason
+	{
+		Failure failure;
+		std::string detail;
+	};
+
+	// Whether the registered translations are in metres, or share one arbitrary scale (CONTEXT.md,
+	// "Registration scale status"). Board registration is metric: the board's measurement is the
+	// evidence, and `evidence` names it.
+	enum class Scale
+	{
+		Metric,
+		Arbitrary,
+	};
+
+	struct ScaleStatus
+	{
+		Scale scale = Scale::Arbitrary;
+		std::string evidence;
+	};
+
+	// One camera's registered transform (CONTEXT.md, "Registered camera transform"): referenceFromCamera
+	// only, its inverse derived where needed.
+	struct RegisteredCamera
+	{
+		capture::CameraIdentity camera;
+		math::RigidTransformd referenceFromCamera;
+	};
+
+	// What a successful registration found, apart from how well (CONTEXT.md, "Registered rig"): every
+	// camera's transform, the reference they are relative to, and whether their translations are
+	// metric. What leaves a registration as a rig document (lain::camera::serialize, registeredrig.h);
+	// whether it is fit for use is the report's to say, as a camera model's is.
+	struct RegisteredRig
+	{
+		capture::CameraIdentity reference; // one of `cameras`, its transform the identity
+		ScaleStatus scale;
+		std::vector<RegisteredCamera> cameras; // ascending by identity
+
+		// `camera`'s registered transform, or nullopt when it is not in the rig.
+		std::optional<math::RigidTransformd> referenceFromCamera(const capture::CameraIdentity& camera) const;
+
+		// One line for a person: the reference and the scale, then each camera's position and how far
+		// it is turned from the reference.
+		std::string toString() const;
+	};
+
+	// What each camera brought to the registration, and how well the result explains it. An
+	// observation is one camera's view of one evidence unit; a residual is one point of it: a board
+	// corner, or a track's member.
+	struct CameraEvidence
+	{
+		capture::CameraIdentity camera;
+		Applicability applicability = Applicability::Unknown;
+		std::uint32_t shared = 0;	 // evidence units it shares with another camera
+		std::uint32_t residuals = 0; // residuals it contributed to the refinement
+		std::uint32_t outliers = 0;	 // of its observations
+		double rmsPixels = 0;		 // fitted residuals, raw, for diagnosis
+		double rmsAngle = 0;		 // radians
+	};
+
+	struct GraphEdgeReport
+	{
+		capture::CameraIdentity a;
+		capture::CameraIdentity b;
+		std::uint32_t shared = 0; // evidence units the two cameras share
+		bool bridge = false;
+	};
+
+	// One connected component's cameras, placed relative to its own first camera. Only for a
+	// disconnected dataset, and only as a diagnostic: a registration is the whole rig or nothing.
+	struct ComponentEstimate
+	{
+		capture::CameraIdentity reference;
+		std::vector<RegisteredCamera> cameras;
+	};
+
+	// An observation whose backend-ranked pose was the wrong one of a planar target's two: the
+	// other cameras of its group agreed with the alternative (CONTEXT.md, "Pose solver").
+	struct FlipChoice
+	{
+		std::string group;
+		capture::CameraIdentity camera;
+	};
+
+	// An observation the result does not explain: its RMS whitened residual exceeds the loss scale.
+	struct Outlier
+	{
+		std::string unit; // the evidence unit's identity: a capture group's, or a track's
+		capture::CameraIdentity camera;
+		double rmsWhitened = 0; // standard deviations
+	};
+
+	// One camera's share of the held-out evidence: the members it saw, and how well they were predicted.
+	struct HeldOutCamera
+	{
+		capture::CameraIdentity camera;
+		std::uint32_t predictions = 0; // its members predicted
+		std::uint32_t residuals = 0;   // their points
+		double robustAngle = 0;		   // radians: its held-out residual, median-based, as HeldOutEvidence's
+		double rmsAngle = 0;		   // radians: its RMS transfer residual, for diagnosis only
+	};
+
+	// The registration checked against evidence that took no part in it: each member of a held-out
+	// unit predicted from the others (CONTEXT.md, "Held-out group", "Held-out track").
+	//
+	// What fitness judges is robustAngle, taken from medians (2026-10-20): for each kind of member (a track
+	// member against its predicted point, against an epipolar plane, or a board view), the median of its
+	// members' mean squared residual per point, times the mean-to-median ratio that kind's residual has
+	// when its errors are normal, the kinds weighted by their points. So for normal errors it equals
+	// rmsAngle, and a few wrong members cannot decide it: one wrong held-out track used to fail a Ready
+	// registration about one run in three. On SIFT features held-out residuals are heavy-tailed, since a
+	// feature's precision follows its size, so robustAngle reads well under rmsAngle there: 0.23 to 0.31
+	// mrad against 0.64 to 0.91 on correct rendered rigs, while a camera turned 5 mrad reads 2.9 to 9.0.
+	// No member is classed an outlier: every per-member rule tried flagged about a fifth of a correct
+	// rig's members on those features (WORK.md, M9's 2026-10-20 review).
+	struct HeldOutEvidence
+	{
+		std::uint32_t units = 0;
+		std::uint32_t predictions = 0; // members predicted
+		std::uint32_t unpredicted = 0; // members the others could not predict (no board pose, no landmark)
+		std::uint32_t residuals = 0;   // points predicted
+		// Of the predictions, those scored against an epipolar plane rather than a predicted point: a
+		// two-member track's (validation.h). Each counts twice in the RMS angles, since its residual
+		// has one degree of freedom where a transfer residual has two.
+		std::uint32_t epipolar = 0;
+		double robustAngle = 0; // radians: the held-out transfer residual, median-based, which fitness judges
+		double rmsAngle = 0;	// radians: the RMS transfer residual, for diagnosis
+		double rmsPixels = 0;	// raw, for diagnosis only, over the predictions with a predicted pixel
+		double worstPixels = 0;
+		std::vector<HeldOutCamera> perCamera; // the cameras with a member predicted, in identity order
+	};
+
+	// How much the registration moves when its evidence units are resampled with replacement. Each
+	// camera's spread is the median of its resamples' distances from the result, scaled to equal their
+	// RMS distance for normally scattered resamples (2026-10-20), so one poorly conditioned resample
+	// cannot decide it.
+	struct ResamplingEvidence
+	{
+		std::uint32_t resamples = 0;			 // that produced a registration
+		double rotationVariation = 0;			 // radians: the worst camera's rotation spread about the result
+		double translationVariation = 0;		 // the worst camera's translation spread over the median observation depth
+		double translationVariationAbsolute = 0; // the same in the registration's units, for diagnosis
+		capture::CameraIdentity worstCamera;
+	};
+
+	// One capture group's detections, for diagnosis and debug views.
+	struct GroupDetections
+	{
+		std::string group;
+		std::vector<std::pair<capture::CameraIdentity, camera::board::DetectionReport>> members;
+	};
+
+	// What a board registration examined, beside what every registration reports.
+	struct BoardDiagnostics
+	{
+		std::uint32_t groupsExamined = 0;
+		std::uint32_t groupsUsable = 0; // with a posed board in two or more cameras
+		std::uint32_t observations = 0; // camera-group observations with a usable detection
+		std::uint32_t withoutPose = 0;	// of those, no board pose could be solved
+		std::vector<FlipChoice> flips;
+		std::vector<GroupDetections> detections; // in canonical group order
+	};
+
+	// What a targetless registration examined, beside what every registration reports.
+	struct TargetlessDiagnostics
+	{
+		std::uint32_t tracks = 0;						  // given
+		std::uint32_t tracksUsable = 0;					  // with two or more observations whose pixels unproject
+		std::uint32_t landmarks = 0;					  // fitting tracks triangulated and refined
+		std::uint32_t untriangulated = 0;				  // fitting tracks that never became a refined landmark
+		std::uint32_t behind = 0;						  // observations left out of the refinement: behind their camera, or unprojectable
+		std::vector<capture::CameraIdentity> seed;		  // the two cameras initialisation started from
+		double seedAngle = 0;							  // their median triangulation angle, radians
+		bool seedBelowFloor = false;					  // no pair cleared the floor, so the widest seeded
+		std::vector<capture::CameraIdentity> placement;	  // the cameras in the order they were placed, the seed first
+		std::vector<capture::CameraIdentity> unplaceable; // the cameras no seed could reach, when the rig failed so
+		// When this registration extracted its tracks: what extraction reported, and the tracks, so a
+		// comparison can validate on them without extracting again.
+		std::optional<feature::ExtractionReport> extraction;
+		std::optional<feature::TrackSet> trackSet;
+	};
+
+	// What every registration reports about how it got its result, and in `method`, what its method
+	// alone examined.
+	struct Diagnostics
+	{
+		std::vector<GraphEdgeReport> edges;
+		std::vector<std::vector<capture::CameraIdentity>> components;
+		std::vector<GraphEdgeReport> weakBridges; // against the Ready tier's minimumBridgeShared
+		std::vector<ComponentEstimate> componentEstimates;
+		std::vector<Outlier> outliers;
+		std::optional<RefinementSummary> refinement;
+		std::vector<CameraEvidence> cameras;   // ascending by identity
+		std::vector<std::string> heldOutUnits; // their identities, in canonical order
+		double medianDepth = 0;				   // in the registration's units: what translation variation is relative to
+		std::variant<BoardDiagnostics, TargetlessDiagnostics> method;
+	};
+
+	// What a board registration searched with and solved by, beside what every registration records.
+	struct BoardRecord
+	{
+		Provenance detector;
+		Provenance poseSolver;
+		// What the frames were searched with: the footage overload's argument, or what the first
+		// given detection reports. Unset when no detection was given and none was made.
+		std::optional<camera::board::DetectionRequest> detection;
+	};
+
+	// What a targetless registration posed with and extracted by, beside what every registration records.
+	struct TargetlessRecord
+	{
+		Provenance geometry; // what proposed the initial poses
+		// When this registration extracted its tracks: the backends that answered, and the request as
+		// run, its execution policy the registration's.
+		Provenance extractor;
+		Provenance matcher;
+		std::optional<feature::ExtractionRequest> extraction;
+	};
+
+	// What a report needs to be repeated (CONTEXT.md, "Reproducibility record"): what every
+	// registration records, and in `method`, what its method alone does.
+	struct Reproducibility
+	{
+		std::vector<std::string> sources; // the canonical uri of every source the frames came from
+		std::uint32_t frames = 0;
+		Provenance refiner;
+		Request request; // exactly as given
+		std::variant<BoardRecord, TargetlessRecord> method;
+	};
+
+	// The result of a fixed-camera registration, successful or not (CONTEXT.md, "Registration report").
+	struct Report
+	{
+		RegistrationStatus status = RegistrationStatus::Failed;
+		std::vector<FailureReason> failures;
+
+		std::optional<capture::CameraIdentity> reference;
+		bool referenceRequested = false;	   // chosen by the request, rather than automatically
+		std::vector<RegisteredCamera> cameras; // ascending by identity; empty unless Succeeded
+		ScaleStatus scale;
+
+		Verdict verdict = Verdict::Rejected;
+		std::vector<std::string> fitnessNotes; // each criterion a better verdict would have needed
+		FitnessProfile thresholds;			   // fully resolved, overrides applied
+
+		std::variant<HeldOutEvidence, Unavailable> heldOut = Unavailable{"not computed"};
+		std::variant<ResamplingEvidence, Unavailable> resampling = Unavailable{"not computed"};
+
+		Diagnostics diagnostics;
+		Reproducibility reproducibility;
+		core::Time elapsed;
+
+		// `camera`'s registered transform, or nullopt when it has none.
+		std::optional<math::RigidTransformd> referenceFromCamera(const capture::CameraIdentity& camera) const;
+
+		// The rig this registration found, whatever its verdict, or nullopt unless it Succeeded.
+		std::optional<RegisteredRig> rig() const;
+
+		// One line for a person: the verdict, the cameras and the evidence; or the first reason
+		// there is no registration.
+		std::string toString() const;
+	};
+} // namespace lain::camera::registration

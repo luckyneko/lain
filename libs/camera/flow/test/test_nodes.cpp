@@ -10,6 +10,7 @@
 #include <lain/camera/flow/calibratecameranode.h>
 #include <lain/camera/flow/cameramodelnode.h>
 #include <lain/camera/flow/detectboardnode.h>
+#include <lain/camera/flow/registeredrignode.h>
 #include <lain/camera/flow/renderboardnode.h>
 #include <lain/flow/boundary.h>
 #include <lain/flow/evaluation.h>
@@ -118,7 +119,7 @@ namespace
 		configure(graph, calibrate);
 
 		flow::Evaluation evaluation{graph};
-		bind(evaluation, footagePin, footage(scene().frames));
+		bind(evaluation, footagePin, footage(boardScene().frames));
 		flow::SerialScheduler{}.run(graph, evaluation);
 		const flow::PortValue& report = evaluation.value(output(graph, calibrate));
 		REQUIRE(report.holds<Report>());
@@ -308,13 +309,16 @@ TEST_CASE("detectBoard reports for the frame it is given", "[camera][flow]")
 TEST_CASE("calibrateCamera hands its settings to the method", "[camera][flow]")
 {
 	reset();
-	SECTION("the defaults are calibration::Request's")
+	SECTION("the defaults are calibration::Request's and board::DetectionRequest's")
 	{
 		const Report report = calibrateScene([](flow::Graph&, flow::NodeId) {});
 		REQUIRE(report.status == camera::calibration::CalibrationStatus::Succeeded);
 		CHECK(report.verdict == camera::calibration::Verdict::Ready);
 		const camera::calibration::Request& asked = report.reproducibility.request;
 		const camera::calibration::Request defaults;
+		const auto& record = std::get<camera::calibration::BoardRecord>(report.reproducibility.method);
+		REQUIRE(record.detection.has_value());
+		const board::DetectionRequest& searched = *record.detection;
 		CHECK(asked.model == defaults.model);
 		CHECK(asked.fitnessProfile == defaults.fitnessProfile);
 		CHECK(asked.maximumViews == defaults.maximumViews);
@@ -322,8 +326,9 @@ TEST_CASE("calibrateCamera hands its settings to the method", "[camera][flow]")
 		CHECK(asked.resamples == defaults.resamples);
 		CHECK(asked.seed == defaults.seed);
 		CHECK(asked.execution == camera::calibration::ExecutionPolicy::Normal);
-		CHECK(std::holds_alternative<board::NativeScale>(asked.detection.scale));
-		CHECK(asked.detection.minimumCorners == defaults.detection.minimumCorners);
+		CHECK(std::holds_alternative<board::NativeScale>(searched.scale));
+		CHECK(searched.refineAtNativeResolution == board::DetectionRequest{}.refineAtNativeResolution);
+		CHECK(searched.minimumCorners == board::DetectionRequest{}.minimumCorners);
 	}
 
 	SECTION("every parameter reaches the request")
@@ -341,15 +346,25 @@ TEST_CASE("calibrateCamera hands its settings to the method", "[camera][flow]")
 				setParam(graph, id, "minimumCorners", 6);
 			});
 		const camera::calibration::Request& asked = report.reproducibility.request;
+		const auto& record = std::get<camera::calibration::BoardRecord>(report.reproducibility.method);
+		REQUIRE(record.detection.has_value());
+		const board::DetectionRequest& searched = *record.detection;
 		CHECK(asked.maximumViews == 12);
 		CHECK(asked.heldOutFraction == 0.25);
 		CHECK(asked.resamples == 3);
 		CHECK(asked.seed == 0xFFFFFFFFu); // a seed keeps its bits: -1 is a seed, not a clamp to 0
 		CHECK(asked.execution == camera::calibration::ExecutionPolicy::DeterministicDebug);
-		REQUIRE(std::holds_alternative<board::LongestSide>(asked.detection.scale));
-		CHECK(std::get<board::LongestSide>(asked.detection.scale).pixels == 800);
-		CHECK_FALSE(asked.detection.refineAtNativeResolution);
-		CHECK(asked.detection.minimumCorners == 6);
+		REQUIRE(std::holds_alternative<board::LongestSide>(searched.scale));
+		CHECK(std::get<board::LongestSide>(searched.scale).pixels == 800);
+		CHECK_FALSE(searched.refineAtNativeResolution);
+		CHECK(searched.minimumCorners == 6);
+		// Every frame was searched as the node said, not only recorded so.
+		for (const board::DetectionReport& d :
+			 std::get<camera::calibration::BoardDiagnostics>(report.diagnostics.method).detections)
+		{
+			const auto* longest = std::get_if<board::LongestSide>(&d.request.scale);
+			CHECK((longest != nullptr && longest->pixels == 800));
+		}
 		CHECK(report.diagnostics.viewsSelected == 12);
 	}
 
@@ -376,7 +391,7 @@ TEST_CASE("an imported model takes part through the node's policy", "[camera][fl
 	setParam(graph, calibrate, "importedPolicy", camera::calibration::ImportedModelPolicy::HoldAndValidate);
 
 	flow::Evaluation evaluation{graph};
-	bind(evaluation, footagePin, footage(scene().frames));
+	bind(evaluation, footagePin, footage(boardScene().frames));
 	const CameraModel truth = *CameraModel::create(trueCamera()).model;
 	bind(evaluation, importedPin, truth);
 	flow::SerialScheduler{}.run(graph, evaluation);
@@ -404,7 +419,7 @@ TEST_CASE("cameraModel passes a calibration's model on, and suppresses without o
 	setParam(graph, calibrate, "resamples", 2);
 
 	flow::Evaluation evaluation{graph};
-	bind(evaluation, footagePin, footage(scene().frames));
+	bind(evaluation, footagePin, footage(boardScene().frames));
 	flow::SerialScheduler{}.run(graph, evaluation);
 	const flow::PortValue& found = evaluation.value(output(graph, model));
 	REQUIRE(found.holds<CameraModel>());
@@ -423,5 +438,46 @@ TEST_CASE("cameraModel passes a calibration's model on, and suppresses without o
 			  camera::calibration::CalibrationStatus::Failed);
 		CHECK(evaluation.value(output(graph, model)).empty());
 		CHECK(evaluation.describe(output(graph, calibrate)).rfind("Failed: EstimationFailed", 0) == 0);
+	}
+}
+
+TEST_CASE("registeredRig passes a registration's rig on, and suppresses without one", "[camera][flow]")
+{
+	namespace registration = camera::registration;
+	flow::Graph graph;
+	const flow::NodeId rig = graph.add<camera::RegisteredRigNode>();
+	const flow::PortAddress reportPin = feed<registration::Report>(graph, "report", rig, 0);
+
+	// An Exploratory registration still has a rig: whether it is fit for use is the report's to say.
+	registration::Report report;
+	report.status = registration::RegistrationStatus::Succeeded;
+	report.verdict = camera::Verdict::Exploratory;
+	report.reference = camera::capture::CameraIdentity{"/rig/cam00"};
+	report.scale = {registration::Scale::Metric, "the board's measured square, 24 mm (board)"};
+	const math::RigidTransformd moved{math::angleAxis(0.25, math::Vec3d{0, 1, 0}), math::Vec3d{0.1, 0, 0.02}};
+	report.cameras = {{camera::capture::CameraIdentity{"/rig/cam00"}, math::RigidTransformd{}},
+					  {camera::capture::CameraIdentity{"/rig/cam01"}, moved}};
+
+	flow::Evaluation evaluation{graph};
+	bind(evaluation, reportPin, report);
+	flow::SerialScheduler{}.run(graph, evaluation);
+	const flow::PortValue& found = evaluation.value(output(graph, rig));
+	REQUIRE(found.holds<registration::RegisteredRig>());
+	const registration::RegisteredRig& passed = found.get<registration::RegisteredRig>();
+	CHECK(passed.reference.value == "/rig/cam00");
+	CHECK(passed.scale.scale == registration::Scale::Metric);
+	REQUIRE(passed.cameras.size() == 2);
+	CHECK(passed.referenceFromCamera(camera::capture::CameraIdentity{"/rig/cam01"})->translation() ==
+		  moved.translation());
+	// The rig's port describes the transforms, which the report's line does not.
+	CHECK(evaluation.describe(output(graph, rig)).find("/rig/cam01 at (0.1, 0, 0.02) m") != std::string::npos);
+
+	SECTION("a failed registration clears the rig")
+	{
+		registration::Report failed;
+		failed.failures.push_back({registration::Failure::Disconnected, "2 components"});
+		bind(evaluation, reportPin, failed);
+		flow::SerialScheduler{}.run(graph, evaluation);
+		CHECK(evaluation.value(output(graph, rig)).empty());
 	}
 }
