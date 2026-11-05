@@ -15191,9 +15191,75 @@ because lain's tests do not include `src/` headers. Under the same sabotage it f
 - **Not run here:** `drawAll` in `texturedscene.h` and the `test_sequencefeatures.cpp` site are only
   reached by cases `skipInDebug` skips, so this Debug build compiled them and no more. CI's Release legs
   are their first run.
-- **`format-check` does not run from this Windows build:** its generated batch file stops with "The
-  system cannot execute the specified program", before formatting anything. The cause was not chased.
-  The pinned binary run directly on the five changed files is clean, and CI's job is the whole-tree gate.
+- **`format-check` could not run on Windows at this commit,** the known defect fixed in the next section.
+  The pinned binary run directly on the five changed files was clean, and CI's job was the whole-tree
+  gate. This commit's message says the cause "was not chased". That is wrong: Known defects already
+  recorded it, and the search that would have found it was not made.
+
+## `format` and `format-check` run on Windows (built 2026-11-05)
+
+A known defect since 2026-11-01. Both targets put every file on one command line, which at 729 absolute
+paths is 53,165 characters on this checkout. Windows refuses a command of about 32,000 or more, and cmd
+reports that as *The system cannot execute the specified program*, which does not read as a length.
+
+The list now reaches clang-format through a file in the build tree, by its `--files` option. Its globs
+are `CONFIGURE_DEPENDS`, so adding or deleting a source rewrites the file at build time.
+
+### What was measured
+
+- **The limit, same binary and flags at different lengths.** Through a batch file of the shape CMake
+  generates, 32,760 characters work and 32,761 fail. Through `CreateProcess` with no cmd, 32,766 work and
+  32,767 fail with `WinError 206`, *The filename or extension is too long*. It is not cmd's better-known
+  8,191: 32,000 ran fine.
+- **`format` had it too.** The entry named only `format-check`, but both use the one list.
+- **The list crossed the limit at `06e4e05`** (2026-09-30, 470 files), counted with this checkout's path.
+  The limit depends on how deep a checkout sits, so another machine crosses it elsewhere.
+- **CI could not see it:** the `clang-format` job runs on `ubuntu-24.04`, and the Windows leg does not
+  run the target.
+- **Repo-relative paths would only postpone it:** 29,074 characters, room for about 94 more files, and
+  the tree grew by 259 files in the five weeks since the crossing.
+
+### Tried first in multi
+
+multi has the same module now, identical but for the `MULTI_` prefix. Its 56 sources are nowhere near the
+limit, so a plain copy would have proved nothing: a throwaway copy of its tree was given 700 extra files.
+Unfixed, it failed with this exact message on a 124,599-character line. Fixed, the same tree passed.
+
+### Verified
+
+Through the real targets, on Windows, in the MSVC Debug build directory:
+
+- `format-check` **exit 0 over all 729 files**, so the whole tree is clean here, not just the files a
+  commit touched.
+- A badly formatted file added under `libs/`, with no manual configure: the list went to 730 and
+  `format-check` failed naming only that file. `format` rewrote it and nothing else (`git status`), the
+  check passed, and with the file deleted the list went back to 729 and the check still passed.
+
+**Not run:** Linux and macOS. CI's `clang-format` job is the first run on Linux, and no CI job runs this
+on macOS.
+
+### The binary is held to a checksum
+
+Also new here, on the repo owner's call: each asset now has a `URL_HASH`. This runs an executable fetched
+from a third party at build time, and a tag alone does not stop an asset being replaced under it, so the
+old comment calling the tag immutable went with it.
+
+It also makes `.cache/fetch` a cache for this file for the first time. CMake's download script deletes and
+refetches a file it has no hash to check against. With the hash, a wiped build reports *File already exists
+and hash match (skip download)*. A wrong hash fails the configure and leaves no binary to run.
+
+- **Where the hashes came from:** GitHub's published digests for the release assets. The Windows one also
+  matches the binary this checkout already had. CI's legs exercise Linux and macOS arm64 at configure time.
+  **Nothing exercises macOS Intel's**, which rests on the published digest alone.
+- **`LAIN_CLANG_FORMAT_VERSION` is no longer a cache option,** since another version would need its own
+  hashes. Nothing set it. `-DLAIN_CLANG_FORMAT` still runs a different binary.
+- **Not done:** the other fetched dependencies, most of which still have no `URL_HASH`.
+
+### Two small things
+
+- `--files` prints `Clang-formatting 730 files` for 729. The count is clang-format's own and one too high;
+  `--verbose` reports 729 processed.
+- A `-DLAIN_CLANG_FORMAT` override now has to be new enough to take `--files`. The pinned 20.1.0 is.
 
 ## Outstanding work — one index
 
@@ -15512,21 +15578,20 @@ review of 2026-10-20 moved after it), with clock-domain identity and timestamp g
 
 Not deferred features — acknowledged bugs, listed here so they stop being rediscovered.
 
-- **The `format-check` target cannot run on Windows**: its one command line is 52,953 characters, over
-  the 32,767-character limit. *(§Catch2's `FAIL` and `SKIP` do not return.)*
 - **Board registration whitens a detector's covariance without checking it**
   (`registration/board.cpp`, `whitenedSquared`). Only the targetless methods refuse an observation
   whose covariance is not `positiveDefinite`; a detector reporting a degenerate one would whiten to
   infinity or NaN there. *(§NOTES.txt (2026-11-02).)*
 
-**Six earlier ones are fixed** — `gui::Texture` freeing a descriptor set a running frame
+**Seven earlier ones are fixed** — `gui::Texture` freeing a descriptor set a running frame
 could still read (2026-09-29; see Milestone 14 › *A texture's descriptor outlives the frames that
 drew it*), a group replaced at its own NodeId looking clean and delivering
 nothing (found by M14 slice 1, fixed 2026-09-28 by making versions process-unique; see
 Milestone 14), the three from M11 §Not in this milestone
 (`GroupSync::refused` had no reader, 2026-09-09; the Issues pane flagged an unwired DEFAULTED
-input, 2026-09-09; `ungroup` told a map it was linked, 2026-09-10) and the parallel-ctest collision
-below (2026-09-10). Three of the first five turned out to be **larger than their one-line
+input, 2026-09-09; `ungroup` told a map it was linked, 2026-09-10), the parallel-ctest collision
+below (2026-09-10) and `format` and `format-check` failing on Windows (2026-11-05; see *`format` and
+`format-check` run on Windows*). Three of the first five turned out to be **larger than their one-line
 description**: the described symptom was the visible end of a duplicated or unreachable decision, or
 — the NodeId one — of a general shape (any node re-seated at its own id) that one caller happened to
 reach first. Worth remembering when writing the next entry here.

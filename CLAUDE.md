@@ -1400,6 +1400,19 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-05 — `format` and `format-check` run on Windows
+
+A known defect since 2026-11-01. Both targets put all 729 absolute paths on one 53,165-character command
+line, and Windows refuses about 32,000 or more; cmd reports it as *The system cannot execute the specified
+program*. The list now reaches clang-format through a file, by `--files`. Through the real targets on
+Windows, `format-check` passes over all 729 files, and a badly formatted file added under `libs/` was
+caught with no manual configure and fixed by `format`, which touched nothing else. Not run: Linux and
+macOS. Tried first in multi, which has the same module now. Full notes in WORK.md's section of the same name.
+
+- **The binary is held to a SHA-256 per asset,** which also makes `.cache/fetch` a real cache for it; a
+  wrong hash fails the configure. `LAIN_CLANG_FORMAT_VERSION` is no longer a cache option. The other
+  fetched dependencies are unchanged, and nothing exercises the macOS Intel hash.
+
 ### Update 2026-11-05 — M9: `forEach` is one line, on multi's `Serial` and unsigned `range`
 
 From `NOTES.txt`'s question whether `camera::detail::forEach` was needed. `extern/multi` moves to
