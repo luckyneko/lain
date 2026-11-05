@@ -233,14 +233,14 @@ TEST_CASE("what a fundamental matrix keeps through four lenses", "[camera][openc
 	std::vector<Features> features(lenses.size() * used.size());
 	{
 		const lain::testing::ThreadPool pool{4};
-		task::range(std::ptrdiff_t{0}, std::ptrdiff_t(features.size()),
-					[&](std::ptrdiff_t i)
+		task::range(std::size_t{0}, features.size(),
+					[&](std::size_t i)
 					{
-						const std::size_t l = std::size_t(i) / used.size(), f = used[std::size_t(i) % used.size()];
+						const std::size_t l = i / used.size(), f = used[i % used.size()];
 						const ExtractResult found =
 							extract(synthetic::render(scene, lenses[l], path[f], f, 2, f + 1), LongestSide{1920});
 						if (found.ok())
-							features[std::size_t(i)] = strongest(found.features, 8192);
+							features[i] = strongest(found.features, 8192);
 					});
 	}
 

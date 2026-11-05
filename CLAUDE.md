@@ -1400,6 +1400,20 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-05 — M9: `forEach` is one line, on multi's `Serial` and unsigned `range`
+
+From `NOTES.txt`'s question whether `camera::detail::forEach` was needed. `extern/multi` moves to
+`0e2a6ce`, and `forEach` is now one line choosing `task::Serial` or `task::PerItem`, with its callers
+unmoved. `task::range` takes `std::size_t`, so the `std::ptrdiff_t` casts at the other three sites go.
+`ctest -j8` **1358/1358** Debug with video, camera and Ceres on (+1), warning-clean, the pinned
+clang-format clean on every touched file. Not run here: the two sites only `skipInDebug` cases reach,
+so CI's Release legs are their first run. Full notes in WORK.md's section of the same name.
+
+- **Nothing could tell if `forEach` ignored `DeterministicDebug`.** With it sabotaged, both existing
+  cases still pass. A new case asks for thread identity with a pool running, and it failed 3 runs of 3.
+- **A throw under `DeterministicDebug` now passes through `runOne`,** so a debugger's break-on-uncaught
+  stops at the rethrow. The caller sees the same exception at the same index.
+
 ### Update 2026-11-04 — M9: a video camera is named less its extension
 
 The repo owner's answer to the binder fix's open question: a camera is named the same whatever it was

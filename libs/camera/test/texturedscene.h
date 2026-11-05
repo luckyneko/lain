@@ -421,9 +421,9 @@ namespace lain::camera::synthetic
 				}
 			}
 			std::vector<image::Image> drawn(missing.size());
-			task::range(std::ptrdiff_t{0}, std::ptrdiff_t(missing.size()),
-						[&](std::ptrdiff_t i)
-						{ drawn[std::size_t(i)] = draw(missing[std::size_t(i)]); });
+			task::range(std::size_t{0}, missing.size(),
+						[&](std::size_t i)
+						{ drawn[i] = draw(missing[i]); });
 			const std::lock_guard<std::mutex> lock(m_drawing);
 			for (std::size_t i = 0; i < missing.size(); ++i)
 				m_drawn.emplace(missing[i], std::move(drawn[i]));

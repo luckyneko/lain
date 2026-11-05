@@ -15146,6 +15146,55 @@ things failed, each fixed in its own commit:
   one is not known. `calibrateFootage` now takes the footage directly and `calibrateScene` passes the
   scene's, so no optional reaches the copy.
 
+## `forEach` is one line, on multi's `Serial` and unsigned `range` (built 2026-11-05)
+
+`NOTES.txt` asked whether `camera::detail::forEach` was needed or multi could handle it. Multi handles
+it now. What is left is one line that turns an `ExecutionPolicy` into a chunk policy, so the 20-odd
+callers do not move. `task::range` taking `std::size_t` also removes the `std::ptrdiff_t` casts at the
+other three sites: `texturedscene.h`, `test_sequencefeatures.cpp` and `camerafootage.cpp`.
+
+### In multi
+
+`extern/multi` moves `f348880` to `0e2a6ce`, three commits, and
+[its CI](https://github.com/luckyneko/multi/actions/runs/41947341696) passed on all 19 legs, TSAN and
+ASAN+UBSAN among them.
+
+- **`multi::Serial`** promises what `ChunkPolicy{1}` did without saying so: every item in order, on the
+  calling thread, with nothing else run on that thread meanwhile, and a throw ends the walk at that
+  item. multi tests the order on a started pool, which is where it means anything.
+- **Unsigned `range` indices.** `range(0, v.size(), f)` is still a compile error, deliberately, so a
+  site spells `std::size_t{0}`.
+- **Three bugs in `RangeJob`, found on the way, none of which could reach lain:** every site here is
+  integer and per-item. A float chunk could visit one index too many, the end could overflow at the top
+  of the type, and a negative step ran effectively forever.
+
+### What does and does not change
+
+`Normal` is `PerItem`, which is what plain `range` already resolved to. `DeterministicDebug` keeps its
+order and stops at the same index with the same exception. The one difference: a throw now passes
+through `runOne`'s catch and is rethrown, so a debugger's break-on-uncaught stops at the rethrow rather
+than at the throw.
+
+### A gap this closed
+
+Nothing in lain could tell if `forEach` ignored `DeterministicDebug`. With it sabotaged to `PerItem` for
+both policies, the two existing cases still pass: "one resample far off" starts no pool, so everything
+runs inline in order anyway, and "the same work in parallel, serially..." compares reports that come out
+equal either way. The new case asks for thread identity with a pool running, through the refiner hook,
+because lain's tests do not include `src/` headers. Under the same sabotage it failed 3 runs of 3.
+
+### Verified
+
+- `ctest` **1358/1358** MSVC Debug, 22 skipped, warning-clean. CI's Linux Debug at `050d12b` ran 1357, so
+  the count grew by exactly the new case. No golden moved.
+- `flowview-examples --camera-footage` ran `writeMovingFootage` for real: 40 frames, all distinct.
+- **Not run here:** `drawAll` in `texturedscene.h` and the `test_sequencefeatures.cpp` site are only
+  reached by cases `skipInDebug` skips, so this Debug build compiled them and no more. CI's Release legs
+  are their first run.
+- **`format-check` does not run from this Windows build:** its generated batch file stops with "The
+  system cannot execute the specified program", before formatting anything. The cause was not chased.
+  The pinned binary run directly on the five changed files is clean, and CI's job is the whole-tree gate.
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because
@@ -15397,9 +15446,6 @@ M12 §Not in this milestone.)*
 
 The rest of the answers' follow-ups, each its own commit. *(§NOTES.txt (2026-11-02).)*
 
-- **multi:** a named `Serial` chunk policy (every index, in order, on the calling thread, which
-  `ChunkPolicy{1}` does today without saying so) and unsigned `range` indices. With both,
-  `camera::detail::forEach` is one line, and four `std::ptrdiff_t` casts go.
 - **`rigplan::standardNormal` to `lain::core`** (M15): exact, counter-based normal noise, and the eight
   Box-Muller copies in the camera tests onto it. Moves the noise, so goldens and bounds move.
 - **A `lain::camera::testing` support target**, in place of the `../../test` include paths from

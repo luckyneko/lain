@@ -15,13 +15,6 @@ namespace lain::camera::detail
 	template <typename Work>
 	void forEach(std::size_t count, ExecutionPolicy execution, const Work& work)
 	{
-		if (execution == ExecutionPolicy::DeterministicDebug)
-		{
-			for (std::size_t i = 0; i < count; ++i)
-				work(i);
-			return;
-		}
-		task::range(std::ptrdiff_t{0}, std::ptrdiff_t(count), [&work](std::ptrdiff_t i)
-					{ work(std::size_t(i)); });
+		task::range(execution == ExecutionPolicy::DeterministicDebug ? task::Serial : task::PerItem, std::size_t{0}, count, std::size_t{1}, work);
 	}
 } // namespace lain::camera::detail

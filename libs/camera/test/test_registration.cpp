@@ -13,10 +13,12 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <limits>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <variant>
 
 using namespace lain;
@@ -499,6 +501,36 @@ TEST_CASE("one resample far off moves no camera's spread", "[camera][registratio
 	CHECK(resampled->resamples == 10);
 	CHECK(resampled->rotationVariation < 1e-9);
 	CHECK(report.verdict == Verdict::Ready);
+}
+
+TEST_CASE("DeterministicDebug keeps every solve on the calling thread while a pool is running", "[camera][registration]")
+{
+	// Thread identity rather than order or result: with no pool, a parallel dispatch runs in order
+	// too, and the resamples' reports match whichever way they ran.
+	rig::reset();
+	const lain::testing::ThreadPool pool{4};
+	const std::thread::id caller = std::this_thread::get_id();
+	std::atomic<std::size_t> solves{0};
+	std::atomic<std::size_t> elsewhere{0};
+	{
+		std::lock_guard<std::mutex> lock(rig::refinerScript().mutex);
+		rig::refinerScript().adjust = [&](std::size_t, const refinement::Problem&, refinement::Solution&)
+		{
+			++solves;
+			if (std::this_thread::get_id() != caller)
+				++elsewhere;
+		};
+	}
+	Request request;
+	request.execution = ExecutionPolicy::DeterministicDebug;
+	const Report report = run(request);
+	{
+		std::lock_guard<std::mutex> lock(rig::refinerScript().mutex);
+		rig::refinerScript().adjust = nullptr;
+	}
+	REQUIRE(std::get_if<ResamplingEvidence>(&report.resampling) != nullptr);
+	CHECK(solves > 2); // the registration's own solves, then one for each resample
+	CHECK(elsewhere == 0);
 }
 
 TEST_CASE("the same work in parallel, serially, or listed in another order gives the same report", "[camera][registration]")
