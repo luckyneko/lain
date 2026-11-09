@@ -39,8 +39,8 @@ namespace lain::camera::registration::detail
 	// registration this namespace hides lain::camera::detail. A residual is whitened, and a covariance
 	// checked, as every method does (whitening.h).
 	using camera::detail::bootstrapDraws;
+	using camera::detail::bulk;
 	using camera::detail::FootageIndex;
-	using camera::detail::forEach;
 	using camera::detail::holdOut;
 	using camera::detail::median;
 	using camera::detail::positiveDefinite;

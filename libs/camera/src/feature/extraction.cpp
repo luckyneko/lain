@@ -425,9 +425,9 @@ namespace lain::camera::feature
 		}
 
 		// 3. Each camera's static features, one task per camera.
-		detail::forEach(cameras.size(), request.execution,
-						[&](std::size_t c)
-						{ extractCamera(*cameras[c], work[c], request); });
+		detail::bulk(request.execution, cameras.size(),
+					 [&](std::size_t c)
+					 { extractCamera(*cameras[c], work[c], request); });
 		for (std::size_t c = 0; c < cameras.size(); ++c)
 		{
 			work[c].counts.frames = std::uint32_t(work[c].positions.size());
@@ -452,13 +452,13 @@ namespace lain::camera::feature
 				pairs.back().entry.b = b;
 			}
 		}
-		detail::forEach(pairs.size(), request.execution,
-						[&](std::size_t p)
-						{
-							const std::uint32_t a = pairs[p].entry.a;
-							const std::uint32_t b = pairs[p].entry.b;
-							extractPair(*cameras[a], work[a], *cameras[b], work[b], pairs[p], request);
-						});
+		detail::bulk(request.execution, pairs.size(),
+					 [&](std::size_t p)
+					 {
+						 const std::uint32_t a = pairs[p].entry.a;
+						 const std::uint32_t b = pairs[p].entry.b;
+						 extractPair(*cameras[a], work[a], *cameras[b], work[b], pairs[p], request);
+					 });
 		for (const PairWork& p : pairs)
 		{
 			if (p.failure != Status::Ok)

@@ -15261,6 +15261,48 @@ and hash match (skip download)*. A wrong hash fails the configure and leaves no 
   `--verbose` reports 729 processed.
 - A `-DLAIN_CLANG_FORMAT` override now has to be new enough to take `--files`. The pinned 20.1.0 is.
 
+## `camera::detail::forEach` becomes `detail::bulk(execution, count, work)` (built 2026-11-09)
+
+A rename and an argument reorder, with no change in behaviour. Decided with the repo owner after
+discussing a count-based call in multi.
+
+- **Not in multi.** A count-based multi call is easy to want, since every `task::range` call in lain
+  starts at 0 with a step of 1. It cannot be an overload of `range` or `each`: a bare integer converts
+  to a `ChunkPolicy`, so `range(4, 100, f)` would still mean [4, 100) while `range(task::Serial, 100,
+  f)` meant a count, and `each(5, f)` would reach the container overload. A new name would be needed,
+  and camera would keep its helper anyway, since translating an `ExecutionPolicy` is the part only
+  camera knows. So multi is unchanged.
+- **The name and order are C++26's `std::execution::bulk(sender, policy, shape, f)`**: the policy
+  first, then how many times to call `f(i)`. That is also multi's own order
+  (`range(ChunkPolicy, begin, end, step, f)`). C++26's `bulk` builds a sender that runs when started,
+  while this one blocks until every call has finished, which the header says.
+- **It retires a second meaning of `forEach`.** `lain::image::forEach(view, fn)` visits a view's
+  pixels, which is what "for each" means; camera's took a count.
+- **The count stays a plain `std::size_t`.** Every caller passes a `.size()` or a `std::size_t`, so a
+  template would only matter to a general library taking callers' `int`s.
+- **`calibration/board.cpp` now writes `detail::bulk` like every other file.** It alone had its own
+  `using detail::forEach;` and called it unqualified. The two `common.h` re-exports are renamed and
+  stay in alphabetical order.
+
+### The diff is mostly whitespace
+
+`.clang-format` sets `UseTab: Always`, and a lambda body in a call is aligned to the call's opening
+parenthesis. `detail::forEach(` put those bodies at 6 tabs and `detail::bulk(` at 5 tabs and a space,
+so clang-format re-indented the body under every one of the 16 calls, including the four whose lambda
+starts on the call's own line: 176 lines in and 175 out, of which `git diff -w` shows 22 and 21.
+Review with `-w`.
+
+### Verified
+
+- `ctest -j8` **1358/1358** MSVC Debug with video, OpenCV and Ceres on, 22 skipped: the same count as
+  before, since no case was added or removed. That includes the thread-identity case
+  `DeterministicDebug keeps every solve on the calling thread while a pool is running`, which is what
+  would see the policy mistranslated.
+- Warning-clean build of every target under `/W4 /WX`.
+- `format-check` exit 0 over the whole tree, through the real target.
+- **Not run here:** the Release-only cases (`skipInDebug`) and GCC. CI's Release and Linux legs are
+  their first run of this change.
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because

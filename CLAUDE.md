@@ -1400,6 +1400,22 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-09 — M9: camera's `forEach` becomes `detail::bulk(execution, count, work)`
+
+A rename and an argument reorder, with no change in behaviour, decided with the repo owner. `ctest -j8`
+**1358/1358** MSVC Debug with video, camera and Ceres on (unchanged, 22 skipped); warning-clean,
+format-check clean. **Not run:** the Release-only cases and GCC. Full notes in WORK.md's section of the
+same name.
+
+- **multi is unchanged.** A count-based call there cannot be an overload of `range` or `each`, since a
+  bare integer converts to a `ChunkPolicy` and `range(4, 100, f)` already means [4, 100). Camera would
+  keep its helper anyway, to translate an `ExecutionPolicy`.
+- **Named and ordered as C++26's `std::execution::bulk`** (policy, count, work), which is also multi's
+  policy-first order. It blocks, where C++26's builds a lazy sender. It retires a second meaning of
+  `forEach`: `lain::image::forEach` visits pixels.
+- **Mostly whitespace:** under `UseTab: Always`, the shorter name moves every lambda body under the 16
+  calls, so 176 lines change and `git diff -w` shows 22.
+
 ### Update 2026-11-05 — `format` and `format-check` run on Windows
 
 A known defect since 2026-11-01. Both targets put all 729 absolute paths on one 53,165-character command

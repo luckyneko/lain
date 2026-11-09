@@ -227,43 +227,43 @@ namespace lain::camera::registration
 
 		// Each track's members scored, one track per task.
 		std::vector<std::vector<Scored>> scores(held.size());
-		detail::forEach(held.size(), execution,
-						[&](std::size_t i)
-						{
-							const feature::Track& track = trackSet.tracks[held[i]];
-							std::vector<Member> members;
-							for (const feature::SceneObservation& o : track.observations)
-							{
-								if (o.view >= cameraOfView.size() || !cameraOfView[o.view])
-									continue;
-								Member m;
-								m.camera = *cameraOfView[o.view];
-								m.pixel = o.pixel;
-								m.covariance = o.covariance;
-								const Unprojection<double> ray = unproject(*registered[m.camera].model, o.pixel.x, o.pixel.y);
-								m.usable = ray.ok();
-								if (m.usable)
-									m.ray = math::normalize(math::Vec3d{ray.x, ray.y, ray.z});
-								members.push_back(m);
-							}
-							std::vector<Scored>& out = scores[i];
-							out.resize(members.size());
-							std::vector<const Member*> usable;
-							std::vector<Scored*> usableScores;
-							for (std::size_t m = 0; m < members.size(); ++m)
-							{
-								out[m].camera = members[m].camera;
-								if (members[m].usable)
-								{
-									usable.push_back(&members[m]);
-									usableScores.push_back(&out[m]);
-								}
-							}
-							if (usable.size() == 2)
-								scoreEpipolar(registered, *usable[0], *usable[1], *usableScores[0], *usableScores[1]);
-							else if (usable.size() > 2)
-								scoreTransfers(registered, usable, usableScores);
-						});
+		detail::bulk(execution, held.size(),
+					 [&](std::size_t i)
+					 {
+						 const feature::Track& track = trackSet.tracks[held[i]];
+						 std::vector<Member> members;
+						 for (const feature::SceneObservation& o : track.observations)
+						 {
+							 if (o.view >= cameraOfView.size() || !cameraOfView[o.view])
+								 continue;
+							 Member m;
+							 m.camera = *cameraOfView[o.view];
+							 m.pixel = o.pixel;
+							 m.covariance = o.covariance;
+							 const Unprojection<double> ray = unproject(*registered[m.camera].model, o.pixel.x, o.pixel.y);
+							 m.usable = ray.ok();
+							 if (m.usable)
+								 m.ray = math::normalize(math::Vec3d{ray.x, ray.y, ray.z});
+							 members.push_back(m);
+						 }
+						 std::vector<Scored>& out = scores[i];
+						 out.resize(members.size());
+						 std::vector<const Member*> usable;
+						 std::vector<Scored*> usableScores;
+						 for (std::size_t m = 0; m < members.size(); ++m)
+						 {
+							 out[m].camera = members[m].camera;
+							 if (members[m].usable)
+							 {
+								 usable.push_back(&members[m]);
+								 usableScores.push_back(&out[m]);
+							 }
+						 }
+						 if (usable.size() == 2)
+							 scoreEpipolar(registered, *usable[0], *usable[1], *usableScores[0], *usableScores[1]);
+						 else if (usable.size() > 2)
+							 scoreTransfers(registered, usable, usableScores);
+					 });
 
 		// Gathered serially, in track identity order, as board registration gathers its held-out groups.
 		std::uint32_t unpredicted = 0;

@@ -26,10 +26,10 @@ namespace lain::camera::calibration::detail
 	// a residual and checks a covariance (whitening.h), each shared with registration; named here too,
 	// since inside calibration this namespace hides lain::camera::detail.
 	using camera::detail::bootstrapDraws;
+	using camera::detail::bulk;
 	using camera::detail::cover;
 	using camera::detail::CoverageCells;
 	using camera::detail::coveredFraction;
-	using camera::detail::forEach;
 	using camera::detail::holdOut;
 	using camera::detail::median;
 	using camera::detail::positiveDefinite;

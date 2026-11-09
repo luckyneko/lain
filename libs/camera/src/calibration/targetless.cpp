@@ -210,22 +210,22 @@ namespace lain::camera::calibration::targetless
 				candidates.push_back(e);
 		}
 		std::vector<feature::HomographyResult> results(candidates.size());
-		detail::forEach(candidates.size(), request.execution,
-						[&](std::size_t i)
-						{
-							// The pixels of every track the two frames share, in capture order.
-							const GraphEdge& e = candidates[i];
-							std::vector<std::uint32_t> shared;
-							std::set_intersection(ofFrame[e.a].begin(), ofFrame[e.a].end(), ofFrame[e.b].begin(),
-												  ofFrame[e.b].end(), std::back_inserter(shared));
-							std::vector<feature::PixelPair> pairs;
-							for (const std::uint32_t t : shared)
-								pairs.push_back({pixelIn(tracks[t], e.a), pixelIn(tracks[t], e.b)});
-							feature::HomographyRequest homography;
-							homography.threshold = kInlierPixels;
-							homography.seed = request.seed;
-							results[i] = feature::homography(pairs, homography);
-						});
+		detail::bulk(request.execution, candidates.size(),
+					 [&](std::size_t i)
+					 {
+						 // The pixels of every track the two frames share, in capture order.
+						 const GraphEdge& e = candidates[i];
+						 std::vector<std::uint32_t> shared;
+						 std::set_intersection(ofFrame[e.a].begin(), ofFrame[e.a].end(), ofFrame[e.b].begin(),
+											   ofFrame[e.b].end(), std::back_inserter(shared));
+						 std::vector<feature::PixelPair> pairs;
+						 for (const std::uint32_t t : shared)
+							 pairs.push_back({pixelIn(tracks[t], e.a), pixelIn(tracks[t], e.b)});
+						 feature::HomographyRequest homography;
+						 homography.threshold = kInlierPixels;
+						 homography.seed = request.seed;
+						 results[i] = feature::homography(pairs, homography);
+					 });
 		SeedPairs out;
 		out.tested = std::uint32_t(candidates.size());
 		for (std::size_t i = 0; i < candidates.size(); ++i)
@@ -1092,16 +1092,16 @@ namespace lain::camera::calibration::targetless
 		// them more closely than the right one fits all of them. Among those, the lowest final cost per
 		// residual, since a wrong minimum costs several times a right one; ties to the shorter focal length.
 		std::vector<Fit> fits(starts.size());
-		detail::forEach(starts.size(), request.execution,
-						[&](std::size_t i)
-						{
-							if (starts[i].model)
-								fits[i] = fitFrom(*starts[i].model, n, tracks, heldOut, seedPairs, settings, request);
-							else
-								fits[i].failures.push_back(
-									{Failure::InitialisationFailed, lain::string::format("a focal length of {:.4g} gives no valid {} model",
-																						 starts[i].focalLength, displayName(request.model))});
-						});
+		detail::bulk(request.execution, starts.size(),
+					 [&](std::size_t i)
+					 {
+						 if (starts[i].model)
+							 fits[i] = fitFrom(*starts[i].model, n, tracks, heldOut, seedPairs, settings, request);
+						 else
+							 fits[i].failures.push_back(
+								 {Failure::InitialisationFailed, lain::string::format("a focal length of {:.4g} gives no valid {} model",
+																					  starts[i].focalLength, displayName(request.model))});
+					 });
 		std::optional<std::uint32_t> winner;
 		for (std::uint32_t i = 0; i < fits.size(); ++i)
 		{
@@ -1240,8 +1240,8 @@ namespace lain::camera::calibration::targetless
 			}
 		}
 		std::vector<FrameMeasure> measures(held.size());
-		detail::forEach(held.size(), request.execution, [&](std::size_t h)
-						{ measures[h] = measureFrame(model, held[h], request); });
+		detail::bulk(request.execution, held.size(), [&](std::size_t h)
+					 { measures[h] = measureFrame(model, held[h], request); });
 		detail::CoverageCells heldCells{};
 		std::uint32_t posed = 0;
 		if (held.empty())
@@ -1301,9 +1301,9 @@ namespace lain::camera::calibration::targetless
 			const std::vector<std::vector<std::uint32_t>> draws = detail::bootstrapDraws(landmarks, request.resamples, request.seed);
 			const Evidence fitted = fittedUnder(model, narrowed, begin, entryOf);
 			std::vector<std::optional<CameraModelParameters>> estimates(draws.size());
-			detail::forEach(draws.size(), request.execution,
-							[&](std::size_t r)
-							{ estimates[r] = resampled(fitted, solution, narrowed.placement.order, fit.freedom, settings, draws[r]); });
+			detail::bulk(request.execution, draws.size(),
+						 [&](std::size_t r)
+						 { estimates[r] = resampled(fitted, solution, narrowed.placement.order, fit.freedom, settings, draws[r]); });
 			report.resampling = detail::stability(estimates, !settings.freePrincipalPoint);
 		}
 

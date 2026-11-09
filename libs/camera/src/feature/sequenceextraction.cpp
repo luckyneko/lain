@@ -213,8 +213,8 @@ namespace lain::camera::feature
 		}
 
 		// 3. Each sampled frame's features, one task per frame.
-		detail::forEach(k, request.execution, [&](std::size_t i)
-						{ extractFrame(camera, frames[i], request); });
+		detail::bulk(request.execution, k, [&](std::size_t i)
+					 { extractFrame(camera, frames[i], request); });
 		const math::Vec2i extent = camera.footage.spec().extent;
 		const ImageGeometry image{std::uint32_t(std::max(extent.x, 0)), std::uint32_t(std::max(extent.y, 0))};
 		for (const FrameWork& f : frames)
@@ -243,8 +243,8 @@ namespace lain::camera::feature
 				pairs.back().entry.b = b;
 			}
 		}
-		detail::forEach(pairs.size(), request.execution, [&](std::size_t p)
-						{ extractPair(frames[pairs[p].entry.a], frames[pairs[p].entry.b], pairs[p], request); });
+		detail::bulk(request.execution, pairs.size(), [&](std::size_t p)
+					 { extractPair(frames[pairs[p].entry.a], frames[pairs[p].entry.b], pairs[p], request); });
 		for (const PairWork& p : pairs)
 		{
 			if (p.failure != Status::Ok)

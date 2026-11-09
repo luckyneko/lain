@@ -576,8 +576,8 @@ namespace lain::camera::registration::targetless
 		{
 			const std::vector<std::vector<std::uint32_t>> draws = detail::bootstrapDraws(fitting, request.resamples, request.seed);
 			std::vector<std::optional<std::vector<math::RigidTransformd>>> registrations(draws.size());
-			detail::forEach(draws.size(), request.execution, [&](std::size_t r)
-							{ registrations[r] = registerUnits(evidence, draws[r], reference, request); });
+			detail::bulk(request.execution, draws.size(), [&](std::size_t r)
+						 { registrations[r] = registerUnits(evidence, draws[r], reference, request); });
 
 			// Each camera's distance from the result in every resample, its spread taken robustly below.
 			std::vector<std::vector<double>> rotation(n), translation(n);
