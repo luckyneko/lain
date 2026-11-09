@@ -233,8 +233,8 @@ TEST_CASE("a refinement holds its reference where it started, and moves the rest
 	// The reference moved by nothing but its round trip through angle-axis.
 	CHECK(math::rotationBetween(solution.cameraFromReference[1], problem.cameraFromReference[1]) < 1e-12);
 	CHECK(math::length(solution.cameraFromReference[1].translation() - problem.cameraFromReference[1].translation()) < 1e-12);
-	// The others came 10 mrad and 1 cm back to within the noise: the worst measured at 2.0 mrad and
-	// 1.0 mm, from twelve views of 0.3 px noise.
+	// The others came 10 mrad and 1 cm back to within the noise: the worst measured at 1.45 mrad and
+	// 0.76 mm, from twelve views of 0.3 px noise.
 	for (std::size_t c = 0; c < 4; ++c)
 	{
 		CAPTURE(c);
@@ -243,7 +243,7 @@ TEST_CASE("a refinement holds its reference where it started, and moves the rest
 		CHECK(math::length(solution.cameraFromReference[c].inverse().translation() - truth.inverse().translation()) < 0.002);
 	}
 	// Whitened by the true noise, the final cost is about half the residual count less the unknowns.
-	// Measured: 1.01 of it.
+	// Measured: 0.947 of it.
 	const double dimensions = 2.0 * double(problem.observations.size()) - 6.0 * (3 + 12);
 	CHECK_THAT(solution.finalCost, WithinRel(0.5 * dimensions, 0.15));
 }
@@ -307,8 +307,8 @@ TEST_CASE("a noisy rig registers to within its noise, and its evidence says so",
 	ensureCeres();
 	noisyRig(24, 0.3);
 	const Report report = run(quick());
-	// 0.3 px at f = 500 is 0.6 mrad a corner. Measured: the worst camera 0.88 mrad and 0.40 mm out,
-	// and a held-out transfer of 0.87 mrad.
+	// 0.3 px at f = 500 is 0.6 mrad a corner. Measured: the worst camera 0.54 mrad and 0.31 mm out,
+	// and a held-out transfer of 0.84 mrad.
 	const auto [rotation, translation] = worstError(report);
 	CHECK(rotation < 0.002);
 	CHECK(translation < 0.001);
@@ -330,8 +330,8 @@ TEST_CASE("a view from another instant is absorbed by the robust loss and named"
 	Request request = quick();
 	request.heldOutFraction = 0; // so group 5 is fitted
 
-	// Measured, the worst camera's rotation error: 0.68 mrad under Cauchy (the default), 3.4 under
-	// Huber, 98 with no robust loss, against 0.88 with no stray view at all.
+	// Measured, the worst camera's rotation error: 0.52 mrad under Cauchy (the default), 3.2 under
+	// Huber, 98 with no robust loss, against 0.54 with no stray view at all.
 	SECTION("under the default loss it costs nothing")
 	{
 		const Report report = run(request);
@@ -363,7 +363,7 @@ TEST_CASE("corners with a measured covariance are weighted by it", "[camera][cer
 	const Report weighted = run(request);
 	REQUIRE(weighted.diagnostics.refinement.has_value());
 	const RefinementSummary& summary = *weighted.diagnostics.refinement;
-	// 0.5 r^T C^-1 r summed is about half the residual dimensions less the unknowns: measured 0.998 of it.
+	// 0.5 r^T C^-1 r summed is about half the residual dimensions less the unknowns: measured 0.977 of it.
 	const double dimensions = 2.0 * double(summary.residuals) - 6.0 * double(3 + summary.bodies);
 	CHECK_THAT(summary.finalCost, WithinRel(0.5 * dimensions, 0.15));
 	CHECK(weighted.diagnostics.outliers.empty());
@@ -420,9 +420,9 @@ TEST_CASE("a rig of 100 cameras and 4000 capture groups registers", "[camera][ce
 	const lain::testing::ThreadPool pool;
 	const Report report = method::registerCameras(rig::cameras(), groups, specification(), request);
 	REQUIRE(report.status == RegistrationStatus::Succeeded);
-	// Measured on linux-x86_64, four cores, Release: 19.7 s in all, 16.1 s of it the refinement (9
-	// iterations over 768,000 corners), 663 MB at peak. The worst camera 0.94 mrad and 1.3 mm out;
-	// held-out transfer 0.81 mrad over 800 groups.
+	// Timed on linux-x86_64, four cores, Release, when the refinement took 9 iterations: 19.7 s in all,
+	// 16.1 s of it the refinement over 768,000 corners, 663 MB at peak. Measured: 12 iterations, the
+	// worst camera 1.14 mrad and 1.7 mm out, and a held-out transfer of 0.81 mrad over 800 groups.
 	CHECK(std::get<BoardDiagnostics>(report.diagnostics.method).groupsUsable == kGroups);
 	REQUIRE(report.diagnostics.refinement.has_value());
 	CHECK(report.diagnostics.refinement->status == RefinementStatus::Converged);

@@ -18,6 +18,7 @@
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/cameramodel.h>
 #include <lain/camera/projection.h>
+#include <lain/core/random.h>
 #include <lain/image/image.h>
 #include <lain/math/rigidtransform.h>
 #include <lain/media/framesource.h>
@@ -40,18 +41,13 @@ namespace lain::camera::synthetic
 {
 	// --- the texture ---------------------------------------------------------------------
 
-	inline std::uint64_t mix(std::uint64_t x)
-	{
-		x += 0x9e3779b97f4a7c15ull;
-		x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ull;
-		x = (x ^ (x >> 27)) * 0x94d049bb133111ebull;
-		return x ^ (x >> 31);
-	}
-
-	// A value in [0, 1) for lattice point (i, j).
+	// A value in [0, 1) for lattice point (i, j): the point's coordinates scrambled, then the seed with
+	// them, one SplitMix64 step each.
 	inline double lattice(std::uint64_t seed, std::int64_t i, std::int64_t j)
 	{
-		const std::uint64_t key = mix(seed ^ mix(std::uint64_t(i) * 0x632be59bd9b4e019ull ^ std::uint64_t(j) * 0x8cb92ba72f3d8dd7ull));
+		const std::uint64_t point =
+			core::splitMix64(std::uint64_t(i) * 0x632be59bd9b4e019ull ^ std::uint64_t(j) * 0x8cb92ba72f3d8dd7ull, 1);
+		const std::uint64_t key = core::splitMix64(seed ^ point, 1);
 		return double(key >> 11) * 0x1.0p-53;
 	}
 
@@ -332,10 +328,16 @@ namespace lain::camera::synthetic
 	{
 		const int w = int(model.image().width), h = int(model.image().height);
 		image::Image out{w, h, image::PixelFormat::Gray8, image::ColorSpace::sRGB};
-		std::mt19937_64 engine(mix(scene.noiseSeed ^ mix(seed ^ mix(frame + 1))));
+		// The engine's seed scrambles the frame, then this render's seed with it, then the scene's noise
+		// seed with both, one SplitMix64 step each.
+		const std::uint64_t frameKey = core::splitMix64(std::uint64_t(frame) + 1, 1);
+		const std::uint64_t renderKey = core::splitMix64(seed ^ frameKey, 1);
+		std::mt19937_64 engine(core::splitMix64(scene.noiseSeed ^ renderKey, 1));
 		const auto gaussian = [&engine]
 		{
-			// Box-Muller over mt19937_64, since std::normal_distribution is implementation-defined.
+			// Box-Muller over mt19937_64, since std::normal_distribution is implementation-defined. The one
+			// copy not on core::standardNormal, deliberately: the rendered suites' seeds pin behaviour this
+			// noise produced, so it moves with M15's rig-plan footage (WORK.md, Outstanding work).
 			const double u1 = (double(engine() >> 11) + 0.5) * 0x1.0p-53;
 			const double u2 = double(engine() >> 11) * 0x1.0p-53;
 			return std::sqrt(-2.0 * std::log(u1)) * std::cos(math::two_pi<double>() * u2);

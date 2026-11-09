@@ -16,6 +16,7 @@
 #include <lain/camera/feature/extraction.h>
 #include <lain/camera/projection.h>
 #include <lain/camera/rig.h>
+#include <lain/core/random.h>
 #include <lain/math/angles.h>
 #include <lain/media/framesequence.h>
 #include <lain/media/framesource.h>
@@ -399,10 +400,10 @@ namespace lain::camera::testing::scene
 
 	// The scene's truth as a track set, as extraction would accept it from a perfect matcher: one view
 	// per camera (frame 0 of its source), and a track per landmark that two or more cameras see in
-	// frame 0, at its true pixel plus `sigma` pixels of Gaussian noise per axis (Box-Muller over a
-	// seeded engine, since the standard's distributions are implementation-defined). Identities are the
-	// landmark's index, zero-padded ("track00042"), so a case controls the order they sort in. Every
-	// observation carries the covariance extraction gives a stand-in feature, whose size is 4.
+	// frame 0, at its true pixel plus `sigma` pixels of Gaussian noise per axis (core::standardNormal
+	// from `seed`, so the same on every platform). Identities are the landmark's index, zero-padded
+	// ("track00042"), so a case controls the order they sort in. Every observation carries the
+	// covariance extraction gives a stand-in feature, whose size is 4.
 	inline feature::TrackSet trackSetOf(double sigma = 0.0, std::uint64_t seed = 1)
 	{
 		feature::TrackSet out;
@@ -414,13 +415,9 @@ namespace lain::camera::testing::scene
 			frame.source = core::Uri{sourceOf(c)};
 			out.views.push_back({capture::CameraIdentity{identityOf(c)}, m.image(), {frame}});
 		}
-		std::mt19937_64 engine(seed);
-		const auto gaussian = [&engine]
-		{
-			const double u1 = (double(engine() >> 11) + 0.5) * 0x1.0p-53;
-			const double u2 = double(engine() >> 11) * 0x1.0p-53;
-			return std::sqrt(-2.0 * std::log(u1)) * std::cos(math::two_pi<double>() * u2);
-		};
+		std::uint64_t draw = 0;
+		const auto gaussian = [&]
+		{ return core::standardNormal(seed, draw++); };
 		const double variance = (0.034 * 4.0) * (0.034 * 4.0);
 		for (std::size_t l = 0; l < scene().landmarks.size(); ++l)
 		{
@@ -458,13 +455,9 @@ namespace lain::camera::testing::scene
 			frame.ordinal = k;
 			out.views.push_back({capture::CameraIdentity{identityOf(0)}, m.image(), {frame}});
 		}
-		std::mt19937_64 engine(seed);
-		const auto gaussian = [&engine]
-		{
-			const double u1 = (double(engine() >> 11) + 0.5) * 0x1.0p-53;
-			const double u2 = double(engine() >> 11) * 0x1.0p-53;
-			return std::sqrt(-2.0 * std::log(u1)) * std::cos(math::two_pi<double>() * u2);
-		};
+		std::uint64_t draw = 0;
+		const auto gaussian = [&]
+		{ return core::standardNormal(seed, draw++); };
 		const double variance = (0.034 * 4.0) * (0.034 * 4.0);
 		for (std::size_t l = 0; l < scene().landmarks.size(); ++l)
 		{

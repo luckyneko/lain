@@ -1400,6 +1400,43 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-09 — `core::standardNormal`, and the camera tests' noise onto it
+
+The fourth NOTES.txt follow-up. `lain/core/random.h` gains rigplan's (feature/M15) exact,
+counter-based normal draw: Irwin-Hall over SplitMix64, summed in integers, the same bits everywhere.
+Seven of the eight Box-Muller copies in the camera tests now draw from it. Several of those copies
+claimed platform identity that libm's `log` and `cos` never gave. `ctest -j8` **1362/1362** MSVC
+Debug and **1370/1370** MSVC Release, with video, camera and Ceres on (+4 each); warning-clean,
+format-check clean. **Not run:** GCC and macOS. Full notes in WORK.md's section of the same name.
+
+- **`core::splitMix64(seed, n)` is public and `constexpr`**, pinned to SplitMix64's published
+  sequence. `texturedscene.h`'s `mix(x)` was `splitMix64(x, 1)` written out, and now calls it: all 152
+  rendered footage files are byte-identical before and after. A survey found nothing else worth adding.
+  A counter-based uniform was left out, since the `mt19937_64` idiom it would replace is already exact.
+  A `core::seedOf` waits for M15's merge, where its two callers are.
+
+- **Core's test pins the four draws M15's `test_sensor.cpp` pins**, at the seed M15's `noiseSeed`
+  gives. When M15 merges and rigplan's copy is deleted, those pins hold unchanged. Three sabotages,
+  all caught: stride 1 (neighbour correlation 0.832, i.e. 5/6), no half-offsets (pins only), and
+  Box-Muller (pins and exactness).
+- **`texturedscene.h`'s rendered noise stays on Box-Muller, by the repo owner's call.** Its seeds pin
+  rendered behaviour, and M15's rig-plan footage replaces it. The trigger is in Outstanding work.
+- **Both registration goldens moved, and only where noise was drawn.** Board: the connected and stray
+  scenes moved; flipped and disconnected are byte-identical, and every verdict holds. Targetless:
+  only the noisy scene moved, and the other six are byte-identical.
+- **Single-draw bounds were exposed by the move.** Two Ceres bounds had been set from one lucky draw.
+  Over twelve seeds of the new noise, the targetless rig's worst camera is 0.28 to 0.91 mrad out
+  (bound 0.6, now 1), and the landmarks case's seed is the worst of twelve for its centre (bound 1 mm,
+  now 2). The resample case's premise, frame 0 placed, fails on 4 of 12 seeds, so it moves to seed 1.
+- **The OpenCV estimator case was fragile all along, and the move only showed it.** All four models
+  pass its checks on 4 seeds in 60 under the new noise and on 6 under Box-Muller, and its seed 7 was
+  one of the six. On its one-board scene the rational and Kannala-Brandt fits fold inside the image
+  on about 40% of draws under either noise. The case moves to seed 18 and says how rarely it holds;
+  a scene that holds on most draws is left to the repo owner.
+- **The Ceres `Random` classes shared one engine between uniforms and Gaussians**, so even their
+  noiseless scenes moved. Every case still passes, and every measurement comment beside a moved check
+  was re-read. Timings measured on Linux are kept and labelled "Timed on linux-x86_64".
+
 ### Update 2026-11-09 — M9: camera's `forEach` becomes `detail::bulk(execution, count, work)`
 
 A rename and an argument reorder, with no change in behaviour, decided with the repo owner. `ctest -j8`

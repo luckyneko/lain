@@ -15303,6 +15303,190 @@ Review with `-w`.
 - **Not run here:** the Release-only cases (`skipInDebug`) and GCC. CI's Release and Linux legs are
   their first run of this change.
 
+## `standardNormal` in `lain::core`, and the camera tests' noise onto it (built 2026-11-09)
+
+The fourth of the NOTES.txt (2026-11-02) follow-ups. `feature/M15`'s rigplan draws its sensor noise
+through `rigplan::standardNormal(seed, sample)`: Irwin-Hall, twelve 32-bit uniforms from SplitMix64
+outputs `6 * sample + 1` to `6 * sample + 6`, summed in integers. So a draw is exact and the same on
+every platform. M9's camera tests drew Gaussian noise through eight hand-written copies of Box-Muller
+over `mt19937_64`, several under a comment saying the draws were "the same on every platform". The
+engine's output is fixed by the standard, but `std::log` and `std::cos` are not correctly rounded, so
+that was never guaranteed.
+
+Two commits: the function, then seven of the eight copies onto it.
+
+### `lain/core/random.h`
+
+- **`double standardNormal(std::uint64_t seed, std::uint64_t sample)`**, rigplan's, copied verbatim
+  into `src/random.cpp` with its file-local `splitMix64`. The header states the rule for callers: noise
+  that must be the same on every machine, which is every test's, comes from here. It also says how to
+  seed: a seed is used as given, and two seeds that differ by a small multiple of SplitMix64's
+  increment share uniforms, so a key with many or large fields is better hashed than added up.
+- **No `-ffp-contract=off`**, which rigplan's `sensor.cpp` has. Every operation here is exact (an
+  integer sum below 2^53, scaled by a power of two), so a fused multiply-add rounds to the same value,
+  and the file says so.
+- **Three cases in `test-core`:**
+  - the four draws M15's `test_sensor.cpp` pins, at the seed its `noiseSeed{7, kCamera, 3}` gives
+    (`0x6fb29c25566225f6`), recomputed in Python from the stated rule before the code existed. When
+    M15 merges and rigplan's copy gives way to core's, its pins hold, and that is checked rather than
+    argued;
+  - every draw a whole number of 2^-32, within 6 of 0;
+  - M15's distribution case without `noiseSeed`: the mean and variance of 200,001 draws, and the
+    correlation of neighbours and of another seed's draws.
+- **Three sabotages, each built before it counted:**
+  - SplitMix64 index `sample + j` (stride 1) fails a pin and the neighbour correlation, 0.832, which is
+    5/6, since neighbours then share five of six outputs;
+  - dropping the `+ 6.0` half-offsets fails only the pins;
+  - Box-Muller in place of the sum fails the pins and exactness.
+
+### Seven copies moved; `texturedscene.h`'s stays
+
+Each site keeps its seed and swaps its engine for a counter, `core::standardNormal(seed, draw++)`, in
+the same draw order:
+- `syntheticrig.h`'s `detection`;
+- `syntheticscene.h`'s `trackSetOf` and `sequenceTrackSetOf`;
+- the Ceres tests' `Random` (`test_landmarks.cpp`, `test_freemodel.cpp`), whose `uniform()` keeps
+  `mt19937_64`;
+- the OpenCV tests' `Noise` (`test_pose.cpp`, `test_estimator.cpp`).
+
+**`texturedscene.h`'s rendered pixel noise stays on Box-Muller, deliberately** (decided with the repo
+owner). Its seeds pin behaviour: 10e's seed-3 Ready board, seed 5's principal-point case, and SIFT
+numbers measured per platform. M15's rig-plan footage replaces most of that footage with sensor noise
+that already uses `standardNormal`. The copy says so, and Outstanding work holds the trigger.
+
+**What moved, and what could not:**
+- **The stand-ins' noiseless cases cannot move**: at sigma 0 every draw is multiplied by zero.
+- **The Ceres `Random` classes are different.** `uniform()` and `gaussian()` shared one engine, so with
+  the Gaussians gone from it every landmark position and every perturbed start in those two files
+  moved, noiseless scenes included. Every such case still passes, and its numbers are re-read below.
+
+### The goldens
+
+- **Board registration:** the two noisy scenes (connected, stray) moved and the two noiseless ones
+  (flipped, disconnected) are byte-identical. Every verdict and status line holds, and the stray scene
+  still names the same group of cam02 as its one outlier.
+- **Targetless registration:** only the noisy scene moved. The other six are byte-identical, and the
+  noisy one names 347 of 900 observations as outliers where it named 376.
+
+### Four cases failed, and why
+
+- **`a noisy rig registers to within its noise, Ready`** (Ceres targetless), 0.727 mrad against a bound
+  of 0.6. The bound came from one draw measured at 0.454 mrad, 1.32 times under it. Over seeds 1 to 12,
+  every one Ready, the worst camera is 0.28 to 0.91 mrad out. The seed stays at 3 and the bound is
+  1 mrad, that margin over the new draw.
+- **`cameras and landmarks converge together`** (Ceres landmarks), the worst centre 1.004 mm against
+  1 mm. Over the scene seeds 1 to 12 this seed, 5, is the worst: 0.36 to 1.00 mm, against the one
+  draw's 0.49 mm before. Over the perturbation seeds 41 to 52 the scale moves (0.990 to 1.016) and the
+  errors do not, to three figures, so they are the noise's. The seed stays and the bound is 2 mm.
+- **`a resample leaves out what the refined model cannot project`** (Ceres targetless calibration).
+  - Its premise is that the adjustment fits frame 0's eight wrong matches. The new draw at seed 5
+    leaves frame 0 unplaced, so nothing fits them and nothing names them.
+  - The reconstruction seeds from frames 19 and 21, at the path's other end. Over seeds 1 to 12, seeds
+    3, 5, 7 and 9 leave frame 0 unplaced, and every other seed names all eight with an infinite
+    residual.
+  - The case moves to seed 1, and says why.
+- **`each estimatable model is recovered from its own synthetic views`** (OpenCV estimator). The
+  rational model's fit folded inside the image corners, and lain refused it as an invalid model.
+  - **That was not the new noise's doing; the case was fragile all along.** Over 60 seeds its checks
+    pass on 4 under `core::standardNormal` (18, 21, 28, 32) and on 6 under the old Box-Muller (5, 7,
+    24, 35, 57, 60). Seed 7, the case's own, was one of those six.
+  - **Under either noise the fits are fragile on this scene** (36 swept poses of one board at 0.1 px):
+
+    | Over 60 seeds | `core::standardNormal` | Box-Muller |
+    |---|---|---|
+    | rational 8 folds inside the image | 24 | 19 |
+    | Kannala-Brandt 4 folds inside the image | 25 | 22 |
+    | Brown-Conrady 5's principal point over 2 px out | 31 | 17 |
+
+  - **The draws are clean.** Recomputed in Python over 4000 draws a seed for seeds 1 to 12: the
+    pooled standard deviation is 1.0000, the kurtosis 2.89 (Irwin-Hall's 2.9), and the lag
+    correlations sit within their noise.
+  - **The case moves to seed 18**, the smallest that passes, and its comment says how rarely it
+    holds.
+  - **For the repo owner:** the case pins the estimator's wiring on a lucky draw. Making it hold on
+    most draws means a stronger scene (more distances or tilts) or looser per-model checks. Neither
+    is done here.
+
+### Re-measured, and passing
+
+Each comment that states a measurement beside a moved check now states the new one. The ones whose
+numbers moved:
+
+| Case | Before | After |
+|---|---|---|
+| Ceres targetless, held-out tracks of a true registration | 0.587 px (1.38 × √2σ), 1.12 mrad, worst 1.80 px | 0.571 px (1.35 ×), 1.09 mrad, worst 1.75 px |
+| Ceres targetless, 100 cameras × 50,000 tracks | worst 0.66 mrad, 0.057%; held out 0.416 mrad; 2,488 outliers | 0.75 mrad, 0.074%; 0.415 mrad; 2,186 |
+| Ceres landmarks, 20,000 against held cameras | worst 6.7 mm, RMS 1.3 mm, cost 0.997 | 6.8 mm, 1.3 mm, 1.000 |
+| Ceres landmarks, a body holds the scale | within 1e-9 | within 2e-10 |
+| Ceres landmarks, 100 cameras × 50,000 | scale 1.004; 0.79 mrad, 1.7 mm, 16 mm; cost 1.001 | 0.9988; 1.43 mrad, 2.8 mm, 16 mm; 0.996 |
+| Ceres freemodel, every model, exact | focal 7.5e-9, ray 2.8e-6 px | 7.3e-9 (modified Brown-Conrady's), 3.1e-6 px |
+| Ceres freemodel, a freed principal point | 1.5e-7 px, 17 iterations | 2.7e-6 px, 16 |
+| Ceres freemodel, an unused model | the used one 1.2e-10 | 1.2e-8 |
+| Ceres freemodel, through a board | 5.4e-9, 1.5e-6 px | 5.8e-9, 1.6e-6 px |
+| Ceres freemodel, 60 frames × 20,000 | cost 1.002; focal 0.81% long, ray 4.3 px | 1.001; 1.08%, 5.1 px |
+| Ceres refiner, the reference held | worst 2.0 mrad, 1.0 mm; cost 1.01 | 1.45 mrad, 0.76 mm; 0.947 |
+| Ceres refiner, a noisy rig | 0.88 mrad, 0.40 mm; held out 0.87 mrad | 0.54 mrad, 0.31 mm; 0.84 mrad |
+| Ceres refiner, a stray view (Cauchy / Huber / none) | 0.68 / 3.4 / 98 mrad | 0.52 / 3.2 / 98 mrad |
+| Ceres refiner, a reported covariance | cost 0.998 | 0.977 |
+| Ceres refiner, 100 cameras × 4000 groups | 9 iterations; 0.94 mrad, 1.3 mm | 12 iterations; 1.14 mrad, 1.7 mm |
+| Ceres targetless calibration, the nearest start, f = 250 | 0.49%, 2.09 px, 0.87 mrad, Rejected | 0.16%, 0.68 px, 0.83 mrad, Rejected |
+| Ceres targetless calibration, the nearest start, f = 1000 | 0.12%, 1.46 px, 0.34 mrad, Ready | 0.0055%, 0.61 px, 0.23 mrad, Ready |
+| Ceres targetless calibration, stated noise, 12 frames | 0.247%; pp 0.13 px; 1.11 px; 0.435 mrad, 1.18 whitened; 0.106%, 0.67 mrad; 6 named | 0.081%; 0.17 px; 0.42 px; 0.413 mrad, 1.12; 0.076%, 0.56 mrad; 4 |
+| Ceres targetless calibration, stated noise, 24 frames | 0.049%, 0.374 px (0.135 held) | 0.041%, 0.339 px (0.110 held) |
+| Ceres targetless calibration, a wrong match | 182σ; fit 0.167626 px over 1194 | 183σ; 0.169065 px over 1196 |
+| Ceres targetless calibration, moving content | 19.8 to 495σ; ray 0.83 px; 0.405 mrad | 17.6 to 492σ; 0.35 px; 0.404 mrad |
+| OpenCV pose, a far square-on board | 0.33 rad apart; the first 0.22 from the truth, the other 0.13 | 0.44; 0.30, 0.15 |
+| OpenCV estimator, the four models (seed 7, then 18) | rational Exploratory, its principal point moving 2.2 mrad | rational Ready at 1.6 mrad; Kannala-Brandt Exploratory on coverage alone, 0.56 |
+
+Two numbers are left as they were, and the comments say so:
+- **Timings** measured on linux-x86_64 cannot be re-measured here and are not the noise's to move.
+  They are now written "Timed on linux-x86_64".
+- **The moving-content case's counterfactual** (adjusted once, 18 beyond the inlier angle and
+  0.846 mrad) would need the library changed to measure again, so its comment says which noise it was
+  measured under.
+
+### `splitMix64` is public, and `texturedscene.h`'s `mix` uses it
+
+A survey of every random draw in the tree followed, asking what else belongs in `random.h`.
+- **Built: `core::splitMix64(seed, n)`**, SplitMix64's output `n`, in the header as `constexpr`.
+  - It was `random.cpp`'s file-local helper, and the same mixer was written out twice more:
+    `texturedscene.h`'s `mix(x)`, and the tail of M15's `surfaceSeed`.
+  - `mix(x)` is exactly `splitMix64(x, 1)`, since one step from seed `x` is `x + γ` through the same
+    finalizer. `texturedscene.h`'s two uses now spell it that way, and `mix` is deleted.
+  - **Nothing moves, by bytes, not only by algebra.** `flowview-examples --camera-footage` rendered all
+    152 footage files byte-identical before and after.
+  - **Its pins are SplitMix64's published sequence** from seeds 0 and 1234567, recomputed in Python.
+    They come from Vigna's stepped generator, so they also check the counter form. A `constexpr`
+    variable checks it is usable at compile time.
+  - **Sabotage, caught everywhere:** a wrong increment fails the new pins and `standardNormal`'s, and
+    49 of the 152 rendered files change. Those are the textured-scene footage; the board footage does
+    not use it.
+- **Considered and left:**
+  - **A counter-based `core::uniform(seed, sample)`**, for the `double(bits >> 11) * 0x1.0p-53`
+    idiom in about six test sites. Unlike Box-Muller, `mt19937_64` with that scaling is already exact
+    and portable, so moving them would buy tidiness only, and every moved scene would need
+    re-measuring. Trigger: a caller `mt19937_64` cannot serve, such as draws made inside a parallel
+    loop.
+  - **`bootstrapDraws`** (production): exact and portable already, and moving it would change every
+    golden's resampling lines. The same trigger applies.
+  - **`uuid.cpp`'s engine** is meant to be nondeterministic; **the `0x9e3779b97f4a7c15` in
+    `uuid.inl` and `flow/types.h`** is hash-combining for containers; **FLANN's `std::rand`** is
+    third-party and guarded.
+  - **`core::seedOf(text)`**, the first 64 bits of SHA-256 over a versioned text, is waiting on M15's
+    merge, below.
+
+### Verified
+
+- `ctest -j8` **1362/1362** MSVC Debug and **1370/1370** MSVC Release, with video, OpenCV and Ceres
+  on. Each is its earlier count plus the four `[random]` cases. Release runs every moved
+  Release-only case, the four `[scale]` cases serially among them.
+- Warning-clean build of every target in both configurations.
+- `format-check` exit 0 over all 733 files, through the real target.
+- The four pins were recomputed in Python from the stated rule before core's code existed, and
+  match M15's `test_sensor.cpp`.
+- **Not run:** GCC and macOS, which only CI has, and the builds with video, OpenCV or Ceres off,
+  whose suites contain none of the moved cases except core's.
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because
@@ -15554,8 +15738,21 @@ M12 §Not in this milestone.)*
 
 The rest of the answers' follow-ups, each its own commit. *(§NOTES.txt (2026-11-02).)*
 
-- **`rigplan::standardNormal` to `lain::core`** (M15): exact, counter-based normal noise, and the eight
-  Box-Muller copies in the camera tests onto it. Moves the noise, so goldens and bounds move.
+- **rigplan's own `standardNormal` deleted at M15's merge.** `lain::core::standardNormal` is built
+  (§`standardNormal` in `lain::core`). At the merge, `sensor.h`'s declaration and `sensor.cpp`'s
+  `splitMix64` and `standardNormal` go, and `sensor.cpp` calls core's. `test_sensor.cpp`'s pins hold
+  unchanged, since core's test pins the same four draws. M15's `syntheticrig.h`, `syntheticscene.h`
+  and `texturedscene.h` conflicts are settled there too, as the angles' were. Two more at the same
+  merge:
+  - `rigplan/scene/src/scene.cpp`'s `surfaceSeed` ends in a hand-written SplitMix64 finalizer, which
+    is `core::splitMix64(seed ^ hash, 1)`, bit for bit.
+  - `noiseSeed` and `unitDeviation` each read the first 64 bits of SHA-256 over a versioned text.
+    That is the hashing `random.h` recommends for a structured key, so it becomes
+    `core::seedOf(text)` with those two as its callers.
+- **`texturedscene.h`'s pixel noise onto `core::standardNormal`**, its one Box-Muller copy left.
+  Moving it moves every rendered end-to-end suite, whose seeds pin behaviour (10e's seed-3 Ready
+  board, seed 5's principal-point case, per-platform SIFT numbers). Trigger: the fixed-rig footage from
+  committed rig plans (below), which leaves `texturedscene.h` only the moving-camera generator.
 - **A `lain::camera::testing` support target**, in place of the `../../test` include paths from
   `camera/flow/test`, the plugin tests and `apps/flowview/test`.
 - **Fixed-rig end-to-end footage from committed rig plans** (M15), leaving `texturedscene.h` the

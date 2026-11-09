@@ -8,6 +8,7 @@
 
 #include <lain/camera/ceres/register.h>
 #include <lain/camera/refinement/refiner.h>
+#include <lain/core/random.h>
 #include <lain/testing/skip.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -46,27 +47,25 @@ namespace
 		REQUIRE(refinerRegistry().keys() == std::vector<std::string>{"ceres"});
 	}
 
-	// Box-Muller over a seeded engine, as test_landmarks.cpp's: the standard's distributions are
-	// implementation-defined.
+	// Uniforms from mt19937_64 and Gaussians from core::standardNormal, as test_landmarks.cpp's: the
+	// standard's distributions are implementation-defined, and Box-Muller goes through libm.
 	class Random
 	{
 	public:
 		explicit Random(std::uint64_t seed)
 			: m_engine(seed)
+			, m_seed(seed)
 		{
 		}
 
 		double uniform() { return double(m_engine() >> 11) * 0x1.0p-53; } // [0, 1)
-		double gaussian()
-		{
-			const double u1 = (double(m_engine() >> 11) + 0.5) * 0x1.0p-53;
-			const double u2 = uniform();
-			return std::sqrt(-2.0 * std::log(u1)) * std::cos(kTau * u2);
-		}
+		double gaussian() { return core::standardNormal(m_seed, m_draw++); }
 		math::Vec3d direction() { return math::normalize(math::Vec3d{gaussian(), gaussian(), gaussian()}); }
 
 	private:
 		std::mt19937_64 m_engine;
+		std::uint64_t m_seed;
+		std::uint64_t m_draw = 0;
 	};
 
 	// Whether a pixel is inside `model`'s image, 5 px clear of every edge.
@@ -250,10 +249,10 @@ TEST_CASE("a shared free model is recovered for every distortion model", "[camer
 	CHECK_THAT(solution.detail, EndsWith("linear solver SPARSE_SCHUR"));
 	REQUIRE(solution.models.size() == 1);
 
-	// Measured on linux-x86_64, the same in Debug and Release: the focal lengths within 7.5e-9 (no
-	// distortion's, the worst) and the ray mapping within 2.8e-6 px (the rational model's, whose
-	// coefficients are not identifiable but whose mapping is), in 12 to 26 iterations; 1.6 to 8.5 s
-	// per model in Debug, 0.05 to 0.18 s in Release.
+	// Measured: the focal lengths within 7.3e-9 (modified Brown-Conrady's, the worst) and the ray
+	// mapping within 3.1e-6 px (the rational model's, whose coefficients are not identifiable but whose
+	// mapping is), in 12 to 26 iterations. Timed on linux-x86_64: 1.6 to 8.5 s per model in Debug, 0.05
+	// to 0.18 s in Release.
 	const ModelError error = errorOf(created(solution, 0), truth);
 	CAPTURE(error.focal, error.ray);
 	CHECK(error.focal < 1e-6);
@@ -287,7 +286,7 @@ TEST_CASE("a held principal point comes back exactly where it started", "[camera
 		REQUIRE(solution.status == Status::Converged);
 		const CameraModel estimate = created(solution, 0);
 		CAPTURE(estimate.intrinsics().cx, estimate.intrinsics().cy);
-		// Measured: 1.5e-7 px from the truth in each, in 17 iterations.
+		// Measured: within 2.7e-6 px of the truth in each, in 16 iterations.
 		CHECK(std::abs(estimate.intrinsics().cx - truth.intrinsics().cx) < 1e-5);
 		CHECK(std::abs(estimate.intrinsics().cy - truth.intrinsics().cy) < 1e-5);
 	}
@@ -344,7 +343,7 @@ TEST_CASE("a free model that no camera sees through comes back as it started", "
 	REQUIRE(solution.status == Status::Converged);
 	REQUIRE(solution.models.size() == 2);
 	CHECK(sameParameters(solution.models[1], unused.parameters()));
-	// The one in use was refined: measured 1.2e-10 from the truth.
+	// The one in use was refined: measured 1.2e-8 from the truth.
 	CHECK(errorOf(created(solution, 0), truth).focal < 1e-6);
 }
 
@@ -392,7 +391,7 @@ TEST_CASE("a free model refines through a board's corners", "[camera][ceres][fre
 	INFO(solution.detail);
 	REQUIRE(solution.status == Status::Converged);
 	CHECK_THAT(solution.detail, EndsWith("linear solver SPARSE_SCHUR"));
-	// Measured: the focal lengths within 5.4e-9 and the ray mapping within 1.5e-6 px, in 7 iterations.
+	// Measured: the focal lengths within 5.8e-9 and the ray mapping within 1.6e-6 px, in 7 iterations.
 	const ModelError error = errorOf(created(solution, 0), truth);
 	CAPTURE(error.focal, error.ray);
 	CHECK(error.focal < 1e-6);
@@ -505,11 +504,11 @@ TEST_CASE("a moving camera of 60 frames and 20000 landmarks refines its shared m
 	REQUIRE(solution.status == Status::Converged);
 	const ModelError error = errorOf(created(solution, 0), truth);
 	CAPTURE(error.focal, error.ray, solution.iterations, solution.elapsed.seconds());
-	// Measured on linux-x86_64, Release, one thread: 6.4 s over 160,000 residuals, 13 iterations, 162
-	// MB at peak for the whole case. The final cost is 1.002 of half the residual dimensions less the
-	// unknowns (every landmark, every frame but the reference, and the model's seven free
+	// Timed on linux-x86_64, Release, one thread: 6.4 s over 160,000 residuals, 162 MB at peak for the
+	// whole case. Measured: 13 iterations, and a final cost 1.001 of half the residual dimensions less
+	// the unknowns (every landmark, every frame but the reference, and the model's seven free
 	// parameters), which is where whitened noise leaves a least-squares minimum. The focal lengths
-	// came out 0.81% long and the worst ray 4.3 px out, which is the probe's finding: 8-view tracks
+	// came out 1.08% long and the worst ray 5.1 px out, which is the probe's finding: 8-view tracks
 	// condition a model poorly under noise.
 	const double dimensions = 2.0 * double(problem.landmarkObservations.size()) - 3.0 * double(problem.landmarks.size()) -
 							  6.0 * double(problem.cameraFromReference.size() - 1) - 7.0;

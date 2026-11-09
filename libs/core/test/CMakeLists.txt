@@ -12,6 +12,7 @@ add_executable(test-core
 	test_uri.cpp
 	test_hex.cpp
 	test_sha256.cpp
+	test_random.cpp
 	test_length.cpp
 )
 

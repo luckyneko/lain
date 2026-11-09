@@ -9,6 +9,7 @@
 #include <lain/camera/board/pose.h>
 #include <lain/camera/opencv/register.h>
 #include <lain/camera/projection.h>
+#include <lain/core/random.h>
 #include <lain/math/angles.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -16,7 +17,6 @@
 
 #include <cmath>
 #include <cstdint>
-#include <random>
 
 using namespace lain;
 using namespace lain::camera;
@@ -57,27 +57,23 @@ namespace
 		return *result.model;
 	}
 
-	// Gaussian noise of standard deviation `sigma`, by Box-Muller over mt19937_64, whose output the
-	// standard fixes: std::normal_distribution is implementation-defined, and these views must be the
-	// same on every platform.
+	// Gaussian noise of standard deviation `sigma`, from core::standardNormal: std::normal_distribution
+	// is implementation-defined, Box-Muller goes through libm, and these views must be the same on every
+	// platform.
 	struct Noise
 	{
-		std::mt19937_64 engine;
+		std::uint64_t seed;
 		double sigma;
+		std::uint64_t draw = 0;
 
-		double operator()()
-		{
-			const double u1 = (double(engine() >> 11) + 0.5) / 9007199254740992.0;
-			const double u2 = double(engine() >> 11) / 9007199254740992.0;
-			return sigma * std::sqrt(-2.0 * std::log(u1)) * std::cos(math::two_pi<double>() * u2);
-		}
+		double operator()() { return sigma * core::standardNormal(seed, draw++); }
 	};
 
 	// Every corner of the board at `pose`, projected through `model`, with Gaussian pixel noise.
 	cb::Observation observe(const CameraModel& model, const cb::Specification& spec, const math::RigidTransformd& pose,
 							double noise = 0.0, std::uint64_t seed = 1)
 	{
-		Noise jitter{std::mt19937_64(seed), noise};
+		Noise jitter{seed, noise};
 		cb::Observation view;
 		view.frame = {core::Uri{"/synthetic/pose"}, 0, {}};
 		view.image = model.image();
@@ -136,8 +132,8 @@ TEST_CASE("a far, nearly square-on board comes back with its plane's other pose"
 
 	// The two are genuinely different poses, each explaining the view to within its half-pixel noise
 	// (about 0.6 mrad at f = 900), as the true pose does: one view cannot choose between them. Measured
-	// on this view: the two are 0.33 rad apart, and the backend's FIRST pose is the farther from the
-	// truth (0.22 rad against 0.13), which is why a caller with more evidence must make the choice.
+	// on this view: the two are 0.44 rad apart, and the backend's FIRST pose is the farther from the
+	// truth (0.30 rad against 0.15), which is why a caller with more evidence must make the choice.
 	CHECK(math::rotationBetween(result.pose->cameraFromBoard, result.alternative->cameraFromBoard) > 0.1);
 	CHECK(result.pose->rmsAngle < 0.001);
 	CHECK(result.alternative->rmsAngle < 0.001);

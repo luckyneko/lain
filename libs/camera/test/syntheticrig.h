@@ -14,6 +14,7 @@
 #include <lain/camera/projection.h>
 #include <lain/camera/registration/board.h>
 #include <lain/camera/registration/refiner.h>
+#include <lain/core/random.h>
 #include <lain/media/framesource.h>
 
 #include <array>
@@ -143,14 +144,12 @@ namespace lain::camera::testing::rig
 		}
 		static const CameraModel m = model();
 		const math::RigidTransformd pose = trueCameraFromBoard(camera, group);
-		// Box-Muller over a seeded engine: the standard's distributions are implementation-defined.
-		std::mt19937_64 engine(camera * 15485863 + group * 32452843 + 7);
+		// core::standardNormal's noise, the same on every platform, seeded by camera and group (seeds
+		// this small never relate two streams; random.h says why).
+		const std::uint64_t seed = camera * 15485863 + group * 32452843 + 7;
+		std::uint64_t draw = 0;
 		const auto gaussian = [&]
-		{
-			const double u1 = (double(engine() >> 11) + 0.5) * 0x1.0p-53;
-			const double u2 = double(engine() >> 11) * 0x1.0p-53;
-			return std::sqrt(-2.0 * std::log(u1)) * std::cos(math::two_pi<double>() * u2);
-		};
+		{ return core::standardNormal(seed, draw++); };
 		const Scene& s = scene();
 		board::Observation observation;
 		observation.frame = frame;
