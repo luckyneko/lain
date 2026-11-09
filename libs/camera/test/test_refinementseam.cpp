@@ -3,9 +3,8 @@
 // distortion; "b-polynomial" can estimate every model but Kannala-Brandt 4. Keys are ordered, so
 // a-pinhole is the first. The Ceres refiner has its own tests, in plugins/camera/ceres.
 
-#include "testcamera.h"
-
 #include <lain/camera/refinement/refiner.h>
+#include <lain/camera/testing/testcamera.h>
 
 #include <catch2/catch_test_macros.hpp>
 

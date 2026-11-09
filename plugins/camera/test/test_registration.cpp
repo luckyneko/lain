@@ -5,12 +5,12 @@
 // fixture's are.
 
 #include "registration.h"
-#include "syntheticfootage.h"
-#include "testboard.h"
 
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/capture/capturegroup.h>
 #include <lain/camera/registration/board.h>
+#include <lain/camera/testing/syntheticfootage.h>
+#include <lain/camera/testing/testboard.h>
 #include <lain/math/angles.h>
 #include <lain/media/framesource.h>
 #include <lain/testing/threadpool.h>

@@ -5,7 +5,6 @@
 // also record what sub-slice 10 decides on (the threshold, the sampled frames, the cap).
 
 #include "renderedfeatures.h"
-#include "texturedscene.h"
 
 #include <lain/camera/capture/capturegroup.h>
 #include <lain/camera/feature/features.h>
@@ -13,6 +12,7 @@
 #include <lain/camera/feature/matching.h>
 #include <lain/camera/feature/sequenceextraction.h>
 #include <lain/camera/projection.h>
+#include <lain/camera/testing/texturedscene.h>
 #include <lain/core/time.h>
 #include <lain/media/framesequence.h>
 #include <lain/task/task.h>

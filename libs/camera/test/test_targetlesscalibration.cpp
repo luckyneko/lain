@@ -6,12 +6,11 @@
 // Ceres refiner's recovery is plugins/camera/ceres's to show. Every measured number is written beside
 // its check.
 
-#include "passthroughrefiner.h"
-#include "syntheticscene.h"
-#include "targetlesscalibrationtext.h"
-
 #include <lain/camera/calibration/targetless.h>
 #include <lain/camera/feature/sequenceextraction.h>
+#include <lain/camera/testing/passthroughrefiner.h>
+#include <lain/camera/testing/syntheticscene.h>
+#include <lain/camera/testing/targetlesscalibrationtext.h>
 #include <lain/meta/enums.h>
 #include <lain/testing/threadpool.h>
 

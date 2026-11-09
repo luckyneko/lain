@@ -8,10 +8,9 @@
 // answer depends on which views it was handed, so a different choice of views anywhere (selection,
 // hold-out, any resample) moves the numbers here rather than picking an equally exact answer.
 
-#include "goldentext.h"
-#include "syntheticboard.h"
-
 #include <lain/camera/calibration/board.h>
+#include <lain/camera/testing/goldentext.h>
+#include <lain/camera/testing/syntheticboard.h>
 
 #include <catch2/catch_test_macros.hpp>
 

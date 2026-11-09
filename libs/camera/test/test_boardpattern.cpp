@@ -1,10 +1,9 @@
 // Board patterns and specifications: what makes one, what refuses one, the fingerprint that
 // identifies one, and where its corners are.
 
-#include "testboard.h"
-
 #include <lain/camera/board/pattern.h>
 #include <lain/camera/board/specification.h>
+#include <lain/camera/testing/testboard.h>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>

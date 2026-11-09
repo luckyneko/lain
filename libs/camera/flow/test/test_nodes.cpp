@@ -4,14 +4,13 @@
 // its parameters say and passes on what comes back — not detection or estimation, which the method
 // module's and the OpenCV plugin's own tests cover.
 
-#include "syntheticboard.h"
-
 #include <lain/camera/flow/boardspecificationnode.h>
 #include <lain/camera/flow/calibratecameranode.h>
 #include <lain/camera/flow/cameramodelnode.h>
 #include <lain/camera/flow/detectboardnode.h>
 #include <lain/camera/flow/registeredrignode.h>
 #include <lain/camera/flow/renderboardnode.h>
+#include <lain/camera/testing/syntheticboard.h>
 #include <lain/flow/boundary.h>
 #include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>

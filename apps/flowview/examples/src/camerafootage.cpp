@@ -1,11 +1,10 @@
 #include "camerafootage.h"
 
-#include "testcameraparameters.h" // the textured rig's camera, the tests' own
-#include "texturedscene.h"		  // the scene with no board in it
-
 #include <lain/camera/board/pattern.h>
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/serialize/cameramodel.h>
+#include <lain/camera/testing/testcameraparameters.h> // the textured rig's camera, the tests' own
+#include <lain/camera/testing/texturedscene.h>		  // the scene with no board in it
 #include <lain/core/length.h>
 #include <lain/core/uri.h>
 #include <lain/image/image.h>

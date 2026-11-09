@@ -4,10 +4,9 @@
 // the seam is wired, not that a scene is well posed: conditioning under noise is sub-slices 9 and
 // 10's to measure. Every tolerance is a measurement, written beside its check.
 
-#include "syntheticrig.h"
-
 #include <lain/camera/ceres/register.h>
 #include <lain/camera/refinement/refiner.h>
+#include <lain/camera/testing/syntheticrig.h>
 #include <lain/core/random.h>
 #include <lain/testing/skip.h>
 

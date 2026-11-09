@@ -10,11 +10,10 @@
 // component estimate, the cheirality filter, the parallax floor, and the hold-out guard's reading of
 // the closure. The labels are the method-neutral names; there is no earlier text to stay equal to.
 
-#include "goldentext.h"
-#include "passthroughrefiner.h"
-#include "syntheticscene.h"
-
 #include <lain/camera/registration/targetless.h>
+#include <lain/camera/testing/goldentext.h>
+#include <lain/camera/testing/passthroughrefiner.h>
+#include <lain/camera/testing/syntheticscene.h>
 
 #include <catch2/catch_test_macros.hpp>
 

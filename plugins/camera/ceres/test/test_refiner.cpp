@@ -1,15 +1,14 @@
 // The Ceres refiner: the refinement itself (whitening, the reference held, pose-only
 // problems), then the board registration method module running through it on the synthetic rig
-// (libs/camera/test/syntheticrig.h) with pixel noise, where the stand-in refiner of
+// (lain/camera/testing/syntheticrig.h) with pixel noise, where the stand-in refiner of
 // test-camera-registration only handed back its start. Every tolerance is a measurement, written
 // beside its check.
-
-#include "syntheticrig.h"
 
 #include <lain/camera/ceres/register.h>
 #include <lain/camera/refinement/refiner.h>
 #include <lain/camera/registration/board.h>
 #include <lain/camera/registration/refiner.h>
+#include <lain/camera/testing/syntheticrig.h>
 #include <lain/math/angles.h>
 #include <lain/testing/skip.h>
 #include <lain/testing/threadpool.h>

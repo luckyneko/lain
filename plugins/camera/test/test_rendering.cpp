@@ -5,12 +5,12 @@
 // raster comes from it.
 
 #include "registration.h"
-#include "syntheticfootage.h"
-#include "testboard.h"
-#include "texturedscene.h"
 
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/cameramodel.h>
+#include <lain/camera/testing/syntheticfootage.h>
+#include <lain/camera/testing/testboard.h>
+#include <lain/camera/testing/texturedscene.h>
 
 #include <catch2/catch_test_macros.hpp>
 

@@ -10,11 +10,10 @@
 // measure the same. Every case but the one comparing the two starts a pool of four, since without one
 // the resamples run inline on the case's thread.
 
-#include "syntheticscene.h"
-#include "targetlesscalibrationtext.h"
-
 #include <lain/camera/calibration/targetless.h>
 #include <lain/camera/ceres/register.h>
+#include <lain/camera/testing/syntheticscene.h>
+#include <lain/camera/testing/targetlesscalibrationtext.h>
 #include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>

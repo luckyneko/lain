@@ -4,7 +4,6 @@
 // marked Release only also record what slice 3 left provisional (WORK.md, M9 slice 3, sub-slice 7).
 
 #include "renderedfeatures.h"
-#include "texturedscene.h"
 
 #include <lain/camera/capture/capturegroup.h>
 #include <lain/camera/feature/extraction.h>
@@ -12,6 +11,7 @@
 #include <lain/camera/feature/geometry.h>
 #include <lain/camera/feature/matching.h>
 #include <lain/camera/projection.h>
+#include <lain/camera/testing/texturedscene.h>
 #include <lain/core/time.h>
 #include <lain/math/angles.h>
 #include <lain/media/framesequence.h>

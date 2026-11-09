@@ -3,9 +3,8 @@
 // point with distinct coefficients, so a swapped coefficient, a reversed direction or a wrong term
 // each move the answer.
 
-#include "testcamera.h"
-
 #include <lain/camera/projection.h>
+#include <lain/camera/testing/testcamera.h>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>

@@ -1400,6 +1400,29 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-09 — `lain::camera::testing`: the camera tests' shared code is a target
+
+The fifth NOTES.txt follow-up. The twelve headers the camera tests share (test camera and board,
+stand-in backends, synthetic and textured footage, report printers, rig comparison) moved from
+`libs/camera/test` to `libs/camera/testing/include/lain/camera/testing/`, an INTERFACE target. A
+consumer links `lain::camera::testing` and includes `<lain/camera/testing/x.h>`; no executable puts
+`libs/camera/test` on its include path any more (91 compiles use the new directory, none the old).
+No header's content changed. `ctest -j8` **1362/1362** MSVC Debug with video, camera and Ceres on
+(unchanged); warning-clean, format-check clean; an apps-on, tests-off build from scratch builds
+`flowview-examples` with no Catch2 in its cache. **Not run:** Release, GCC, macOS. Full notes in
+WORK.md's section of the same name.
+
+- **Built with the tests OR the apps**, since `flowview-examples` (built with the apps alone) draws the
+  camera examples' footage with the tests' own scenes. It uses only the three framework-free headers;
+  the other nine assert through Catch2, which the target links only `if(TARGET Catch2::Catch2)`. That is
+  the directory's old property, now stated in its CMakeLists.
+- **Its link line states what the headers name** (`lain::camera`, `lain::image`, `lain::meta`,
+  `lain::task`); `lain::camera` links the last two privately, so consumers had been supplying them.
+- **One path was dead:** `test-camera-flow-registration` includes only its own `nullbackends.h`.
+- **Left, with triggers in Outstanding work:** a framework-free `lain::camera::synthetic` split, and
+  `libs/media/serialize/test`'s `../../test` reach for `testsource.h`. The golden reports stay in
+  `libs/camera/test/golden`, beside the cases that read them.
+
 ### Update 2026-11-09 — `core::standardNormal`, and the camera tests' noise onto it
 
 The fourth NOTES.txt follow-up. `lain/core/random.h` gains rigplan's (feature/M15) exact,

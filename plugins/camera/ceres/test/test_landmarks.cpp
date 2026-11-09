@@ -5,10 +5,9 @@
 // registration (M9 slice 3) depends on how it behaves. Every tolerance is a measurement, written
 // beside its check.
 
-#include "syntheticrig.h"
-
 #include <lain/camera/ceres/register.h>
 #include <lain/camera/refinement/refiner.h>
+#include <lain/camera/testing/syntheticrig.h>
 #include <lain/core/random.h>
 #include <lain/math/angles.h>
 #include <lain/testing/skip.h>

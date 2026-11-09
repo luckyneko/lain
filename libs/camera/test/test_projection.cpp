@@ -1,9 +1,8 @@
 // Projection and unprojection through every model: round trips across the image, the failure
 // statuses, the fold domain, containment, and the claim that the kernels are scalar-generic.
 
-#include "testcamera.h"
-
 #include <lain/camera/projection.h>
+#include <lain/camera/testing/testcamera.h>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>

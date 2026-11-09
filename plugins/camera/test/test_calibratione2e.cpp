@@ -13,13 +13,13 @@
 // in seconds. Every bound is a measurement, written beside its check.
 
 #include "registration.h"
-#include "testboard.h"
-#include "texturedscene.h"
 
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/calibration/board.h>
 #include <lain/camera/calibration/targetless.h>
 #include <lain/camera/projection.h>
+#include <lain/camera/testing/testboard.h>
+#include <lain/camera/testing/texturedscene.h>
 #include <lain/testing/skip.h>
 #include <lain/testing/threadpool.h>
 

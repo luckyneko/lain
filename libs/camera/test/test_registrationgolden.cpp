@@ -9,10 +9,9 @@
 // "groups" for units, "corners" for residuals, "metres" for the absolute translation variation):
 // they stay, so the text is byte-identical across the renames.
 
-#include "goldentext.h"
-#include "syntheticrig.h"
-
 #include <lain/camera/registration/board.h>
+#include <lain/camera/testing/goldentext.h>
+#include <lain/camera/testing/syntheticrig.h>
 
 #include <catch2/catch_test_macros.hpp>
 

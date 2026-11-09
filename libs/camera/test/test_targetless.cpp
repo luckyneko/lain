@@ -3,11 +3,10 @@
 // held-out tracks predicted member by member (registration::validate), which cameras can be placed,
 // the seed, cheirality, stability, and the refusals. Every measured number is written beside its check.
 
-#include "passthroughrefiner.h"
-#include "syntheticscene.h"
-
 #include <lain/camera/registration/targetless.h>
 #include <lain/camera/registration/validation.h>
+#include <lain/camera/testing/passthroughrefiner.h>
+#include <lain/camera/testing/syntheticscene.h>
 #include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>

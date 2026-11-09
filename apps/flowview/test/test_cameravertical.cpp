@@ -19,12 +19,8 @@
 #include "camerafootage.h" // the footage, drawn in plain C++ and shared with flowview-examples
 #include "clibinders.h"
 #include "graphio.h"
-#include "rigcompare.h" // a registered rig against its truth
 #include "runmode.h"
 #include "scene.h"
-#include "syntheticfootage.h" // the footage, drawn in plain C++
-#include "testcamera.h"		  // the targetless rig's camera
-#include "texturedscene.h"	  // ... and the scene it sees, drawn in plain C++ too
 
 #include <lain/camera/backends.h>
 #include <lain/camera/board/detection.h>
@@ -41,6 +37,10 @@
 #include <lain/camera/registration/report.h>
 #include <lain/camera/serialize/cameramodel.h>
 #include <lain/camera/serialize/registeredrig.h>
+#include <lain/camera/testing/rigcompare.h>		  // a registered rig against its truth
+#include <lain/camera/testing/syntheticfootage.h> // the footage, drawn in plain C++
+#include <lain/camera/testing/testcamera.h>		  // the targetless rig's camera
+#include <lain/camera/testing/texturedscene.h>	  // ... and the scene it sees, drawn in plain C++ too
 #include <lain/core/uri.h>
 #include <lain/flow/boundary.h>
 #include <lain/flow/graph.h>

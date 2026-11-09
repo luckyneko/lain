@@ -67,6 +67,10 @@ target_link_libraries(camera
 add_subdirectory(flow)
 # Camera values as documents, over lain::data.
 add_subdirectory(serialize)
+# What the camera tests share, and the footage tool draws with (testing/CMakeLists.txt).
+if(LAIN_BUILD_TESTING OR LAIN_BUILD_APPS)
+	add_subdirectory(testing)
+endif()
 
 if(LAIN_BUILD_TESTING)
 	add_subdirectory(test)

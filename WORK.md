@@ -15487,6 +15487,80 @@ A survey of every random draw in the tree followed, asking what else belongs in 
 - **Not run:** GCC and macOS, which only CI has, and the builds with video, OpenCV or Ceres off,
   whose suites contain none of the moved cases except core's.
 
+## `lain::camera::testing`: the camera tests' shared code is a target (built 2026-11-09)
+
+The fifth of the NOTES.txt (2026-11-02) follow-ups. Twelve headers the camera tests share (the test
+camera and board, the stand-in backends, the footage drawn in plain C++, the report printers and rig
+comparison) sat in `libs/camera/test`, and thirteen executables in six other directories reached
+them with `target_include_directories(... "<somewhere>/libs/camera/test")`, which put camera's whole
+test directory on their include path to find a quoted `"syntheticscene.h"`. Now they are
+`libs/camera/testing/include/lain/camera/testing/`, an INTERFACE target `lain::camera::testing`
+(`camera-testing`, as `camera-flow` is `lain::camera::flow`), and a consumer links it and writes
+`#include <lain/camera/testing/syntheticscene.h>`. No header's content changed: the twelve moved
+(`git mv`, so `--follow` keeps their history), sibling includes inside the target stay quoted, and
+every include outside it is the angle form, in the `<lain/...>` block where clang-format regroups it.
+
+### What it links, and when it exists
+
+- **Its link line states what the headers name:** `lain::camera`, `lain::image` (the footage is drawn
+  into one), `lain::meta` (the report printers' enum names) and `lain::task` (the textured scene draws
+  on the process pool). `lain::camera` links the last two privately, so the consumers had each been
+  supplying them, some by luck of what else they linked.
+- **It is built with the tests OR the apps, not only the tests.** `flowview-examples` is built with the
+  apps whether or not the tests are, and it draws the camera examples' footage with the tests' own
+  scenes (`camerafootage.cpp`, which `test-flowview` compiles too), so a person and a test see the same
+  frames. It includes three headers that need no test framework (`syntheticfootage.h`,
+  `texturedscene.h`, `testcameraparameters.h`); the other nine assert through Catch2.
+- **So Catch2 is linked only where it was built** (`if(TARGET Catch2::Catch2)`). In a build with the
+  apps and not the tests, nine headers are unusable, which is exactly what was true of the directory
+  before: `testcameraparameters.h` was split from `testcamera.h` for this tool. Including one of the
+  nine from the tool fails loudly, at the include, in that configuration.
+- **Considered: two targets**, a framework-free `lain::camera::synthetic` for the footage and
+  `lain::camera::testing` over it, so the tool could not reach a Catch2 header in any configuration.
+  Not done: the review item asked for one target, and `testcameraparameters.h` is in `testing`'s
+  namespace and used by 12 test sources, so the split would rename it there for one consumer. Trigger: a second
+  non-test consumer, or the M15 rig-plan footage taking the fixed-rig scenes out of
+  `texturedscene.h` (Outstanding work).
+- **The golden reports stay in `libs/camera/test/golden`.** They are the data of that directory's own
+  cases, and `goldentext.h` already finds them through `LAIN_CAMERA_GOLDEN_DIR`, which the including
+  test defines.
+
+### What moved
+
+- `libs/camera/test`: nine executables link the target; `test-camera-feature` uses none of the
+  headers and does not.
+- `libs/camera/flow/test`: five link it. **`test-camera-flow-registration`'s path was unused**: it
+  includes only its own `nullbackends.h`, so its line is deleted and it links nothing new.
+- `plugins/camera/ceres/test`, `plugins/camera/opencv/test` (`test-camera-opencv-features`),
+  `plugins/camera/test` (`test-camera-fixture`, both end-to-end suites), `apps/flowview`
+  (`flowview-examples`) and `apps/flowview/test` (`test-flowview`).
+- Three source comments that named `libs/camera/test` name the target.
+
+### Left as it is
+
+- **`plugins/camera/test/renderedrig.h` and `plugins/camera/opencv/test/renderedfeatures.h`** are each
+  used only beside themselves, so they stay where they are.
+- **`libs/media/serialize/test` reaches `libs/media/test/testsource.h` by `../../test`**, the same
+  shape in another library. One header and one consumer inside one library's tree, so a
+  `lain::media::testing` would be a target for a single include. Trigger: a second consumer outside
+  `libs/media`.
+
+### Verified
+
+- `ctest -j8` **1362/1362** MSVC Debug with video, OpenCV and Ceres on: the same count as before, since
+  no case was added or removed. Warning-clean build of every target under `/W4 /WX`.
+- **The compile database agrees:** 91 translation units get `libs/camera/testing/include`, and none
+  gets `libs/camera/test` as an include directory (what remains of that path is the golden and output
+  directories the golden cases are compiled with).
+- **The configuration the conditional link is for, built:** apps on and tests off (Ceres off to keep
+  it short), from scratch. `flowview-examples` builds and links, and the cache holds no Catch2.
+- **Sabotage, in that configuration:** `camerafootage.cpp` including `testcamera.h` fails at the
+  include, C1083 on `catch2/catch_test_macros.hpp`, as predicted. Restored, both configurations
+  build again.
+- `format-check` exit 0 over the whole tree, through the real target.
+- **Not run:** the Release build and its Release-only cases, whose bodies this Debug build compiles
+  (`skipInDebug` keeps them reachable) but does not run; GCC and macOS, which only CI has.
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because
@@ -15753,8 +15827,6 @@ The rest of the answers' follow-ups, each its own commit. *(§NOTES.txt (2026-11
   Moving it moves every rendered end-to-end suite, whose seeds pin behaviour (10e's seed-3 Ready
   board, seed 5's principal-point case, per-platform SIFT numbers). Trigger: the fixed-rig footage from
   committed rig plans (below), which leaves `texturedscene.h` only the moving-camera generator.
-- **A `lain::camera::testing` support target**, in place of the `../../test` include paths from
-  `camera/flow/test`, the plugin tests and `apps/flowview/test`.
 - **Fixed-rig end-to-end footage from committed rig plans** (M15), leaving `texturedscene.h` the
   moving-camera generator and the renderer's reference.
 - **Node sets under `plugins/flow/{image,sequence,camera}`**, always built (a node kind is vocabulary),
@@ -15762,6 +15834,11 @@ The rest of the answers' follow-ups, each its own commit. *(§NOTES.txt (2026-11
 - **Measurements out of ctest**: a `camera-bench` for the Release-only and `[scale]` cases.
 - **`ExtractionParams`**: one place declaring and reading the five extraction settings both targetless
   nodes expose.
+- **A framework-free `lain::camera::synthetic` beside `lain::camera::testing`**, so a tool cannot reach
+  a Catch2 header in any configuration. Trigger: a second non-test consumer of the footage, or the
+  fixed-rig footage above. *(§`lain::camera::testing`.)*
+- **`lain::media::testing`** for `testsource.h`, which `libs/media/serialize/test` reaches by
+  `../../test`. Trigger: a consumer outside `libs/media`. *(§`lain::camera::testing`.)*
 
 ### Deferred — from the notes.txt triage
 

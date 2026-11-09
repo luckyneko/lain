@@ -50,8 +50,6 @@ add_executable(test-flowview
 
 target_compile_features(test-flowview PRIVATE cxx_std_17)
 target_include_directories(test-flowview PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src" "${CMAKE_CURRENT_SOURCE_DIR}/../examples/src")
-# The synthetic footage the camera vertical draws, shared with the camera fixture harness.
-target_include_directories(test-flowview PRIVATE "${lain_SOURCE_DIR}/libs/camera/test")
 # The committed examples, which test_examples loads, runs and compares with what the builder writes.
 target_compile_definitions(test-flowview PRIVATE LAIN_FLOWVIEW_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../examples")
 # Whether this build has a camera backend, so should OFFER the camera kinds: the catalog test holds the
@@ -74,11 +72,12 @@ endif()
 # lain::gui + Vulkan::Loader: the value views draw with ImGui, so they link it (the same recipe
 # libs/gui's own tests use). Still driver-free — the POSTER half is what the tests call, and no
 # gui::Context is ever constructed; graphio touches the file system, but no device and no window.
+# lain::camera::testing: the camera vertical's footage and truths, the camera tests' own.
 target_link_libraries(test-flowview PRIVATE
 	lain::data lain::flow lain::flow::serialize lain::flow-example lain::image
 	lain::io lain::io::sequence lain::media::serialize lain::io::image lain::io::data::codecs lain::io::image::codecs
 	lain::io::video::codecs
-	lain::camera::flow lain::camera::backends lain::camera::serialize
+	lain::camera::flow lain::camera::backends lain::camera::serialize lain::camera::testing
 	lain::log lain::string lain::testing
 	lain::gui Vulkan::Loader
 	lain::warnings Catch2::Catch2WithMain

@@ -1,9 +1,8 @@
 // calibration::includes, accepts and Attempts: the calibration fallback's vocabulary, which the
 // fallback's gating node and its record both ask, over reports built as a calibration hands them back.
 
-#include "testcamera.h"
-
 #include <lain/camera/calibration/attempts.h>
+#include <lain/camera/testing/testcamera.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>

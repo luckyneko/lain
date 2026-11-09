@@ -4,9 +4,8 @@
 // under test is everything the module decides around them. Its own executable: the registries only
 // grow, and these stand-ins must be the only backends registered.
 
-#include "syntheticrig.h"
-
 #include <lain/camera/registration/board.h>
+#include <lain/camera/testing/syntheticrig.h>
 #include <lain/math/angles.h>
 #include <lain/testing/threadpool.h>
 

@@ -10,9 +10,6 @@
 
 #include "registration.h"
 #include "renderedrig.h"
-#include "rigcompare.h"
-#include "testboard.h"
-#include "testcamera.h"
 
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/feature/extraction.h>
@@ -20,6 +17,9 @@
 #include <lain/camera/registration/board.h>
 #include <lain/camera/registration/targetless.h>
 #include <lain/camera/registration/validation.h>
+#include <lain/camera/testing/rigcompare.h>
+#include <lain/camera/testing/testboard.h>
+#include <lain/camera/testing/testcamera.h>
 #include <lain/testing/skip.h>
 #include <lain/testing/threadpool.h>
 

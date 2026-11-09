@@ -2,10 +2,9 @@
 // stand-in backends answering from a known truth (syntheticboard.h). Its own executable: the
 // registries only grow, and these stand-ins must be the only backends registered.
 
-#include "syntheticboard.h"
-
 #include <lain/camera/calibration/board.h>
 #include <lain/camera/calibration/fitness.h>
+#include <lain/camera/testing/syntheticboard.h>
 #include <lain/testing/threadpool.h>
 
 #include <catch2/catch_approx.hpp>

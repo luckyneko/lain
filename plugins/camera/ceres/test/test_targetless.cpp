@@ -1,14 +1,13 @@
 // Targetless registration through the Ceres refiner (registration::targetless): its evidence, held-out
 // tracks predicted member by member with every camera held (registration::validate); a noisy rig; a
 // wrong match named; a landmark behind a camera kept out of the solve; and, in Release, a rig of 100
-// cameras. The stand-in scene is libs/camera/test's (syntheticscene.h). Every tolerance is a
+// cameras. The stand-in scene is lain::camera::testing's (syntheticscene.h). Every tolerance is a
 // measurement, written beside its check.
-
-#include "syntheticscene.h"
 
 #include <lain/camera/ceres/register.h>
 #include <lain/camera/registration/targetless.h>
 #include <lain/camera/registration/validation.h>
+#include <lain/camera/testing/syntheticscene.h>
 #include <lain/core/time.h>
 #include <lain/testing/threadpool.h>
 

@@ -5,10 +5,10 @@
 
 #include "registration.h"
 #include "renderedrig.h"
-#include "rigcompare.h"
-#include "testcamera.h"
 
 #include <lain/camera/registration/targetless.h>
+#include <lain/camera/testing/rigcompare.h>
+#include <lain/camera/testing/testcamera.h>
 #include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>

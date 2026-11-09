@@ -3,8 +3,7 @@
 // the input's order or on the execution policy. Every count is the scene's own, worked out beside its
 // check.
 
-#include "syntheticscene.h"
-
+#include <lain/camera/testing/syntheticscene.h>
 #include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
