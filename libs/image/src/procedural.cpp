@@ -3,26 +3,24 @@
 #include "lain/image/color.h"
 #include "lain/image/imageview.h"
 
+#include <lain/core/random.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 
-// Moved verbatim from libs/camera/test/texturedscene.h, where M9's synthetic scene still samples it per
-// ray: every expression is the one it was, so that scene draws the same footage byte for byte.
+// Moved from libs/camera/test/texturedscene.h, where M9's synthetic scene still samples it per ray:
+// every expression is the one it was, so that scene draws the same footage byte for byte. The scramble
+// was SplitMix64's one-step mix written out, and is core::splitMix64(x, 1), bit for bit.
 namespace lain::image
 {
-	static std::uint64_t mix(std::uint64_t x)
-	{
-		x += 0x9e3779b97f4a7c15ull;
-		x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ull;
-		x = (x ^ (x >> 27)) * 0x94d049bb133111ebull;
-		return x ^ (x >> 31);
-	}
-
-	// A value in [0, 1) for lattice point (i, j).
+	// A value in [0, 1) for lattice point (i, j): the point's coordinates scrambled, then the seed with
+	// them, one SplitMix64 step each.
 	static double lattice(std::uint64_t seed, std::int64_t i, std::int64_t j)
 	{
-		const std::uint64_t key = mix(seed ^ mix(std::uint64_t(i) * 0x632be59bd9b4e019ull ^ std::uint64_t(j) * 0x8cb92ba72f3d8dd7ull));
+		const std::uint64_t point =
+			core::splitMix64(std::uint64_t(i) * 0x632be59bd9b4e019ull ^ std::uint64_t(j) * 0x8cb92ba72f3d8dd7ull, 1);
+		const std::uint64_t key = core::splitMix64(seed ^ point, 1);
 		return double(key >> 11) * 0x1.0p-53;
 	}
 

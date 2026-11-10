@@ -1,6 +1,7 @@
 #include "lain/rigplan/scene.h"
 
 #include <lain/camera/board/rendering.h>
+#include <lain/core/random.h>
 #include <lain/image/procedural.h>
 #include <lain/io/image/load.h>
 #include <lain/io/mesh/load.h>
@@ -87,8 +88,8 @@ namespace lain::rigplan
 		return surfaces;
 	}
 
-	// The material's seed mixed with the surface's identity, FNV-1a then splitmix64, so the same on
-	// every platform and different for every surface.
+	// The material's seed mixed with the surface's identity, FNV-1a then one SplitMix64 step, so the
+	// same on every platform and different for every surface.
 	static std::uint64_t surfaceSeed(std::uint64_t seed, const std::string& identity)
 	{
 		std::uint64_t hash = 1469598103934665603ull;
@@ -97,11 +98,7 @@ namespace lain::rigplan
 			hash ^= c;
 			hash *= 1099511628211ull;
 		}
-		std::uint64_t z = seed ^ hash;
-		z += 0x9e3779b97f4a7c15ull;
-		z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ull;
-		z = (z ^ (z >> 27)) * 0x94d049bb133111ebull;
-		return z ^ (z >> 31);
+		return core::splitMix64(seed ^ hash, 1);
 	}
 
 	static BakeKey bakeOf(const image::ProceduralTexture& texture, const Surface& surface)
