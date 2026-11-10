@@ -1,6 +1,6 @@
 #include "lain/rigplan/realisation.h"
 
-#include <lain/core/sha256.h>
+#include <lain/core/random.h>
 #include <lain/string/format.h>
 
 #include <algorithm>
@@ -24,12 +24,8 @@ namespace lain::rigplan
 		text += '\n';
 		text += key;
 		text += '\n';
-		const core::Sha256Digest digest = core::sha256(text);
-		std::uint64_t bits = 0;
-		for (std::size_t i = 0; i < 8; ++i)
-			bits = (bits << 8) | digest.bytes[i];
 		// 53 bits make every double in [0, 1) on a 2^-53 grid exactly, the same on every platform.
-		return double(bits >> 11) * 0x1.0p-52 - 1.0;
+		return double(core::seedOf(text) >> 11) * 0x1.0p-52 - 1.0;
 	}
 
 	math::RigidTransformd mountFromPlacement(const math::Vec3d& offset, const Aim& aim)

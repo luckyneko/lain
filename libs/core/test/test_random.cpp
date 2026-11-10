@@ -1,6 +1,6 @@
-// Unit tests for lain::core::random.h: splitMix64 against SplitMix64's published sequence, and
+// Unit tests for lain::core::random.h: splitMix64 against SplitMix64's published sequence,
 // standardNormal's draws pinned outside lain, their exactness, and that they are a standard normal,
-// independent of one another.
+// independent of one another, and seedOf against SHA-256's published digests.
 
 #include "lain/core/random.h"
 
@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <vector>
 
+using lain::core::seedOf;
 using lain::core::splitMix64;
 using lain::core::standardNormal;
 
@@ -114,4 +115,14 @@ TEST_CASE("standardNormal draws are a standard normal, independent of one anothe
 	for (std::size_t i = 0; i < n; ++i)
 		otherSeed[i] = standardNormal(kSeed + 1, i);
 	REQUIRE(std::abs(correlation(here, otherSeed)) < 0.011);
+}
+
+TEST_CASE("seedOf is the first eight bytes of a text's SHA-256, big-endian", "[random]")
+{
+	// FIPS 180-4's own examples, "abc" and the empty message, whose digests begin ba7816bf 8f01cfea and
+	// e3b0c442 98fc1c14; recomputed by Python's hashlib.
+	REQUIRE(seedOf("abc") == 0xba7816bf8f01cfeaull);
+	REQUIRE(seedOf("") == 0xe3b0c44298fc1c14ull);
+	// Every byte of the text counts, its line ends included.
+	REQUIRE(seedOf("lain-rigplan-noise/1\n7\n") != seedOf("lain-rigplan-noise/1\n7"));
 }

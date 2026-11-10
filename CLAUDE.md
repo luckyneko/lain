@@ -1421,8 +1421,14 @@ clean. **Not run:** GCC and macOS. Full notes in WORK.md's *feature/M9 merged in
   numbers are M9's exactly; the free-model scale case's worst ray is 5.4 px, not 5.1.
 - **Found, left for its own commit:** `lain::render` and `rigplan/mover.cpp` hand-write finiteness checks
   that `math::isFinite` covers.
-- **Next, one commit each:** the three merge items WORK.md recorded (rigplan's `standardNormal` onto
-  core's, `surfaceSeed` and `procedural.cpp`'s finalizers onto `core::splitMix64`, `core::seedOf`).
+- **Then the three merge items WORK.md recorded**, one commit each the same day:
+  - rigplan's `standardNormal` gives way to core's;
+  - two hand-written SplitMix64 mixes become `core::splitMix64(x, 1)`, `surfaceSeed`'s and
+    `procedural.cpp`'s (the second missed by the record);
+  - `core::seedOf(text)` (SHA-256's first eight bytes) serves `noiseSeed` and `unitDeviation`.
+
+  `three-poles` rendered on the CPU device is the same bytes after each. Two sabotages are each caught:
+  a lattice stepped twice changes all 144 frames, and a little-endian `seedOf` fails three pins.
 
 ### Update 2026-11-09 — `lain::camera::testing`: the camera tests' shared code is a target
 

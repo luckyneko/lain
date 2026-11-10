@@ -1,5 +1,9 @@
 #include "lain/core/random.h"
 
+#include "lain/core/sha256.h"
+
+#include <cstddef>
+
 namespace lain::core
 {
 	double standardNormal(std::uint64_t seed, std::uint64_t sample)
@@ -16,5 +20,14 @@ namespace lain::core
 			sum += bits & 0xFFFFFFFFull;
 		}
 		return (double(sum) + 6.0) * 0x1.0p-32 - 6.0;
+	}
+
+	std::uint64_t seedOf(std::string_view text)
+	{
+		const Sha256Digest digest = sha256(text);
+		std::uint64_t bits = 0;
+		for (std::size_t i = 0; i < 8; ++i)
+			bits = (bits << 8) | digest.bytes[i];
+		return bits;
 	}
 } // namespace lain::core

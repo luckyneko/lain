@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string_view>
 
 namespace lain::core
 {
@@ -30,7 +31,13 @@ namespace lain::core
 	//
 	// A seed is used as given. Two seeds that differ by k times SplitMix64's increment, for a small k,
 	// share uniforms k outputs apart, so their draws are related. No difference of a few small integers
-	// is such a multiple, but a key with many or large fields is safest hashed into a seed
-	// (lain::core::sha256, say) rather than added up.
+	// is such a multiple, but a key with many or large fields is safest hashed into a seed (seedOf)
+	// rather than added up.
 	double standardNormal(std::uint64_t seed, std::uint64_t sample);
+
+	// A seed for a structured key: the first eight bytes of SHA-256 over `text`, read big-endian. The
+	// caller spells the key: one field to a line, under a versioned name ("lain-rigplan-noise/1"), so a
+	// change to how a key is spelt is a change of name rather than a silent re-roll of everything drawn
+	// from it. The same bits on every platform.
+	std::uint64_t seedOf(std::string_view text);
 } // namespace lain::core

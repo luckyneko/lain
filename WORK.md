@@ -19844,6 +19844,37 @@ M9's mechanism, M15's content:
 - `format-check` clean over 933 files.
 - **Not run:** GCC and macOS, which only CI reaches.
 
+### The three merge items (built 2026-11-10)
+
+The follow-ups WORK.md recorded for this merge (*Deferred — from NOTES.txt*), one commit each, and the
+row that listed them is deleted.
+
+1. **rigplan's own `standardNormal` and `splitMix64` are gone.** `sensor.h`'s declaration and
+   `sensor.cpp`'s two definitions are deleted; the recorder and `test_sensor.cpp` call
+   `core::standardNormal`, whose body was the same arithmetic, operation for operation.
+   `test_sensor.cpp`'s four pinned draws hold unchanged, and core's test pins the same four.
+2. **Two hand-written SplitMix64 one-step mixes are `core::splitMix64(x, 1)`**: `scene.cpp`'s
+   `surfaceSeed`, as recorded, and one the record missed, `procedural.cpp`'s lattice scramble. M15
+   slice 2a lifted that from `texturedscene.h`, where M9 had already made the same change, so the two
+   copies of the texture agree again. `lain::image` links `lain::core` privately for it.
+3. **`core::seedOf(text)`**: the first eight bytes of SHA-256 over a caller's versioned text, read
+   big-endian, beside `standardNormal` in `random.h`, whose comment had recommended hashing a
+   structured key without naming a function for it. `noiseSeed` and `unitDeviation` call it. Its test
+   pins FIPS 180-4's own digests of "abc" and the empty message.
+
+Verified:
+
+- **The capture is the same bytes after each commit.** At the merge, `three-poles` was rendered on the
+  CPU device twice, and the two were byte-identical, so a comparison against it means something. It was
+  rendered again after each commit, and every time all 160 files were identical to it.
+- **Two sabotages, both caught.**
+  - The lattice scramble stepped twice: all 144 frames of the capture differ.
+  - `seedOf` read little-endian: core's `seedOf` case and both of rigplan's pins fail, and
+    `standardNormal`'s pin still passes.
+- `ctest -j8` **1714/1714** Debug and **1722/1722** Release with video, camera and Ceres on (+1 each,
+  the `seedOf` case), M9's rendered suites among them, since they draw the texture item 2 touched;
+  warning-clean; `format-check` clean. **Not run:** GCC and macOS.
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because
@@ -20189,17 +20220,6 @@ M12 §Not in this milestone.)*
 
 The rest of the answers' follow-ups, each its own commit. *(§NOTES.txt (2026-11-02).)*
 
-- **rigplan's own `standardNormal` deleted at M15's merge.** `lain::core::standardNormal` is built
-  (§`standardNormal` in `lain::core`). At the merge, `sensor.h`'s declaration and `sensor.cpp`'s
-  `splitMix64` and `standardNormal` go, and `sensor.cpp` calls core's. `test_sensor.cpp`'s pins hold
-  unchanged, since core's test pins the same four draws. M15's `syntheticrig.h`, `syntheticscene.h`
-  and `texturedscene.h` conflicts are settled there too, as the angles' were. Two more at the same
-  merge:
-  - `rigplan/scene/src/scene.cpp`'s `surfaceSeed` ends in a hand-written SplitMix64 finalizer, which
-    is `core::splitMix64(seed ^ hash, 1)`, bit for bit.
-  - `noiseSeed` and `unitDeviation` each read the first 64 bits of SHA-256 over a versioned text.
-    That is the hashing `random.h` recommends for a structured key, so it becomes
-    `core::seedOf(text)` with those two as its callers.
 - **`texturedscene.h`'s pixel noise onto `core::standardNormal`**, its one Box-Muller copy left.
   Moving it moves every rendered end-to-end suite, whose seeds pin behaviour (10e's seed-3 Ready
   board, seed 5's principal-point case, per-platform SIFT numbers). Trigger: the fixed-rig footage from

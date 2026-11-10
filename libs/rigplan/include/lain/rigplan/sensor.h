@@ -28,8 +28,9 @@ namespace lain::rigplan
 		std::size_t frame = 0;
 	};
 
-	// The 64 bits every noise draw of one camera-frame grows from: the first eight bytes of SHA-256 over
-	// a versioned canonical text of the key, as unitDeviation's are, so it is the same on every platform.
+	// The 64 bits every noise draw of one camera-frame grows from: core::seedOf over a versioned
+	// canonical text of the key (the first eight bytes of its SHA-256), as unitDeviation's draw is, so it
+	// is the same on every platform.
 	// Sample i of that camera-frame is lain::core::standardNormal(noiseSeed(key), i): exact, counter-based
 	// and the same bits on every platform (core/random.h).
 	std::uint64_t noiseSeed(const NoiseKey& key);

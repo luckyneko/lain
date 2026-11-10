@@ -17,8 +17,9 @@ namespace lain::rigplan
 	// One draw (CONTEXT.md, "Realisation"): a unit deviation in [-1, 1), the same on every platform,
 	// chosen by the rig plan's seed, the stable identity of what the parameter belongs to and the
 	// parameter's document key — never by list order or a display name, so an edit to one camera
-	// re-rolls no other. It is SHA-256 over a versioned canonical text of the three, its first 53 bits
-	// read as a fraction. A realisation multiplies it by its category's scale and the tolerance.
+	// re-rolls no other. It is core::seedOf over a versioned canonical text of the three (the first
+	// eight bytes of its SHA-256), its first 53 bits read as a fraction. A realisation multiplies it by
+	// its category's scale and the tolerance.
 	double unitDeviation(std::uint64_t seed, const core::Uuid& owner, std::string_view key);
 
 	// A mount where this build has it.

@@ -1,7 +1,6 @@
 #include "lain/rigplan/sensor.h"
 
 #include <lain/core/random.h>
-#include <lain/core/sha256.h>
 #include <lain/image/color.h>
 #include <lain/image/imageview.h>
 #include <lain/image/transfercurve.h>
@@ -30,11 +29,7 @@ namespace lain::rigplan
 		text += '\n';
 		text += std::to_string(key.frame);
 		text += '\n';
-		const core::Sha256Digest digest = core::sha256(text);
-		std::uint64_t bits = 0;
-		for (std::size_t i = 0; i < 8; ++i)
-			bits = (bits << 8) | digest.bytes[i];
-		return bits;
+		return core::seedOf(text);
 	}
 
 	// Whether `curve` encodes ADC code `adc` of `adcMax` to at least the rounding boundary below output
