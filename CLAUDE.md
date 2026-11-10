@@ -1400,6 +1400,38 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-10 — fixed-rig footage from committed rig plans planned; step 1, `two-methods.json`, built
+
+NOTES.txt follow-up 6 (point 4b) is planned on M15 in six steps, in WORK.md's *Fixed-rig footage from
+committed rig plans*. Step 1 is built: `apps/rigplan/examples/two-methods.json`, `test_comparison`'s
+scene as a rig plan. The rigplan tests pass **210/210** in Debug and Release. **Not run:** GCC and
+macOS.
+
+- **Point 4b overclaimed, and the plan is narrower.** `test_calibratione2e` cannot move, since every case
+  there is a moving camera. `test_registration` and `test_fixture` never used `texturedscene.h`. And
+  `texturedscene.h` keeps fixed cameras for `test_features`' per-pixel truth. What moves is
+  `test_comparison`, `test_targetlesse2e` (deleted, its claims made by the plan's targetless half) and
+  flowview's textured rig. The still-scene checks get a CPU ray cast over the meshes the renderer
+  draws, not a new capture format.
+- **The plan:**
+  - a 6 x 4.5 x 2.4 m procedural room and its box;
+  - four fixed cameras 0.6 m apart on a 3.2 m arc, 1280 x 720 at f = 1000 px;
+  - a 7 x 5 board of 80 mm squares on the comparison's 16-frame path;
+  - four point lamps.
+
+  Its poses are literals from lain's `lookingAt` and `aimOf`, rounded, since a committed example is
+  byte-compared on every platform. `register.json` does not detect its board, which is not M9's.
+- **A throwaway probe measured it** on an RTX 4090 and the CPU device, seeds 1 to 3. At lamp intensity
+  1.0, seed 2 was Exploratory on the CPU device, a 1.59 mrad bootstrap spread. At 1.15 every run is
+  Ready both ways, with the board in all 16 frames for every camera and nothing saturating. The board
+  half lands 0.15 to 0.27 mrad and 0.34 to 0.44 mm from the truth, the targetless half 0.25 to 1.02
+  mrad and 0.87 to 2.7 mm. Seed 1 is committed, the first tried.
+- **Found for step 3:** the targetless result moves as much with the device as with the seed (seed 1:
+  1.02 mrad on the GPU, 0.25 on the CPU device), so its bounds need a hardware GPU's margin, though CI's
+  CPU device is deterministic. The board half moves by under 0.05 mrad.
+- **The committed plan is the plan measured**: read from its file, it reproduced the probe's numbers
+  line for line. A builder changed without regenerating fails both example comparisons.
+
 ### Update 2026-11-10 — feature/M9 merged into feature/M15
 
 NOTES.txt follow-up 6 (fixed-rig end-to-end footage from committed rig plans) needs M15's renderer, so

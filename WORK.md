@@ -19875,6 +19875,118 @@ Verified:
   the `seedOf` case), M9's rendered suites among them, since they draw the texture item 2 touched;
   warning-clean; `format-check` clean. **Not run:** GCC and macOS.
 
+## Fixed-rig footage from committed rig plans (planned 2026-11-10; step 1 built)
+
+NOTES.txt follow-up 6, from the answer to point 4b: M9's fixed-rig end-to-end footage moves off
+`texturedscene.h`, the exact per-ray renderer, onto a committed M15 rig plan rendered by
+`rigplan::writeCapture`, so there is one generator of fixed-rig footage instead of two. It builds on
+M15, after the merge above.
+
+### What point 4b got wrong
+
+Read against the code, the answer overclaimed:
+
+- **`test_calibratione2e` cannot move.** All five of its cases use a moving camera, which rig plans do
+  not have (M15 *Not in this milestone*). Its board case is also the comparison of both calibration
+  methods on the same frames.
+- **`test_registration` and `test_fixture` never used `texturedscene.h`.** They draw flat board views
+  through `syntheticfootage.h`, cheaply and in Debug. `test-flowview-capture` already makes the GPU
+  board-rig claim on `three-poles`. Both stay.
+- **`texturedscene.h` stays a fixed-camera generator anyway**, since OpenCV's `test_features` needs a
+  truth at every pixel (`truthAt`) and `test_rendering` is its own self-check.
+- **What moves** is `test_comparison` (one rig registered both ways), `test_targetlesse2e`, and
+  flowview's textured-rig writer. Close to zero lines net: the gain is footage made the way a user makes
+  it (lighting, the sensor model, the ray-table remap), and one generator.
+
+### Decided with the repo owner
+
+- **One plan for both methods.** `test_comparison`'s footage becomes the committed plan.
+  `test_targetlesse2e` is deleted, since that plan's targetless half makes all its claims. flowview's
+  textured rig and its cli case move onto the same capture. `renderedrig.h` goes.
+- **The still-scene truth is a CPU ray cast** over the meshes the renderer draws, movers left out. The
+  capture format does not change.
+- **M9 merged into M15 first** (the section above), ahead of M9's acceptance.
+
+### Build order
+
+1. **The committed plan** (built, below).
+2. **A `lain::rigplan::testing` target**: `examplePlan`, a capture-rendering helper, and `stillPoint`,
+   the ray cast, with driver-free tests of its own.
+3. **`test_comparison` on the capture**, in a new `test-camera-comparison` executable, its truth read
+   from the capture and every bound measured again on both device kinds.
+4. **`test_targetlesse2e.cpp` and `renderedrig.h` deleted.**
+5. **flowview's textured rig onto the capture**: `test-flowview-capture` gains the targetless cli case,
+   and `camerafootage`'s `writeTexturedRig` goes.
+6. **The docs**, with the triggers this fires.
+
+### Step 1 built (2026-11-10): `two-methods.json`
+
+`apps/rigplan/examples/two-methods.json`, an entry in `rigplan::examples::catalog()`, and the
+examples README.
+
+- **The plan** is `test_comparison`'s scene in the plan frame:
+  - a 6 x 4.5 x 2.4 m room, every surface procedural (seed 1, 4 cm cells, as `defaultScene`'s), and
+    its 0.8 x 0.6 x 0.9 m box on the floor;
+  - four cameras on fixed points 0.6 m apart on an arc of 3.2 m round (-0.2, 0.4, 0.6), 0.5 m above
+    it and aimed at it, named `cam0` to `cam3`. The sensor is 1280 x 720 at 2 um behind a 2 mm
+    Brown-Conrady lens, f = 1000 px, monochrome, with `three-poles`' tolerances. Pixels are square,
+    so the comparison's fy = 1002 goes;
+  - a 7 x 5 board of 80 mm squares on the comparison's 16-frame Lissajous path 1.6 m away, one key a
+    frame, about 50 px a square;
+  - four point lamps at 2.3 m, intensity 1.15;
+  - stored at seed 1, intrinsic scale 1 (installation locked to it), noise 1.
+- **The poses are literals.** They were worked out from the comparison's geometry by lain's
+  `lookingAt` and `aimOf`, then written rounded to 0.1 mm and 0.0001 degrees. Each committed example is
+  byte-compared on every platform, and libm's `sin` and `cos` are not the same on every platform.
+- **Its board is not M9's 24 mm board**, so `register.json` does not detect it. The board half runs
+  through the library (step 3); the targetless half also runs through `register-targetless.json`. M15
+  slice 7 recorded "the first rig plan whose board is not M9's" as the trigger for a board
+  specification input to `register.json`. It still needs none, since no document here registers this
+  board.
+
+#### The probe
+
+A throwaway Catch2 executable, not committed, rendered the plan with `writeCapture` on both of this
+machine's device kinds (an RTX 4090 and the CPU device). It registered the footage both ways with the
+realised models and compared each result with the truth.
+
+- **At lamp intensity 1.0, seed 2 was Exploratory on the CPU device.** cam3's bootstrap rotation spread
+  was 1.59 mrad against Ready's 1, and the rig was 2.72 mrad and 11.7 mm from the truth. About 3% of
+  samples recorded 0, and the targetless method found 258 tracks, where the comparison's per-ray scene
+  finds 503. At 1.3 the tracks rose to about 295, but 0.02% of samples saturated. At 1.15 nothing
+  saturates, and every seed is Ready.
+- **At 1.15, seeds 1 to 3:**
+
+  | | RTX 4090 | CPU device |
+  |---|---|---|
+  | board: verdict, groups usable, board seen | Ready, 16 of 16, every camera in 16 of 16 | the same |
+  | board: worst rotation / centre | 0.15 to 0.27 mrad / 0.34 to 0.44 mm | 0.20 to 0.26 mrad / 0.41 to 0.44 mm |
+  | targetless: verdict, tracks | Ready, 266 to 274 | Ready, 268 to 280 |
+  | targetless: worst rotation / centre | 0.30 to 1.02 mrad / 1.4 to 2.7 mm | 0.25 to 0.91 mrad / 0.87 to 2.1 mm |
+  | slowest visible corner between sampled frames | 22.0 to 22.1 px | the same |
+  | 99.9th percentile; samples at 255 | 208 to 220; none | the same |
+
+  The comparison's per-ray scene measured 0.34 mrad and 0.61 mm for the board, 0.74 mrad and 1.8 mm
+  targetless, and 21.7 px.
+- **Seed 1 is committed**, the first tried, not the best.
+- **For step 3: the targetless result moves as much with the device as with the seed.** For seed 1 the
+  two devices are 1.02 and 0.25 mrad apart from the truth, a factor of four. CI renders on the CPU device
+  only, which is deterministic, but a hardware GPU here or on another machine is a further draw, so the
+  targetless bounds need that margin. The board half moves by under 0.05 mrad between devices.
+- **Render cost, as the tests will see it:** 10.5 s on the RTX 4090 and 43 s on the CPU device, which
+  `gpu.h` caps at two threads, for 64 frames.
+
+#### Verified
+
+- **The committed plan is the plan measured.** The probe, reading the committed `two-methods.json`
+  instead of building its own, reproduced its seed-1 numbers line for line on both devices.
+- `three-poles.json` is byte for byte unchanged by the rewrite.
+- `ctest` over the rigplan tests **210/210** in Debug and in Release. They check that every committed
+  example is what the builder writes, reads back strictly and can be realised, and is refused a capture
+  where no board renderer is.
+- **Sabotage, caught:** the builder's lamp intensity changed without regenerating fails both the byte
+  comparison and the read-back comparison.
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because
@@ -20224,8 +20336,9 @@ The rest of the answers' follow-ups, each its own commit. *(§NOTES.txt (2026-11
   Moving it moves every rendered end-to-end suite, whose seeds pin behaviour (10e's seed-3 Ready
   board, seed 5's principal-point case, per-platform SIFT numbers). Trigger: the fixed-rig footage from
   committed rig plans (below), which leaves `texturedscene.h` only the moving-camera generator.
-- **Fixed-rig end-to-end footage from committed rig plans** (M15), leaving `texturedscene.h` the
-  moving-camera generator and the renderer's reference.
+- **Fixed-rig end-to-end footage from committed rig plans** (M15): `test_comparison`,
+  `test_targetlesse2e` and flowview's textured rig onto `two-methods.json`. Planned 2026-11-10 in six
+  steps; step 1 (the plan) built. *(§Fixed-rig footage from committed rig plans.)*
 - **Node sets under `plugins/flow/{image,sequence,camera}`**, always built (a node kind is vocabulary),
   with `CompareNode` moving to `libs/flow/nodes`.
 - **Measurements out of ctest**: a `camera-bench` for the Release-only and `[scale]` cases.
