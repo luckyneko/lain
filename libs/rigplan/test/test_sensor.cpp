@@ -1,6 +1,7 @@
 // The sensor model (sensor.h; CONTEXT.md, "Sensor model"; ADR-0029): exact noise, an exact recording
 // of the light without it, and noise of the size a datasheet's electrons say.
 
+#include <lain/core/random.h>
 #include <lain/core/sha256.h>
 #include <lain/core/uuid.h>
 #include <lain/image/color.h>
@@ -84,15 +85,15 @@ static std::uint32_t codeAt(const lain::image::Image& image, std::size_t sample)
 
 TEST_CASE("a camera-frame's noise is pinned outside lain", "[rigplan][sensor]")
 {
-	// Computed by Python's hashlib and integer arithmetic from the text and the SplitMix64 / Irwin-Hall
-	// rule sensor.h states, so the draws are the same on every platform and any change to them is a
-	// change of the versioned name.
+	// Computed by Python's hashlib and integer arithmetic from the text sensor.h states and the
+	// SplitMix64 / Irwin-Hall rule core/random.h states, so the draws are the same on every platform and
+	// any change to them is a change of the versioned name. core's own test pins the same four draws.
 	const std::uint64_t seed = lain::rigplan::noiseSeed(NoiseKey{7, kCamera, 3});
 	REQUIRE(seed == 0x6fb29c25566225f6ull);
-	REQUIRE(lain::rigplan::standardNormal(seed, 0) == -0x1.0fe770d3p+0);
-	REQUIRE(lain::rigplan::standardNormal(seed, 1) == -0x1.69098e44p-1);
-	REQUIRE(lain::rigplan::standardNormal(seed, 2) == 0x1.2ca9bffcp-2);
-	REQUIRE(lain::rigplan::standardNormal(seed, 1000000) == 0x1.d57746ecp-1);
+	REQUIRE(lain::core::standardNormal(seed, 0) == -0x1.0fe770d3p+0);
+	REQUIRE(lain::core::standardNormal(seed, 1) == -0x1.69098e44p-1);
+	REQUIRE(lain::core::standardNormal(seed, 2) == 0x1.2ca9bffcp-2);
+	REQUIRE(lain::core::standardNormal(seed, 1000000) == 0x1.d57746ecp-1);
 }
 
 TEST_CASE("a noise seed belongs to one seed, camera and frame", "[rigplan][sensor]")
@@ -132,7 +133,7 @@ TEST_CASE("noise draws are a standard normal, independent of one another", "[rig
 	double mean = 0, peak = 0;
 	for (std::size_t i = 0; i <= n; ++i)
 	{
-		z[i] = lain::rigplan::standardNormal(seed, i);
+		z[i] = lain::core::standardNormal(seed, i);
 		mean += z[i];
 		peak = std::max(peak, std::abs(z[i]));
 	}
@@ -158,8 +159,8 @@ TEST_CASE("noise draws are a standard normal, independent of one another", "[rig
 	std::vector<double> inNextFrame(n), inOtherCamera(n);
 	for (std::size_t i = 0; i < n; ++i)
 	{
-		inNextFrame[i] = lain::rigplan::standardNormal(nextFrame, i);
-		inOtherCamera[i] = lain::rigplan::standardNormal(otherCamera, i);
+		inNextFrame[i] = lain::core::standardNormal(nextFrame, i);
+		inOtherCamera[i] = lain::core::standardNormal(otherCamera, i);
 	}
 	REQUIRE(std::abs(correlation(here, inNextFrame)) < 0.011);
 	REQUIRE(std::abs(correlation(here, inOtherCamera)) < 0.011);

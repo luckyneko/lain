@@ -1,5 +1,6 @@
 #include "lain/rigplan/sensor.h"
 
+#include <lain/core/random.h>
 #include <lain/core/sha256.h>
 #include <lain/image/color.h>
 #include <lain/image/imageview.h>
@@ -34,30 +35,6 @@ namespace lain::rigplan
 		for (std::size_t i = 0; i < 8; ++i)
 			bits = (bits << 8) | digest.bytes[i];
 		return bits;
-	}
-
-	// SplitMix64's output `n` (1-based) from `seed`, computed directly: its state after n steps is
-	// seed + n * gamma, mixed. So a draw needs no state carried from the draw before it.
-	static std::uint64_t splitMix64(std::uint64_t seed, std::uint64_t n)
-	{
-		std::uint64_t z = seed + n * 0x9E3779B97F4A7C15ull;
-		z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
-		z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
-		return z ^ (z >> 31);
-	}
-
-	double standardNormal(std::uint64_t seed, std::uint64_t sample)
-	{
-		// Twelve 32-bit uniforms, each (u + 0.5) / 2^32 so its mean is exactly 1/2, summed exactly: the
-		// integer sum is below 12 * 2^32, a double holds it, and the scaling is by a power of two.
-		std::uint64_t sum = 0;
-		for (std::uint64_t j = 1; j <= 6; ++j)
-		{
-			const std::uint64_t bits = splitMix64(seed, 6 * sample + j);
-			sum += bits >> 32;
-			sum += bits & 0xFFFFFFFFull;
-		}
-		return (double(sum) + 6.0) * 0x1.0p-32 - 6.0;
 	}
 
 	// Whether `curve` encodes ADC code `adc` of `adcMax` to at least the rounding boundary below output
@@ -204,7 +181,7 @@ namespace lain::rigplan
 						if (noisy)
 						{
 							const double sigma = std::sqrt(electrons + readVariance);
-							const double z = standardNormal(seed, std::uint64_t(sample));
+							const double z = core::standardNormal(seed, std::uint64_t(sample));
 							electrons = electrons + noiseScale * sigma * z;
 						}
 						const double level = std::floor(electrons * adcPerElectron + 0.5);

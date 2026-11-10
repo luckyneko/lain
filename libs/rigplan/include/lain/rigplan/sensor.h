@@ -30,15 +30,9 @@ namespace lain::rigplan
 
 	// The 64 bits every noise draw of one camera-frame grows from: the first eight bytes of SHA-256 over
 	// a versioned canonical text of the key, as unitDeviation's are, so it is the same on every platform.
+	// Sample i of that camera-frame is lain::core::standardNormal(noiseSeed(key), i): exact, counter-based
+	// and the same bits on every platform (core/random.h).
 	std::uint64_t noiseSeed(const NoiseKey& key);
-
-	// The standard normal draw for sample `sample` of the camera-frame whose noise seed is `seed`: the
-	// sum of twelve uniform draws, less six (Irwin-Hall), each the half of one of SplitMix64's outputs
-	// 6 * sample + 1 to 6 * sample + 6 from `seed`. Counter-based, so a draw depends on nothing but its
-	// sample, and the sum is taken in integers, so the draw is exact: mean exactly 0, variance 1, within
-	// six of 0. Exact rather than libm's Box-Muller, whose log and cos are not correctly rounded and so
-	// differ by platform.
-	double standardNormal(std::uint64_t seed, std::uint64_t sample);
 
 	// A sensor model prepared to record: its output codes for every ADC code, found once.
 	class Recorder
@@ -63,7 +57,7 @@ namespace lain::rigplan
 
 		// What the sensor records of `light`, RGBA32F linear light as a capture returns it (its alpha,
 		// coverage, is ignored), at `noiseScale` (0 to 1) of its noise. Per sample, with g the gain, W the
-		// full well, R the read noise, b the ADC bits and z the sample's standardNormal:
+		// full well, R the read noise, b the ADC bits and z the sample's core::standardNormal:
 		//   e = light * (g * W)                          electrons; 0 for light that is not positive
 		//   e' = e + noiseScale * sqrt(e + R * R) * z     shot and read noise, in quadrature
 		//   adc = floor(e' * ((2^b - 1) / W) + 0.5)       clamped to 0 .. 2^b - 1: the ADC saturates
