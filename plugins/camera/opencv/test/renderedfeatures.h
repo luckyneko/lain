@@ -4,11 +4,10 @@
 // registered once, a camera of any size, and features grouped and capped as extraction groups and
 // caps them, restated so a case can measure a step extraction takes on its own.
 
-#include "testcamera.h"
-
 #include <lain/camera/cameramodel.h>
 #include <lain/camera/feature/features.h>
 #include <lain/camera/opencv/register.h>
+#include <lain/camera/testing/testcamera.h>
 
 #include <catch2/catch_test_macros.hpp>
 

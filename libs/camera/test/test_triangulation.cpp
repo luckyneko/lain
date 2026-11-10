@@ -3,6 +3,7 @@
 // a ray. Every tolerance is a measurement, written beside its check.
 
 #include <lain/camera/feature/triangulation.h>
+#include <lain/math/angles.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -14,14 +15,6 @@
 using namespace lain;
 using namespace lain::camera::feature;
 
-namespace
-{
-	double angleBetween(const math::Vec3d& u, const math::Vec3d& v)
-	{
-		return std::atan2(math::length(math::cross(u, v)), math::dot(u, v));
-	}
-} // namespace
-
 TEST_CASE("two rays meet where they cross", "[camera][feature][triangulation]")
 {
 	const math::Vec3d point{0.3, -0.2, 4.0};
@@ -30,7 +23,7 @@ TEST_CASE("two rays meet where they cross", "[camera][feature][triangulation]")
 	REQUIRE(t.ok());
 	// Measured: 5e-14 m out.
 	CHECK(math::length(t.point - point) < 1e-12);
-	CHECK(std::abs(t.angle - angleBetween(point - left, point - right)) < 1e-15);
+	CHECK(std::abs(t.angle - math::angleBetween(point - left, point - right)) < 1e-15);
 }
 
 TEST_CASE("noisy rays land within their least-squares bound", "[camera][feature][triangulation]")

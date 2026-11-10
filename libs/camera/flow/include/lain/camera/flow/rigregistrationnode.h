@@ -21,10 +21,10 @@ namespace lain::camera
 	// for one.
 	//
 	// Each camera is named by where its footage lies within the rig's folder (capture::identitiesByLocation:
-	// "cam0" for a folder of stills, "cam0.mp4" for a video), a stand-in until a capture manifest assigns
-	// identities. Since 2026-10-21 the name does not depend on where the rig sits on disk, so neither do
-	// the evidence held out or the resamples. `reference` names one by that name; empty chooses
-	// automatically.
+	// "cam0" for a folder of stills, and for a video cam0.mp4 too, less its extension), a stand-in until a
+	// capture manifest assigns identities. Since 2026-10-21 the name does not depend on where the rig sits
+	// on disk, so neither do the evidence held out or the resamples. `reference` names one by that name;
+	// empty chooses automatically.
 	//
 	// Abstract: a method's node declares its own inputs after the two here, calls declareRequest(),
 	// declares what only its method needs and its report, and builds the report from request() and

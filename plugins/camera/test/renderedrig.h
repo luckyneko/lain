@@ -4,12 +4,11 @@
 // footage drawn by texturedscene.h when a frame is first asked for and kept, so the same footage
 // registered by two methods is drawn once.
 
-#include "texturedscene.h"
-
 #include <lain/camera/capture/capturegroup.h>
 #include <lain/camera/feature/tracks.h>
 #include <lain/camera/projection.h>
 #include <lain/camera/registration/rig.h>
+#include <lain/camera/testing/texturedscene.h>
 #include <lain/media/framesequence.h>
 
 #include <catch2/catch_test_macros.hpp>

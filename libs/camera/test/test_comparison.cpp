@@ -2,9 +2,8 @@
 // the answer is: a focal scale about the principal point moves a pixel by the scale's excess times its
 // distance from it, and a rig's differences are the turns and offsets put into it.
 
-#include "testcamera.h"
-
 #include <lain/camera/comparison.h>
+#include <lain/camera/testing/testcamera.h>
 #include <lain/math/rigidtransform.h>
 
 #include <catch2/catch_approx.hpp>

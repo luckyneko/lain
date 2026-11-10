@@ -2,11 +2,10 @@
 // and a geometry solver are registered, and no refiner and no feature matcher are. Its own executable,
 // since a core::Factory only grows.
 
-#include "syntheticrig.h"
-#include "syntheticscene.h"
-
 #include <lain/camera/registration/board.h>
 #include <lain/camera/registration/targetless.h>
+#include <lain/camera/testing/syntheticrig.h>
+#include <lain/camera/testing/syntheticscene.h>
 
 #include <catch2/catch_test_macros.hpp>
 

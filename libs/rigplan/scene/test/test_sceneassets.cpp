@@ -270,7 +270,6 @@ TEST_CASE("a prop whose file changed is read again, and drawn as it was until it
 				return scene.scene.meshes[scene.scene.instances[i].mesh]->positions[0].x;
 		}
 		FAIL("no prop drawn");
-		return 0.0f;
 	};
 	CHECK(firstVertex(nominalScene(plan, assets.assets)) == 3.0f);
 

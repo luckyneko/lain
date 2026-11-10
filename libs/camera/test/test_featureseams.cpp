@@ -6,6 +6,7 @@
 #include <lain/camera/feature/features.h>
 #include <lain/camera/feature/geometry.h>
 #include <lain/camera/feature/matching.h>
+#include <lain/math/angles.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -230,11 +231,6 @@ namespace
 
 	// --- scenes -----------------------------------------------------------------
 
-	double rotationBetween(const math::RigidTransformd& a, const math::RigidTransformd& b)
-	{
-		return 2.0 * std::acos(std::min(1.0, std::abs(math::dot(a.rotation(), b.rotation()))));
-	}
-
 	class Random
 	{
 	public:
@@ -289,7 +285,7 @@ namespace
 
 	bool same(const math::RigidTransformd& a, const math::RigidTransformd& b)
 	{
-		return rotationBetween(a, b) < 1e-9 && math::length(a.translation() - b.translation()) < 1e-9;
+		return math::rotationBetween(a, b) < 1e-9 && math::length(a.translation() - b.translation()) < 1e-9;
 	}
 
 	std::vector<std::uint32_t> upTo(std::size_t n)

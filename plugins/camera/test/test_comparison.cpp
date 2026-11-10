@@ -10,9 +10,6 @@
 
 #include "registration.h"
 #include "renderedrig.h"
-#include "rigcompare.h"
-#include "testboard.h"
-#include "testcamera.h"
 
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/comparison.h>
@@ -21,6 +18,10 @@
 #include <lain/camera/registration/board.h>
 #include <lain/camera/registration/targetless.h>
 #include <lain/camera/registration/validation.h>
+#include <lain/camera/testing/rigcompare.h>
+#include <lain/camera/testing/testboard.h>
+#include <lain/camera/testing/testcamera.h>
+#include <lain/testing/skip.h>
 #include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -41,7 +42,7 @@ namespace compare = lain::camera::testing;
 
 namespace
 {
-	constexpr double kTau = 6.283185307179586;
+	const double kTau = math::two_pi<double>();
 	constexpr std::size_t kFrames = 16;
 	constexpr double kFocal = 1000.0;
 
@@ -84,7 +85,7 @@ namespace
 		const math::Vec3d ahead = math::normalize(target - middle);
 		const math::Vec3d centre = middle + 1.6 * ahead;
 		// The board's axes when square on: X right, Y down, Z away from the rig.
-		const math::RigidTransformd facing = synthetic::lookingAt(centre, centre + ahead);
+		const math::RigidTransformd facing = math::lookingAt(centre, centre + ahead, kCameraFrame).value();
 		const board::PatternParameters& p = spec.pattern().parameters();
 		const double square = spec.instance().squareLength.value.metres();
 		const math::Vec3d boardMiddle{p.squaresX * square / 2, p.squaresY * square / 2, 0.0};
@@ -124,7 +125,6 @@ namespace
 				return c.rmsAngle;
 		}
 		FAIL("no evidence for " << camera.value);
-		return 0;
 	}
 
 	// Of `ids`, those whose track has `members` observations (or more, with `orMore`).
@@ -188,9 +188,7 @@ namespace
 TEST_CASE("one rig registered with a board and without one agrees with itself and its truth",
 		  "[camera][registration][comparison]")
 {
-#ifndef NDEBUG
-	SKIP("the comparison runs in Release builds: a Debug build takes seconds to draw each HD frame");
-#endif
+	lain::testing::skipInDebug("the comparison runs in Release builds: a Debug build takes seconds to draw each HD frame");
 	const lain::testing::ThreadPool pool;
 	const Footage f = footage();
 	const rendered::Rig& rig = f.rig;
@@ -384,9 +382,7 @@ TEST_CASE("one rig registered with a board and without one agrees with itself an
 
 TEST_CASE("the rig's feature tracks measured against their truth", "[camera][registration][comparison]")
 {
-#ifndef NDEBUG
-	SKIP("the comparison runs in Release builds: a Debug build takes seconds to draw each HD frame");
-#endif
+	lain::testing::skipInDebug("the comparison runs in Release builds: a Debug build takes seconds to draw each HD frame");
 	const lain::testing::ThreadPool pool;
 	const Footage f = footage();
 	const rendered::Rig& rig = f.rig;

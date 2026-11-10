@@ -96,13 +96,14 @@ add_executable(flowview-examples
 )
 target_compile_features(flowview-examples PRIVATE cxx_std_17)
 target_include_directories(flowview-examples PRIVATE src examples/src)
-# The footage is drawn by libs/camera/test's synthetic footage and textured scene, the camera verticals'
-# own, through camerafootage.cpp, which the verticals compile too.
-target_include_directories(flowview-examples PRIVATE "${lain_SOURCE_DIR}/libs/camera/test")
+# The footage is drawn by lain::camera::testing's synthetic footage and textured scene, the camera
+# verticals' own, through camerafootage.cpp, which the verticals compile too. Only the headers that need
+# no test framework, since this is built with the apps whether or not the tests are.
 target_link_libraries(flowview-examples
 	PRIVATE lain::core lain::data lain::flow lain::flow-example lain::flow::serialize lain::image lain::io
 			lain::io::sequence lain::media::serialize lain::io::image lain::io::image::codecs lain::io::video::codecs
-			lain::io::data::codecs lain::camera::flow lain::camera::backends lain::camera::serialize lain::task
+			lain::io::data::codecs lain::camera::flow lain::camera::backends lain::camera::serialize
+			lain::camera::testing lain::task
 			lain::string lain::log lain::warnings
 )
 if(TARGET lain::io::video::ffmpeg)

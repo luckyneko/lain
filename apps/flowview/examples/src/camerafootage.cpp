@@ -1,12 +1,11 @@
 #include "camerafootage.h"
 
-#include "testcameraparameters.h" // the textured rig's camera, the tests' own
-#include "texturedscene.h"		  // the scene with no board in it
-
 #include <lain/camera/board/pattern.h>
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/serialize/cameramodel.h>
 #include <lain/camera/serialize/registeredrig.h>
+#include <lain/camera/testing/testcameraparameters.h> // the textured rig's camera, the tests' own
+#include <lain/camera/testing/texturedscene.h>		  // the scene with no board in it
 #include <lain/core/length.h>
 #include <lain/core/uri.h>
 #include <lain/image/image.h>
@@ -137,9 +136,9 @@ namespace flowview::examples::footage
 		const camera::CameraModel model = boardCameraModel();
 		const std::vector<math::RigidTransformd> poses = camera::synthetic::arcPath(frames);
 		std::vector<image::Image> drawn(frames);
-		task::range(std::ptrdiff_t{0}, std::ptrdiff_t(frames),
-					[&](std::ptrdiff_t i)
-					{ drawn[std::size_t(i)] = camera::synthetic::render(scene, model, poses[std::size_t(i)], std::size_t(i), 2, 2); });
+		task::range(std::size_t{0}, frames,
+					[&](std::size_t i)
+					{ drawn[i] = camera::synthetic::render(scene, model, poses[i], i, 2, 2); });
 
 		const fs::path folder = dir / "footage";
 		fs::create_directories(folder);

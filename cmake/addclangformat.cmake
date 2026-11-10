@@ -10,21 +10,31 @@
 #   cmake --build build --target format-check   # dry-run, non-zero on diff (CI)
 #
 # The set of files is the single source of truth in .clang-format-include at the repo
-# root. Override the binary with -DLAIN_CLANG_FORMAT=/path/to/clang-format.
+# root. Override the binary with -DLAIN_CLANG_FORMAT=/path/to/clang-format; it has to
+# be new enough to take --files.
 
-set(LAIN_CLANG_FORMAT_VERSION "20" CACHE STRING "Pinned clang-format major version")
-set(_cf_tag "master-796e77c") # immutable release tag (muttleyxd/clang-tools-static-binaries)
+
+# Each asset is held to its SHA-256: this runs at build time, and a tag alone does not stop an
+# asset being replaced under it. The hash is also what makes .cache/fetch a cache, since CMake
+# deletes and refetches a file it has no hash to check against. So the version is not a cache
+# option, as another one would need its own hashes; -DLAIN_CLANG_FORMAT runs another binary.
+set(LAIN_CLANG_FORMAT_VERSION "20")
+set(_cf_tag "master-796e77c") # release tag (muttleyxd/clang-tools-static-binaries)
 
 if(CMAKE_HOST_WIN32)
 	set(_cf_asset "clang-format-${LAIN_CLANG_FORMAT_VERSION}_windows-amd64.exe")
+	set(_cf_sha256 "44011742f30b2ebfd9013aa2b07d802b1b474186fb7904a2f773296f27ff15f9")
 elseif(CMAKE_HOST_APPLE)
 	if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
 		set(_cf_asset "clang-format-${LAIN_CLANG_FORMAT_VERSION}_macos-arm-arm64")
+		set(_cf_sha256 "fe6b8450a8cf83de3f517e3b9a9b1bb925613e5fb59145d6d24ccca5fe17d442")
 	else()
 		set(_cf_asset "clang-format-${LAIN_CLANG_FORMAT_VERSION}_macosx-amd64")
+		set(_cf_sha256 "f2ddeacd376c764fef49e7abf5621a36d632ed3e73a7d92a9e87fbb164b7b227")
 	endif()
 else()
 	set(_cf_asset "clang-format-${LAIN_CLANG_FORMAT_VERSION}_linux-amd64")
+	set(_cf_sha256 "e900c1e520b6c9b9c99e43c0f45ccd12927838741cfc60c077a33dec69bb60cc")
 endif()
 
 if(LAIN_CLANG_FORMAT)
@@ -35,6 +45,7 @@ else()
 	set(_cf_file "github.com/muttleyxd/clang-tools-static-binaries/releases/download/${_cf_tag}/${_cf_asset}")
 	FetchContent_Declare(clangformat
 		URL          "https://${_cf_file}"
+		URL_HASH     "SHA256=${_cf_sha256}"
 		DOWNLOAD_DIR "${CMAKE_SOURCE_DIR}/.cache/fetch/${_cf_file}"
 		DOWNLOAD_NO_EXTRACT TRUE
 	)
@@ -67,14 +78,22 @@ foreach(_line IN LISTS _cf_lines)
 endforeach()
 list(REMOVE_DUPLICATES _cf_files)
 
+# The list reaches clang-format through a file, not the command line: Windows refuses a
+# command of about 32,000 characters or more, which a few hundred absolute paths reach,
+# and cmd reports it as "The system cannot execute the specified program". The globs
+# above are CONFIGURE_DEPENDS, so adding or deleting a source rewrites this at build time.
+set(_cf_list_file "${CMAKE_BINARY_DIR}/clang-format-files.txt")
+list(JOIN _cf_files "\n" _cf_list)
+file(WRITE "${_cf_list_file}" "${_cf_list}\n")
+
 add_custom_target(format
-	COMMAND "${_cf_bin}" -i --style=file ${_cf_files}
+	COMMAND "${_cf_bin}" -i --style=file "--files=${_cf_list_file}"
 	WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 	COMMENT "Formatting sources (clang-format ${LAIN_CLANG_FORMAT_VERSION}, .clang-format-include)"
 	VERBATIM)
 
 add_custom_target(format-check
-	COMMAND "${_cf_bin}" --dry-run --Werror --style=file ${_cf_files}
+	COMMAND "${_cf_bin}" --dry-run --Werror --style=file "--files=${_cf_list_file}"
 	WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 	COMMENT "Checking formatting (clang-format ${LAIN_CLANG_FORMAT_VERSION}, .clang-format-include)"
 	VERBATIM)

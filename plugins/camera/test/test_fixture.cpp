@@ -8,11 +8,11 @@
 #include "fixture/fixture.h"
 #include "fixture/manifest.h"
 #include "registration.h"
-#include "syntheticfootage.h"
 
 #include <lain/camera/board/detection.h>
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/calibration/estimator.h>
+#include <lain/camera/testing/syntheticfootage.h>
 #include <lain/core/length.h>
 #include <lain/core/sha256.h>
 #include <lain/core/uri.h>

@@ -73,6 +73,35 @@ namespace lain::camera::capture
 		return folder;
 	}
 
+	// Whether a camera's location is a container's file: every frame from one source, and that source
+	// one file holding them all (media::FrameSource::isContainer), which is a video. Footage composed of
+	// several containers is located at the folder holding them, so is not.
+	static bool locatedAtContainer(const media::FrameSequence& footage)
+	{
+		const std::vector<media::FrameSequence::Entry>& entries = footage.entries();
+		if (entries.empty() || !entries.front().source)
+			return false;
+		const core::Uri& first = entries.front().source->uri();
+		for (const media::FrameSequence::Entry& entry : entries)
+		{
+			if (!entry.source || !entry.source->isContainer() || entry.source->uri() != first)
+				return false;
+		}
+		return true;
+	}
+
+	// `name` less its extension, by core::Uri::extension's rule: from the last '.' of the last
+	// component, unless that '.' leads the component or ends it.
+	static std::string withoutExtension(const std::string& name)
+	{
+		const std::size_t separator = name.find_last_of("/\\");
+		const std::size_t start = separator == std::string::npos ? 0 : separator + 1;
+		const std::size_t dot = name.find_last_of('.');
+		if (dot == std::string::npos || dot <= start || dot + 1 == name.size())
+			return name;
+		return name.substr(0, dot);
+	}
+
 	static std::vector<std::optional<Components>> locationsOf(const std::vector<media::FrameSequence>& footage)
 	{
 		std::vector<std::optional<Components>> out;
@@ -137,15 +166,19 @@ namespace lain::camera::capture
 		const std::optional<Components> root = rootOf(locations);
 		if (!root)
 			return out;
+		// Each camera's location below the root, a video's less its extension.
 		std::map<std::string, std::size_t> uses;
 		for (std::size_t c = 0; c < footage.size(); ++c)
 		{
 			if (!locations[c])
 				continue;
-			out[c].value = join(locations[c]->begin() + std::ptrdiff_t(root->size()), locations[c]->end());
+			const std::string spelled = join(locations[c]->begin() + std::ptrdiff_t(root->size()), locations[c]->end());
+			out[c].value = locatedAtContainer(footage[c]) ? withoutExtension(spelled) : spelled;
 			++uses[out[c].value];
 		}
-		// Cameras sharing a location are told apart by their first frame instead.
+		// Cameras that would share a name are told apart by their first frame instead: two sharing one
+		// location, or a video beside another of its name (cam0.mp4 and cam0.mov) or beside a folder of
+		// stills of its name, whose first frames spell their whole locations, extensions and all.
 		const std::string text = rootText(*root);
 		for (std::size_t c = 0; c < footage.size(); ++c)
 		{

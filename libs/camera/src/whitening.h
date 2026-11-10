@@ -14,8 +14,18 @@
 // lain::camera.
 namespace lain::camera::detail
 {
+	// Whether `c` (xx, xy, yy) is a covariance a residual can be whitened by: finite and positive
+	// definite, so its Cholesky factor exists and divides by nothing that is zero.
+	inline bool positiveDefinite(const std::array<double, 3>& c)
+	{
+		return std::isfinite(c[0]) && std::isfinite(c[1]) && std::isfinite(c[2]) && c[0] > 0 && c[2] > 0 &&
+			   c[0] * c[2] - c[1] * c[1] > 0;
+	}
+
 	// The squared length of the pixel residual `r` whitened: by the Cholesky factor of `covariance`
-	// (xx, xy, yy) when there is one, L^-1 r, else by the noise model's sigma.
+	// (xx, xy, yy) when there is one, L^-1 r, else by the noise model's sigma. A covariance that is not
+	// positiveDefinite whitens to infinity or NaN: the targetless methods refuse such an observation
+	// before they whiten one.
 	inline double whitenedSquared(const math::Vec2d& r, const std::optional<std::array<double, 3>>& covariance,
 								  const refinement::NoiseModel& noise)
 	{

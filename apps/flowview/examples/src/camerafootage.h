@@ -1,15 +1,14 @@
 #pragma once
 
-#include "syntheticfootage.h" // camera::synthetic::Pinhole, the board footage's camera
-
 #include <lain/camera/board/specification.h>
 #include <lain/camera/cameramodel.h>
+#include <lain/camera/testing/syntheticfootage.h> // camera::synthetic::Pinhole, the board footage's camera
 #include <lain/math/rigidtransform.h>
 
 #include <cstddef>
 #include <filesystem>
 
-// Camera footage for the camera examples, drawn in plain C++ (libs/camera/test's synthetic footage and
+// Camera footage for the camera examples, drawn in plain C++ (lain::camera::testing's synthetic footage and
 // textured scene, the board from the production renderer): what the camera verticals run the committed
 // examples on, and what `flowview-examples --camera-footage <folder>` writes for a person to bind by
 // hand. ONE writer per kind of footage, so what a person opens in the gui is what the tests checked.

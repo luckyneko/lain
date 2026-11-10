@@ -1,8 +1,8 @@
 #include "lain/camera/comparison.h"
 
-#include "angles.h"
 #include "lain/camera/projection.h"
 
+#include <lain/math/angles.h>
 #include <lain/string/format.h>
 
 #include <algorithm>
@@ -145,7 +145,7 @@ namespace lain::camera
 		out.scale = along > 0 ? across / along : 1.0;
 		for (const Pair& p : pairs)
 		{
-			out.cameras.push_back({p.camera, detail::rotationBetween(p.expected, p.found),
+			out.cameras.push_back({p.camera, math::rotationBetween(p.expected, p.found),
 								   math::length(p.found.translation() * out.scale - p.expected.translation())});
 		}
 		return out;

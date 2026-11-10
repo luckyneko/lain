@@ -13,10 +13,9 @@
 // Then a small solve through Ceres itself, so the plugin is known to link and run the solver the
 // refiner uses: Eigen's sparse Cholesky, one thread.
 
-#include "testcamera.h"
-
 #include <lain/camera/cameramodel.h>
 #include <lain/camera/projection.h>
+#include <lain/camera/testing/testcamera.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>

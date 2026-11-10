@@ -6,13 +6,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
-#include <numeric>
 #include <utility>
 
 namespace lain::camera
 {
-	using detail::root;
-
 	// Marks each bridge (Tarjan): an edge (u, v) of the DFS tree is a bridge when nothing below v
 	// reaches u or above by another edge. Iterative, so a large rig cannot overflow the stack.
 	static void markBridges(ObservationGraph& graph)
@@ -92,13 +89,12 @@ namespace lain::camera
 		for (const auto& [pair, count] : shared)
 			graph.edges.push_back({pair.first, pair.second, count, false});
 
-		std::vector<std::uint32_t> parent(views);
-		std::iota(parent.begin(), parent.end(), 0u);
+		detail::UnionFind sets(views);
 		for (const GraphEdge& e : graph.edges)
-			parent[root(parent, e.a)] = root(parent, e.b);
+			sets.join(e.a, e.b);
 		std::map<std::uint32_t, std::vector<std::uint32_t>> byRoot;
 		for (std::uint32_t v = 0; v < views; ++v)
-			byRoot[root(parent, v)].push_back(v);
+			byRoot[sets.root(v)].push_back(v);
 		for (auto& [r, members] : byRoot)
 			graph.components.push_back(std::move(members));
 		std::sort(graph.components.begin(), graph.components.end(),

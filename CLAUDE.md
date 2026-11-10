@@ -1400,6 +1400,269 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-10 — feature/M9 merged into feature/M15
+
+NOTES.txt follow-up 6 (fixed-rig end-to-end footage from committed rig plans) needs M15's renderer, so
+`feature/M9` is merged into `feature/M15` ahead of M9's acceptance, by the repo owner's call. M9's PR #1
+is untouched. 17 files conflicted; M9's mechanism and M15's content won. `ctest -j8` **1713/1713** MSVC
+Debug and **1721/1721** MSVC Release with video, camera and Ceres on; warning-clean, format-check
+clean. **Not run:** GCC and macOS. Full notes in WORK.md's *feature/M9 merged into feature/M15*.
+
+- **Submodules merge cleanly**: multi is M9's (`Serial`, unsigned `range`), archimedes M15's (the CPU
+  device). A checkout made before the merge needs `git submodule update`.
+- **M15's shapes kept:** rig comparison in `lain::camera` (so `rigcompare.h` loses M9's `compare`), the
+  texture in `lain::image` (so `texturedscene.h`'s unused `mix` goes). M15's `camera/src/angles.h` gives
+  way to `math/angles.h`.
+- **M15 met MSVC 14.51 for the first time**: six `#ifndef NDEBUG SKIP`s became `skipInDebug`, and
+  three dead statements after a `FAIL` went (C4702).
+- **M15's `[gpu]` cases ran on a hardware Vulkan GPU for the first time** (they had seen only Metal and
+  the CI CPU device), and passed on both kinds of device.
+- **Measured again:** the Ceres tests' comments, which both branches had changed. Grid-independent
+  numbers are M9's exactly; the free-model scale case's worst ray is 5.4 px, not 5.1.
+- **Found, left for its own commit:** `lain::render` and `rigplan/mover.cpp` hand-write finiteness checks
+  that `math::isFinite` covers.
+- **Next, one commit each:** the three merge items WORK.md recorded (rigplan's `standardNormal` onto
+  core's, `surfaceSeed` and `procedural.cpp`'s finalizers onto `core::splitMix64`, `core::seedOf`).
+
+### Update 2026-11-09 — `lain::camera::testing`: the camera tests' shared code is a target
+
+The fifth NOTES.txt follow-up. The twelve headers the camera tests share (test camera and board,
+stand-in backends, synthetic and textured footage, report printers, rig comparison) moved from
+`libs/camera/test` to `libs/camera/testing/include/lain/camera/testing/`, an INTERFACE target. A
+consumer links `lain::camera::testing` and includes `<lain/camera/testing/x.h>`; no executable puts
+`libs/camera/test` on its include path any more (91 compiles use the new directory, none the old).
+No header's content changed. `ctest -j8` **1362/1362** MSVC Debug with video, camera and Ceres on
+(unchanged); warning-clean, format-check clean; an apps-on, tests-off build from scratch builds
+`flowview-examples` with no Catch2 in its cache. **Not run:** Release, GCC, macOS. Full notes in
+WORK.md's section of the same name.
+
+- **Built with the tests OR the apps**, since `flowview-examples` (built with the apps alone) draws the
+  camera examples' footage with the tests' own scenes. It uses only the three framework-free headers;
+  the other nine assert through Catch2, which the target links only `if(TARGET Catch2::Catch2)`. That is
+  the directory's old property, now stated in its CMakeLists.
+- **Its link line states what the headers name** (`lain::camera`, `lain::image`, `lain::meta`,
+  `lain::task`); `lain::camera` links the last two privately, so consumers had been supplying them.
+- **One path was dead:** `test-camera-flow-registration` includes only its own `nullbackends.h`.
+- **Left, with triggers in Outstanding work:** a framework-free `lain::camera::synthetic` split, and
+  `libs/media/serialize/test`'s `../../test` reach for `testsource.h`. The golden reports stay in
+  `libs/camera/test/golden`, beside the cases that read them.
+
+### Update 2026-11-09 — `core::standardNormal`, and the camera tests' noise onto it
+
+The fourth NOTES.txt follow-up. `lain/core/random.h` gains rigplan's (feature/M15) exact,
+counter-based normal draw: Irwin-Hall over SplitMix64, summed in integers, the same bits everywhere.
+Seven of the eight Box-Muller copies in the camera tests now draw from it. Several of those copies
+claimed platform identity that libm's `log` and `cos` never gave. `ctest -j8` **1362/1362** MSVC
+Debug and **1370/1370** MSVC Release, with video, camera and Ceres on (+4 each); warning-clean,
+format-check clean. **Not run:** GCC and macOS. Full notes in WORK.md's section of the same name.
+
+- **`core::splitMix64(seed, n)` is public and `constexpr`**, pinned to SplitMix64's published
+  sequence. `texturedscene.h`'s `mix(x)` was `splitMix64(x, 1)` written out, and now calls it: all 152
+  rendered footage files are byte-identical before and after. A survey found nothing else worth adding.
+  A counter-based uniform was left out, since the `mt19937_64` idiom it would replace is already exact.
+  A `core::seedOf` waits for M15's merge, where its two callers are.
+
+- **Core's test pins the four draws M15's `test_sensor.cpp` pins**, at the seed M15's `noiseSeed`
+  gives. When M15 merges and rigplan's copy is deleted, those pins hold unchanged. Three sabotages,
+  all caught: stride 1 (neighbour correlation 0.832, i.e. 5/6), no half-offsets (pins only), and
+  Box-Muller (pins and exactness).
+- **`texturedscene.h`'s rendered noise stays on Box-Muller, by the repo owner's call.** Its seeds pin
+  rendered behaviour, and M15's rig-plan footage replaces it. The trigger is in Outstanding work.
+- **Both registration goldens moved, and only where noise was drawn.** Board: the connected and stray
+  scenes moved; flipped and disconnected are byte-identical, and every verdict holds. Targetless:
+  only the noisy scene moved, and the other six are byte-identical.
+- **Single-draw bounds were exposed by the move.** Two Ceres bounds had been set from one lucky draw.
+  Over twelve seeds of the new noise, the targetless rig's worst camera is 0.28 to 0.91 mrad out
+  (bound 0.6, now 1), and the landmarks case's seed is the worst of twelve for its centre (bound 1 mm,
+  now 2). The resample case's premise, frame 0 placed, fails on 4 of 12 seeds, so it moves to seed 1.
+- **The OpenCV estimator case was fragile all along, and the move only showed it.** All four models
+  pass its checks on 4 seeds in 60 under the new noise and on 6 under Box-Muller, and its seed 7 was
+  one of the six. On its one-board scene the rational and Kannala-Brandt fits fold inside the image
+  on about 40% of draws under either noise. The case moves to seed 18 and says how rarely it holds;
+  a scene that holds on most draws is left to the repo owner.
+- **The Ceres `Random` classes shared one engine between uniforms and Gaussians**, so even their
+  noiseless scenes moved. Every case still passes, and every measurement comment beside a moved check
+  was re-read. Timings measured on Linux are kept and labelled "Timed on linux-x86_64".
+
+### Update 2026-11-09 — M9: camera's `forEach` becomes `detail::bulk(execution, count, work)`
+
+A rename and an argument reorder, with no change in behaviour, decided with the repo owner. `ctest -j8`
+**1358/1358** MSVC Debug with video, camera and Ceres on (unchanged, 22 skipped); warning-clean,
+format-check clean. **Not run:** the Release-only cases and GCC. Full notes in WORK.md's section of the
+same name.
+
+- **multi is unchanged.** A count-based call there cannot be an overload of `range` or `each`, since a
+  bare integer converts to a `ChunkPolicy` and `range(4, 100, f)` already means [4, 100). Camera would
+  keep its helper anyway, to translate an `ExecutionPolicy`.
+- **Named and ordered as C++26's `std::execution::bulk`** (policy, count, work), which is also multi's
+  policy-first order. It blocks, where C++26's builds a lazy sender. It retires a second meaning of
+  `forEach`: `lain::image::forEach` visits pixels.
+- **Mostly whitespace:** under `UseTab: Always`, the shorter name moves every lambda body under the 16
+  calls, so 176 lines change and `git diff -w` shows 22.
+
+### Update 2026-11-05 — `format` and `format-check` run on Windows
+
+A known defect since 2026-11-01. Both targets put all 729 absolute paths on one 53,165-character command
+line, and Windows refuses about 32,000 or more; cmd reports it as *The system cannot execute the specified
+program*. The list now reaches clang-format through a file, by `--files`. Through the real targets on
+Windows, `format-check` passes over all 729 files, and a badly formatted file added under `libs/` was
+caught with no manual configure and fixed by `format`, which touched nothing else. Not run: Linux and
+macOS. Tried first in multi, which has the same module now. Full notes in WORK.md's section of the same name.
+
+- **The binary is held to a SHA-256 per asset,** which also makes `.cache/fetch` a real cache for it; a
+  wrong hash fails the configure. `LAIN_CLANG_FORMAT_VERSION` is no longer a cache option. The other
+  fetched dependencies are unchanged, and nothing exercises the macOS Intel hash.
+
+### Update 2026-11-05 — M9: `forEach` is one line, on multi's `Serial` and unsigned `range`
+
+From `NOTES.txt`'s question whether `camera::detail::forEach` was needed. `extern/multi` moves to
+`0e2a6ce`, and `forEach` is now one line choosing `task::Serial` or `task::PerItem`, with its callers
+unmoved. `task::range` takes `std::size_t`, so the `std::ptrdiff_t` casts at the other three sites go.
+`ctest -j8` **1358/1358** Debug with video, camera and Ceres on (+1), warning-clean, the pinned
+clang-format clean on every touched file. Not run here: the two sites only `skipInDebug` cases reach,
+so CI's Release legs are their first run. Full notes in WORK.md's section of the same name.
+
+- **Nothing could tell if `forEach` ignored `DeterministicDebug`.** With it sabotaged, both existing
+  cases still pass. A new case asks for thread identity with a pool running, and it failed 3 runs of 3.
+- **A throw under `DeterministicDebug` now passes through `runOne`,** so a debugger's break-on-uncaught
+  stops at the rethrow. The caller sees the same exception at the same index.
+
+### Update 2026-11-04 — M9: a video camera is named less its extension
+
+The repo owner's answer to the binder fix's open question: a camera is named the same whatever it was
+captured to, so a video `cam0.mp4` is camera `cam0`, its model `cam0.json`, and `cam0` in a report and a
+rig document. `ctest -j6` **1364/1365** Release with video, camera and Ceres on (+3); the one failure
+is feature/M9's own, from `ce537b2` in `libs/math`, which nothing here touches (`test_angles.cpp:52`,
+`rotationBetween(a, -a)` 1e-17 against an exact 0, on Apple clang 21). Warning-clean, format-check
+clean. Full notes in
+WORK.md's *A video camera is named less its extension*, under M9.
+
+- **In the library** (`capture::identitiesByLocation`), so every surface spells a camera one way.
+- **Whether a location is a video is the medium's to say:** `media::FrameSource::isContainer()`, true
+  for `io::video`'s source. Stripping by a uri's extension renamed a stills folder `cam.left` and a
+  numbered pattern, so the uri was refused as the judge.
+- **Cameras that would share a name** (`cam0.mp4` beside `cam0.mov`, or beside a folder `cam0`) fall
+  to the existing rule for a shared location: named by their first frame, which for a video or a stills
+  folder is its whole location, extension and all. The library never gives two cameras one identity.
+- **The binder** names entries as the library does, and refuses a rig folder holding two of one name,
+  naming every one and the model that could not choose; `openRigFootage` refuses, so the gui does too.
+- **What moved:** exactly the five video-name assertions in the location cases. Every stills name, the
+  pinned capture-group digest and every golden held; no committed example names a video camera. Eight
+  stills outputs of the real binary are byte-identical before and after. Six sabotages, all caught; an
+  outside ffmpeg's FFV1 rig registers Ready as `cam0`..`cam2` through the real binary.
+
+### Update 2026-11-03 — M9's rig binder pairs a rig's footage and models by name
+
+Two defects M15 recorded as owed to this binder, both symptoms of a binder that does not read a
+capture's layout (a capture manifest stays the full answer). `ctest -j6` **1348/1348** Release with
+video, camera and Ceres on (+6, against 1342 on the unchanged branch); warning-clean, format-check
+clean. Full notes in WORK.md's *The rig binder pairs by name*, under M9.
+
+- **Footage and models paired by sorted position, and the sorts disagreed.** `camerafiles` listed each
+  folder by FILE name, so `a` and `a-b` came one way as folders and the other as `a-b.json` and
+  `a.json` (`-` sorts below `.`), and the two cameras were registered with each other's models,
+  silently. On the board rig renamed so, registration lost Ready: scale 0.73, 16.0 mrad, 63.8 mm out.
+- **Fixed in the binder; the node still pairs by position (ADR-0016, amended).** Each entry names its
+  camera, a footage entry by its whole name (the identity a graph gives it) and a model by its name
+  less `.json`, so `cam0.mp4`'s model is `cam0.mp4.json` (for the repo owner to confirm). Both folders
+  list in name order through one listing, so the cli and the gui both get it. *(Settled the next day the
+  other way: a video is camera `cam0` and its model `cam0.json`; see the entry above.)*
+- **`unpairedCameras(footage, models)` names each camera with no partner**, and `run` refuses a rig's
+  two folders that do not name the same cameras, exit 1, nothing run or written. The gui does not check
+  yet: an editor sees one folder.
+- **The one-frame camera did not reproduce, so the location rule is unchanged** and no identity,
+  digest or golden moved. `io::image::open` opens a folder of stills as ONE source named by the folder,
+  so a one-still camera is `cam0`; `cam0/frame.0000.png` holds only of a still that is a source of its
+  own, which the test stand-ins make and no opener does, and which nothing tells from a one-frame video.
+  The docs that described the stand-ins as a folder of stills are corrected, and a test on real files
+  pins it.
+- **Six sabotages, all caught**, one reproducing M15's predicted name exactly, and one showing the obvious
+  rule change (a one-frame camera located at its source's folder) would name a real one-still camera
+  `<rig>/cam0` and break one-frame videos.
+- **Driven through the real binary:** the renamed rig registers Ready relative to `a`; with a model
+  misnamed, `run` exits 1 and names both cameras.
+
+### Update 2026-11-01 — CI checks the standard library's preconditions
+
+The empty `std::optional` that `test-camera-tracks` dereferenced passed every CI leg for weeks: MSVC's
+Debug library checks it, libstdc++ and libc++ check nothing by default, and no leg is MSVC Debug. Two
+legs now check. Full notes in WORK.md's *The standard library checks its preconditions*, under
+Continuous integration.
+
+- **Linux Debug builds with `-D_GLIBCXX_ASSERTIONS`, and macOS Release with libc++'s extensive
+  hardening.** macOS is the only build that runs the 16 release-only cases (`skipInDebug`) under any
+  library check, since every Debug build skips them.
+- **A matrix field, `cxxflags`, passed as `CXXFLAGS`.** On the legs, not in `CMakeLists.txt`, so a user's
+  Debug build is unchanged; and not as `-DCMAKE_CXX_FLAGS`, whose empty value on the other legs would drop
+  MSVC's `/EHsc`. Third-party targets get it too, and none tripped it.
+- **A CI step proves the checks are on** before each such leg builds: an empty optional, dereferenced
+  under the cached flags, must abort. A library that does not know the macro ignores it silently.
+- **Found: feature/M9 did not build on Linux** after 9b9c983, which only MSVC had built. GCC 13.3's
+  `-Wdangling-reference` refused a `test_loopscene.cpp` helper that returns a reference and took its name
+  as a `const std::string&`; it takes a `std::string_view` now.
+- **Green on every leg, run 41301917177.** Linux Debug 1334 of 1334 with assertions on, the same tests
+  and skips as before, so they found nothing MSVC Debug had not; macOS Release 1342 of 1342 hardened,
+  every release-only case run. The Debug leg's Build and Test steps were slower than at e8ccd74 (521 s
+  and 337 s, against 320 s and 191 s), but one run each cannot say by how much.
+- **Follow-up, 2026-11-02:** feature/M9's run after the push (41367433505) was green but for one timing
+  check on macOS Release: approximate search 2.67 times faster than exact, against the 3 its case
+  requires. The four OpenCV `[scale]` cases now run serially, as the Ceres ones do. Full notes in the same
+  WORK.md section.
+
+### Update 2026-11-01 — Catch2's `FAIL` and `SKIP` do not return
+
+A Debug build with MSVC 14.51 (Visual Studio 18) failed in 16 test files with C2220 over C4702,
+*unreachable code*: since Catch2 3.9.0 both macros end in a `[[noreturn]]` call. Every target now
+builds warning-clean in MSVC Debug; `ctest -j8` gives 1333 of 1334 passing or skipped, and the one
+failure is an older abort in `test-camera-tracks`. GCC was not built *(when CI built it, one test file
+failed: the update above)*. Full notes in WORK.md's *Catch2's `FAIL` and `SKIP` do not return*.
+*(**The abort was fixed the same day**: the test dereferenced an empty `std::optional`, which only
+MSVC's Debug library checks. On Linux and macOS the check passed against garbage. 1334 of 1334 now.)*
+
+- **No `return` after a `FAIL`** in a test helper: 14 dead ones deleted.
+- **A release-only case calls `lain::testing::skipInDebug(reason)`** (`lain/testing/skip.h`), never
+  `SKIP` under `#ifndef NDEBUG`. The helper is deliberately not `[[noreturn]]`, so the body stays
+  compiled in Debug. An `#else` around the body was tried and backed out: Debug would stop compiling
+  16 bodies, and GCC's `-Wunused-function` would refuse the helpers only they call.
+- **`addcatch2.cmake` accepts an installed Catch2 only from 3.9.0**, the release this relies on.
+- **Catch2 3.16.1 is intended but deferred to its own branch** by the repo owner: it renames every ctest
+  test, because 3.16.0 stops stripping the trailing space every `TEST_PREFIX` here carries.
+- **Found: `format-check` cannot run on Windows** (a 52,953-character command line). Listed in WORK.md's
+  known defects.
+
+### Update 2026-11-03 — angles in `lain::math`, camera helpers stated once (NOTES.txt)
+
+The first two follow-ups of the answers to `NOTES.txt` (an untracked reading pass over `libs/camera`),
+built on M9 by the repo owner's call; M15 conflicts are settled when M9 is accepted. `ctest -j8`
+**1348/1348** Debug with video, camera and Ceres on (+14); warning-clean; the pinned clang-format clean
+on every touched file. **Not run:** the Release-only cases and GCC. Full notes, and the rest of the
+follow-ups, in WORK.md's *NOTES.txt (2026-11-02)*.
+
+- **`lain/math/angles.h`**: `angleBetween` and `rotationBetween`, atan2 forms, replacing camera's
+  private copies and eleven test copies. The acos form, in `board/pose.cpp` and three tests, could not
+  resolve below about 3e-8 rad, so a `< 1e-9` check with it meant "exactly equal".
+- **`math::lookingAt(position, target, reference, aimed)`** beside `RigidTransform`, up taken from the
+  reference's `AxisConvention`, nullopt where none exists. The three test scenes' copies go; callers
+  pass `kCameraFrame` as the reference.
+- **`math::pi` / `math::two_pi`** through GLM's constants header, replacing 20 hand-typed copies of τ
+  bit for bit. The nine truncated `6.28318` stay: they are not τ, and would move two goldens.
+- **`math::isFinite`** over a vector, a quaternion or a rigid transform, replacing camera's private
+  `finite` and a hand-written keypoint-pixel check.
+- **`media::capturedBefore`**, beside `FrameRef`: capture order (timestamp, then ordinal, then source),
+  which four public camera headers described and two sorts kept private keys for. Equivalent exactly
+  when equal, so a sorted list finds a frame given twice beside its twin.
+- **camera:** `identity.h` deleted (a second name for `capture::identitiesByLocation`);
+  `positiveDefinite` beside `whitenedSquared`; `minimumParallax` defined once; a `UnionFind` class in
+  place of five hand-set parent vectors; feature extraction's group key renamed `placeInCapture`.
+- **Sabotages:** acos back in either angle fails its tiny-angle case; a flipped down axis fails both
+  `lookingAt` orientation cases. **Keeping `UnionFind`'s higher root passes all 518 camera and flowview
+  tests**: nothing observes which root is kept, so the rule is unpinned determinism insurance.
+- **Found, recorded as a known defect:** board registration whitens a detector's covariance without
+  checking it is positive definite.
+- **CI's first run (41597659039 on `f7b2c69`) found two things, each fixed in its own commit:** a check of
+  mine too strict for macOS arm64 (`rotationBetween(a, -a)` reads 1e-17, not 0), and GCC 13's false
+  `-Wmaybe-uninitialized` on `calibrateScene`'s empty optional, which stopped all three Linux Release
+  builds. Linux Debug passed 1348/1348 and Windows Release 1356/1356.
 ### Update 2026-11-03 — flowview's shortcuts wait while a question is open (the ninth known defect, fixed)
 
 Measured first, then fixed as rigplan fixed it. flowview's menu bar and canvas now run in a headless
@@ -1471,7 +1734,8 @@ and both gui slices (8 and 9) are live-verified. WORK.md's per-slice markers now
     shortcuts very likely act behind its unsaved-changes question), each its own flowview commit
     *(both fixed 2026-11-03; see above)*;
   - the two fixes M15 found owed to M9's rig binder (it pairs footage with models by sorted position,
-    and names a one-frame camera by its file).
+    and names a one-frame camera by its file) *(settled on M9 the same day, and here by the merge of
+    2026-11-10: the binder pairs by name, and the one-frame case did not reproduce)*.
 - **M9 is again the only milestone from 5 onward that is not built.**
 
 ### Update 2026-11-02 — M15 slice 9, sub-slice 9j built: the Specifications menu (**slice 9 BUILT**, *live-verified 2026-11-03, see above*)

@@ -5,10 +5,12 @@
 // registration (M9 slice 3) depends on how it behaves. Every tolerance is a measurement, written
 // beside its check.
 
-#include "syntheticrig.h"
-
 #include <lain/camera/ceres/register.h>
 #include <lain/camera/refinement/refiner.h>
+#include <lain/camera/testing/syntheticrig.h>
+#include <lain/core/random.h>
+#include <lain/math/angles.h>
+#include <lain/testing/skip.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -29,7 +31,7 @@ using Catch::Matchers::WithinRel;
 
 namespace
 {
-	constexpr double kTau = 6.283185307179586;
+	const double kTau = math::two_pi<double>();
 
 	void ensureCeres()
 	{
@@ -42,33 +44,26 @@ namespace
 		REQUIRE(refinerRegistry().keys() == std::vector<std::string>{"ceres"});
 	}
 
-	double rotationBetween(const math::RigidTransformd& a, const math::RigidTransformd& b)
-	{
-		const math::Quatd r = math::conjugate(a.rotation()) * b.rotation();
-		return 2.0 * std::atan2(std::sqrt(r.x * r.x + r.y * r.y + r.z * r.z), std::abs(r.w));
-	}
-
-	// Box-Muller over a seeded engine: the standard's distributions are implementation-defined, and
-	// the measurements written beside the checks must not belong to one standard library.
+	// Uniforms from mt19937_64, whose output the standard fixes, and Gaussians from core::standardNormal:
+	// the standard's distributions are implementation-defined, and Box-Muller goes through libm, and the
+	// measurements written beside the checks must not belong to one platform.
 	class Random
 	{
 	public:
 		explicit Random(std::uint64_t seed)
 			: m_engine(seed)
+			, m_seed(seed)
 		{
 		}
 
 		double uniform() { return double(m_engine() >> 11) * 0x1.0p-53; } // [0, 1)
-		double gaussian()
-		{
-			const double u1 = (double(m_engine() >> 11) + 0.5) * 0x1.0p-53;
-			const double u2 = uniform();
-			return std::sqrt(-2.0 * std::log(u1)) * std::cos(kTau * u2);
-		}
+		double gaussian() { return core::standardNormal(m_seed, m_draw++); }
 		math::Vec3d direction() { return math::normalize(math::Vec3d{gaussian(), gaussian(), gaussian()}); }
 
 	private:
 		std::mt19937_64 m_engine;
+		std::uint64_t m_seed;
+		std::uint64_t m_draw = 0;
 	};
 
 	struct PointScene
@@ -94,7 +89,7 @@ namespace
 			const double a =
 				ring ? spread * double(c) / double(cameras) : spread * (double(c) / double(cameras - 1) - 0.5);
 			const math::Vec3d position{radius * std::sin(a), -0.05 * double(c % 3), -radius * std::cos(a)};
-			scene.cameraFromReference.push_back(rig::lookingAt(position, math::Vec3d{0.0}).inverse());
+			scene.cameraFromReference.push_back(math::lookingAt(position, math::Vec3d{0.0}, kCameraFrame).value().inverse());
 			scene.problem.models.push_back(rig::model());
 		}
 		scene.problem.cameraFromReference = scene.cameraFromReference;
@@ -193,7 +188,7 @@ namespace
 		Errors out;
 		for (std::size_t c = 0; c < cameras.size(); ++c)
 		{
-			out.rotation = std::max(out.rotation, rotationBetween(cameras[c], truth.cameraFromReference[c]));
+			out.rotation = std::max(out.rotation, math::rotationBetween(cameras[c], truth.cameraFromReference[c]));
 			const math::Vec3d centre = about + (centreOf(cameras[c]) - about) / s;
 			out.centre = std::max(out.centre, math::length(centre - centreOf(truth.cameraFromReference[c])));
 		}
@@ -206,7 +201,7 @@ namespace
 	{
 		for (std::size_t c = 0; c < problem.cameraFromReference.size(); ++c)
 		{
-			if (rotationBetween(solution.cameraFromReference[c], problem.cameraFromReference[c]) > 1e-12 ||
+			if (math::rotationBetween(solution.cameraFromReference[c], problem.cameraFromReference[c]) > 1e-12 ||
 				math::length(solution.cameraFromReference[c].translation() - problem.cameraFromReference[c].translation()) > 1e-12)
 				return false;
 		}
@@ -356,9 +351,7 @@ TEST_CASE("the linear solver follows the problem's shape", "[camera][ceres][land
 
 TEST_CASE("20000 landmarks triangulate against held cameras", "[camera][ceres][landmark]")
 {
-#ifndef NDEBUG
-	SKIP("runs in Release builds: measured 26 s in Debug, against 0.5 s in Release");
-#endif
+	lain::testing::skipInDebug("runs in Release builds: measured 26 s in Debug, against 0.5 s in Release");
 	ensureCeres();
 	// Eight cameras over 1.4 rad at 1 m, each landmark seen by four of them through 0.3 px of noise,
 	// and started 5% of its depth out.
@@ -378,9 +371,9 @@ TEST_CASE("20000 landmarks triangulate against held cameras", "[camera][ceres][l
 		worst = std::max(worst, e);
 		sum += e * e;
 	}
-	// Measured on linux-x86_64, Release: 0.54 s and 78 MB at peak, four iterations; the worst point
-	// 6.7 mm out and the RMS 1.3 mm, and the final cost 0.997 of half the residual dimensions less the
-	// unknowns, which is where whitened noise leaves it.
+	// Timed on linux-x86_64, Release: 0.54 s and 78 MB at peak. Measured: four iterations; the worst
+	// point 6.8 mm out and the RMS 1.3 mm, and the final cost 1.000 of half the residual dimensions less
+	// the unknowns, which is where whitened noise leaves it.
 	CHECK(worst < 0.01);
 	CHECK(std::sqrt(sum / double(scene.points.size())) < 0.002);
 	const double dimensions = 2.0 * double(problem.landmarkObservations.size()) - 3.0 * double(scene.points.size());
@@ -401,20 +394,23 @@ TEST_CASE("cameras and landmarks converge together, with the scale left free", "
 	const Solution solution = refine(problem);
 	REQUIRE(solution.status == Status::Converged);
 	CHECK_THAT(solution.detail, EndsWith("linear solver SPARSE_SCHUR"));
-	CHECK(rotationBetween(solution.cameraFromReference[0], problem.cameraFromReference[0]) < 1e-12);
-	// The scale is wherever the solver's path left it: measured 1.022 here, from a start at 1.0004,
-	// and between 0.980 and 1.012 over twelve other seeds, the same at 0 px of noise as at 0.3, in four
-	// or five iterations every time. Within what the starts were moved, and normalised by the method
-	// afterwards (ADR-0017), so nothing holds it here.
+	CHECK(math::rotationBetween(solution.cameraFromReference[0], problem.cameraFromReference[0]) < 1e-12);
+	// The scale is wherever the solver's path left it: measured 0.998 here, from a start at 0.9995,
+	// and between 0.990 and 1.016 over the perturbation seeds 41 to 52, in four iterations every time.
+	// Within what the starts were moved, and normalised by the method afterwards (ADR-0017), so nothing
+	// holds it here.
 	const double s = scaleOf(solution.cameraFromReference, solution.landmarks, scene, about);
 	CHECK(std::abs(started - 1) < 0.001);
 	CHECK(std::abs(s - 1) < 0.05);
 	CHECK(solution.iterations <= 10);
-	// With the scale taken out, measured: the worst camera 0.40 mrad and 0.49 mm out, the worst
-	// landmark 6.0 mm, and the final cost 1.015 of half the residual dimensions less the unknowns.
+	// With the scale taken out, measured: the worst camera 0.89 mrad and 1.00 mm out, the worst
+	// landmark 5.1 mm, and the final cost 0.989 of half the residual dimensions less the unknowns. Those
+	// errors are the noise's, not the start's: every perturbation seed above leaves them the same to
+	// three figures. Over the scene seeds 1 to 12, this one is the worst: 0.40 to 0.89 mrad, 0.36 to
+	// 1.00 mm, and 5.1 to 6.5 mm.
 	const Errors e = errorsOf(solution.cameraFromReference, solution.landmarks, scene, about, s);
 	CHECK(e.rotation < 0.001);
-	CHECK(e.centre < 0.001);
+	CHECK(e.centre < 0.002);
 	CHECK(e.landmark < 0.01);
 	const double dimensions =
 		2.0 * double(problem.landmarkObservations.size()) - 3.0 * double(scene.points.size()) - 6.0 * double(7);
@@ -450,7 +446,7 @@ TEST_CASE("a body and landmarks refine in one problem, and the body holds the sc
 	const Solution solution = refine(problem);
 	REQUIRE(solution.status == Status::Converged);
 	CHECK_THAT(solution.detail, EndsWith("linear solver SPARSE_SCHUR"));
-	// Measured: the scale 1 + 1e-9, and every camera, landmark and the board within 1e-9 of the truth
+	// Measured: the scale 1 + 2e-10, and every camera, landmark and the board within 2e-10 of the truth
 	// with nothing taken out, in five iterations.
 	const double s = scaleOf(solution.cameraFromReference, solution.landmarks, scene, about);
 	CHECK(std::abs(s - 1) < 1e-8);
@@ -509,9 +505,7 @@ TEST_CASE("a landmark behind a camera at the start fails the solve", "[camera][c
 
 TEST_CASE("a rig of 100 cameras and 50000 landmarks refines", "[camera][ceres][landmark][scale]")
 {
-#ifndef NDEBUG
-	SKIP("the scale test runs in Release builds: a Debug refinement is some 65 times slower");
-#endif
+	lain::testing::skipInDebug("the scale test runs in Release builds: a Debug refinement is some 65 times slower");
 	ensureCeres();
 	// 100 cameras on a ring of 2 m radius, looking in; 50000 landmarks within 0.5 m of the centre,
 	// each seen by eight neighbouring cameras through 0.3 px of noise, so the ring is closed by its
@@ -523,10 +517,10 @@ TEST_CASE("a rig of 100 cameras and 50000 landmarks refines", "[camera][ceres][l
 	const double started = scaleOf(problem.cameraFromReference, problem.landmarks, scene, about);
 	const Solution solution = refine(problem);
 	REQUIRE(solution.status == Status::Converged);
-	// Measured on linux-x86_64, Release, one thread: 4.2 s over 400,000 residuals, 324 MB at peak,
-	// four iterations; the scale 1.004 from a start at 1.0002. With it taken out, the worst camera 0.79
-	// mrad and 1.7 mm out and the worst landmark 16 mm, and the final cost 1.001 of half the residual
-	// dimensions less the unknowns.
+	// Timed on linux-x86_64, Release, one thread: 4.2 s over 400,000 residuals, 324 MB at peak.
+	// Measured: four iterations; the scale 0.9988 from a start at 1.0001. With it taken out, the worst
+	// camera 1.43 mrad and 2.8 mm out and the worst landmark 16 mm, and the final cost 0.996 of half the
+	// residual dimensions less the unknowns.
 	const double s = scaleOf(solution.cameraFromReference, solution.landmarks, scene, about);
 	CHECK(std::abs(started - 1) < 0.001);
 	CHECK(std::abs(s - 1) < 0.05);

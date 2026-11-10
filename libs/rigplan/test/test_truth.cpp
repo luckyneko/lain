@@ -4,6 +4,7 @@
 #include "testplan.h"
 
 #include <lain/camera/projection.h>
+#include <lain/math/angles.h>
 #include <lain/rigplan/mover.h>
 #include <lain/rigplan/realisation.h>
 #include <lain/rigplan/truth.h>
@@ -28,16 +29,6 @@ static lain::rigplan::Realisation realised(const lain::rigplan::RigPlan& plan)
 	lain::rigplan::RealisationResult result = lain::rigplan::realise(plan);
 	REQUIRE(result.realisation.has_value());
 	return std::move(*result.realisation);
-}
-
-// The angle of the rotation taking `a` to `b`, from its quaternion's vector and scalar parts. Not
-// 2 acos(|a . b|): acos is flat at 1, so one ulp of the dot product reads as 3e-8 rad, and an exact
-// identity compared with a computed one fails a 1e-12 bound on whichever platform rounds differently
-// (Linux did, in CI; macOS happened not to).
-static double angleBetween(const lain::math::Quatd& a, const lain::math::Quatd& b)
-{
-	const lain::math::Quatd d = lain::math::inverse(a) * b;
-	return 2.0 * std::atan2(std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z), std::abs(d.w));
 }
 
 TEST_CASE("the truth's poses are the realisation's", "[rigplan][truth]")
@@ -140,7 +131,7 @@ TEST_CASE("the truth's rig is relative to the reference camera, metric, named by
 	{
 		const RigidTransformd expected = realisation.cameras[0].planFromCamera.inverse() * camera.planFromCamera;
 		const RigidTransformd got = *rig.referenceFromCamera({camera.name});
-		REQUIRE(angleBetween(got.rotation(), expected.rotation()) < 1e-12);
+		REQUIRE(lain::math::rotationBetween(got.rotation(), expected.rotation()) < 1e-12);
 		REQUIRE(lain::math::length(got.translation() - expected.translation()) < 1e-12);
 	}
 
@@ -155,7 +146,7 @@ TEST_CASE("the truth's rig is relative to the reference camera, metric, named by
 	{
 		const RigidTransformd expected = cam0FromCam2.inverse() * *rig.referenceFromCamera({name});
 		const RigidTransformd got = *rebased.referenceFromCamera({name});
-		REQUIRE(angleBetween(got.rotation(), expected.rotation()) < 1e-12);
+		REQUIRE(lain::math::rotationBetween(got.rotation(), expected.rotation()) < 1e-12);
 		REQUIRE(lain::math::length(got.translation() - expected.translation()) < 1e-12);
 	}
 }

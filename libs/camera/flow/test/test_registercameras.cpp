@@ -5,11 +5,10 @@
 // what its parameters say. Registration itself is the method module's and the Ceres plugin's tests'.
 // Its own executable: these stand-ins share keys with the calibration scene's.
 
-#include "syntheticrig.h"
-
 #include <lain/camera/flow/boardspecificationnode.h>
 #include <lain/camera/flow/register.h>
 #include <lain/camera/flow/registercamerasnode.h>
+#include <lain/camera/testing/syntheticrig.h>
 #include <lain/flow/boundary.h>
 #include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>

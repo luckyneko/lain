@@ -7,17 +7,17 @@
 // realised cameras and recorded by their sensors, is detected where its ground truth says (M15 slice
 // 5c). Release only, since the CPU draws 11 million rays a picture.
 
-#include "gpu.h"		   // libs/render/test
-#include "testboard.h"	   // libs/camera/test
-#include "testcameras.h"   // libs/render/test
-#include "testscene.h"	   // libs/render/test
-#include "texturedscene.h" // libs/camera/test
+#include "gpu.h"		 // libs/render/test
+#include "testcameras.h" // libs/render/test
+#include "testscene.h"	 // libs/render/test
 
 #include <lain/camera/backends.h>
 #include <lain/camera/board/detection.h>
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/feature/features.h>
 #include <lain/camera/projection.h>
+#include <lain/camera/testing/testboard.h>
+#include <lain/camera/testing/texturedscene.h>
 #include <lain/image/convert.h>
 #include <lain/image/procedural.h>
 #include <lain/image/transfercurve.h>
@@ -28,6 +28,7 @@
 #include <lain/rigplan/scene.h>
 #include <lain/rigplan/sensor.h>
 #include <lain/rigplan/truth.h>
+#include <lain/testing/skip.h>
 
 #include <catch2/catch_message.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -218,14 +219,12 @@ static std::vector<Pose> posesFor(const board::Specification& spec, const Camera
 
 TEST_CASE("M9's pinhole board, captured, is detected as accurately as M9 drew it", "[camera][capture][gpu]")
 {
-#ifndef NDEBUG
-	SKIP("Release only: the capture is detected at full resolution");
-#endif
+	lain::testing::skipInDebug("Release only: the capture is detected at full resolution");
 	ensureBackends();
 	acm::Device& device = render::testing::device();
 	render::Renderer renderer(device);
 	REQUIRE(renderer.problems().empty());
-	const board::Specification spec = testing::specification();
+	const board::Specification spec = camera::testing::specification();
 	const board::Rendering rendering = renderingOf(spec, 80);
 	const CameraModel model = modelOf(m9Pinhole());
 	const math::RigidTransformd pose = m9Pose(spec);
@@ -240,11 +239,9 @@ TEST_CASE("M9's pinhole board, captured, is detected as accurately as M9 drew it
 
 TEST_CASE("a board through every model, drawn on the CPU, is detected where lain projects it", "[camera][capture]")
 {
-#ifndef NDEBUG
-	SKIP("Release only: 11 million rays a picture");
-#endif
+	lain::testing::skipInDebug("Release only: 11 million rays a picture");
 	ensureBackends();
-	const board::Specification spec = testing::specification();
+	const board::Specification spec = camera::testing::specification();
 	const board::Rendering rendering = renderingOf(spec, 80);
 	for (int i = 0; i < render::testing::kStrongModelCount; ++i)
 	{
@@ -265,14 +262,12 @@ TEST_CASE("a board through every model, drawn on the CPU, is detected where lain
 
 TEST_CASE("a board through every model, captured, is detected where lain projects it", "[camera][capture][gpu]")
 {
-#ifndef NDEBUG
-	SKIP("Release only: the capture is detected at full resolution");
-#endif
+	lain::testing::skipInDebug("Release only: the capture is detected at full resolution");
 	ensureBackends();
 	acm::Device& device = render::testing::device();
 	render::Renderer renderer(device);
 	REQUIRE(renderer.problems().empty());
-	const board::Specification spec = testing::specification();
+	const board::Specification spec = camera::testing::specification();
 	const board::Rendering rendering = renderingOf(spec, 80);
 	for (int i = 0; i < render::testing::kStrongModelCount; ++i)
 	{
@@ -301,7 +296,7 @@ TEST_CASE("how the corner error follows the oversampling and the rays a pixel", 
 	acm::Device& device = render::testing::device();
 	render::Renderer renderer(device);
 	REQUIRE(renderer.problems().empty());
-	const board::Specification spec = testing::specification();
+	const board::Specification spec = camera::testing::specification();
 	const board::Rendering rendering = renderingOf(spec, 80);
 	for (int i = 0; i < render::testing::kStrongModelCount; ++i)
 	{
@@ -428,9 +423,7 @@ static feature::Features featuresOf(const image::Image& grey)
 
 TEST_CASE("a procedural surface baked at rigplan's density captures as it does at twice it", "[camera][capture][gpu]")
 {
-#ifndef NDEBUG
-	SKIP("Release only: the CPU draws the texture exactly, 11 million rays a picture");
-#endif
+	lain::testing::skipInDebug("Release only: the CPU draws the texture exactly, 11 million rays a picture");
 	ensureBackends();
 	acm::Device& device = render::testing::device();
 	render::Renderer renderer(device);
@@ -555,7 +548,7 @@ static rigplan::RigPlan rigWithBoard()
 	light.mount = bracket.id;
 	plan.lights.push_back(light);
 
-	const board::Specification spec = testing::specification();
+	const board::Specification spec = camera::testing::specification();
 	rigplan::BoardMover board;
 	board.id = id("0193a6f0-0000-7000-8000-0000000c0005");
 	board.name = "charuco";
@@ -574,9 +567,7 @@ static rigplan::RigPlan rigWithBoard()
 
 TEST_CASE("a rig plan's board, captured through its realised cameras, is detected where its truth says", "[camera][capture][gpu]")
 {
-#ifndef NDEBUG
-	SKIP("Release only: the capture is detected at full resolution");
-#endif
+	lain::testing::skipInDebug("Release only: the capture is detected at full resolution");
 	ensureBackends();
 	acm::Device& device = render::testing::device();
 	render::Renderer renderer(device);

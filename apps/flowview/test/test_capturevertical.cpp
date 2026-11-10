@@ -38,6 +38,7 @@
 #include <lain/rigplan/capture.h>
 #include <lain/rigplan/serialize/rigplan.h>
 #include <lain/testing/scratch.h>
+#include <lain/testing/skip.h>
 #include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -155,9 +156,7 @@ static camera::RigComparison scoreRig(const fs::path& truthFile, const fs::path&
 TEST_CASE("a synthetic capture registers near-exactly with its true models and worse with its nominal ones",
 		  "[rigplan][camera][runmode][gpu]")
 {
-#ifndef NDEBUG
-	SKIP("the synthetic-capture vertical runs in Release builds: a Debug build takes minutes to render and detect it");
-#endif
+	lain::testing::skipInDebug("the synthetic-capture vertical runs in Release builds: a Debug build takes minutes to render and detect it");
 	registerEverything();
 	REQUIRE(camera::board::canRender()); // this test is built only where a board renderer is
 	acm::Device& device = render::testing::device();

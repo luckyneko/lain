@@ -7,6 +7,7 @@
 #include "lain/camera/registration/observationgraph.h"
 #include "lain/camera/registration/refiner.h"
 
+#include <lain/math/angles.h>
 #include <lain/string/format.h>
 
 #include <algorithm>
@@ -25,8 +26,6 @@ namespace lain::camera::registration::board
 	namespace cb = camera::board;
 	using detail::failed;
 	using detail::median;
-	using detail::root;
-	using detail::rotationBetween;
 
 	// --- file-local helpers (named static, not an anonymous namespace) ----------
 
@@ -65,7 +64,7 @@ namespace lain::camera::registration::board
 		double sum = 0;
 		for (std::size_t i = 0; i < o.points.size(); ++i)
 		{
-			const double angle = detail::angleBetween(o.rays[i], cameraFromBoard.apply(o.points[i]));
+			const double angle = math::angleBetween(o.rays[i], cameraFromBoard.apply(o.points[i]));
 			sum += angle * angle;
 		}
 		return o.points.empty() ? std::numeric_limits<double>::infinity() : std::sqrt(sum / double(o.points.size()));
@@ -171,16 +170,13 @@ namespace lain::camera::registration::board
 		std::iota(order.begin(), order.end(), std::size_t{0});
 		std::stable_sort(order.begin(), order.end(), [&](std::size_t x, std::size_t y)
 						 { return graph.edges[x].shared > graph.edges[y].shared; });
-		std::vector<std::uint32_t> parent(n);
-		std::iota(parent.begin(), parent.end(), 0u);
+		detail::UnionFind sets(n);
 		std::map<std::pair<std::uint32_t, std::uint32_t>, std::vector<std::uint32_t>> tree; // edge -> its shared groups
 		for (const std::size_t e : order)
 		{
 			const GraphEdge& edge = graph.edges[e];
-			const std::uint32_t ra = root(parent, edge.a), rb = root(parent, edge.b);
-			if (ra == rb)
+			if (!sets.join(edge.a, edge.b))
 				continue;
-			parent[ra] = rb;
 			tree[{edge.a, edge.b}];
 		}
 
@@ -474,35 +470,35 @@ namespace lain::camera::registration::board
 		boardDiagnostics.observations = std::uint32_t(slots.size());
 		std::vector<std::optional<Posed>> posedSlots(slots.size());
 		std::vector<Provenance> solverOf(slots.size());
-		detail::forEach(slots.size(), request.execution,
-						[&](std::size_t i)
-						{
-							const Slot slot = slots[i];
-							const std::uint32_t camera = data.memberOf[slot.group][slot.member];
-							const cb::Observation& view = *data.groups[slot.group]->detections[slot.member].observation;
-							const CameraModel& model = data.cameras[camera].model;
-							const cb::PoseResult result = cb::pose(model, board, view);
-							solverOf[i] = result.provenance;
-							if (!result.ok())
-								return;
-							Posed p;
-							p.camera = camera;
-							p.group = slot.group;
-							p.view = &view;
-							p.poses.push_back(result.pose->cameraFromBoard);
-							if (result.alternative)
-								p.poses.push_back(result.alternative->cameraFromBoard);
-							for (const cb::FeatureObservation& f : view.features)
-							{
-								const std::optional<math::Vec3d> corner = board.cornerPosition(f.id);
-								const Unprojection<double> ray = unproject(model, f.pixel.x, f.pixel.y);
-								if (!corner || !ray.ok())
-									continue;
-								p.points.push_back(*corner);
-								p.rays.push_back(math::normalize(math::Vec3d{ray.x, ray.y, ray.z}));
-							}
-							posedSlots[i] = std::move(p);
-						});
+		detail::bulk(request.execution, slots.size(),
+					 [&](std::size_t i)
+					 {
+						 const Slot slot = slots[i];
+						 const std::uint32_t camera = data.memberOf[slot.group][slot.member];
+						 const cb::Observation& view = *data.groups[slot.group]->detections[slot.member].observation;
+						 const CameraModel& model = data.cameras[camera].model;
+						 const cb::PoseResult result = cb::pose(model, board, view);
+						 solverOf[i] = result.provenance;
+						 if (!result.ok())
+							 return;
+						 Posed p;
+						 p.camera = camera;
+						 p.group = slot.group;
+						 p.view = &view;
+						 p.poses.push_back(result.pose->cameraFromBoard);
+						 if (result.alternative)
+							 p.poses.push_back(result.alternative->cameraFromBoard);
+						 for (const cb::FeatureObservation& f : view.features)
+						 {
+							 const std::optional<math::Vec3d> corner = board.cornerPosition(f.id);
+							 const Unprojection<double> ray = unproject(model, f.pixel.x, f.pixel.y);
+							 if (!corner || !ray.ok())
+								 continue;
+							 p.points.push_back(*corner);
+							 p.rays.push_back(math::normalize(math::Vec3d{ray.x, ray.y, ray.z}));
+						 }
+						 posedSlots[i] = std::move(p);
+					 });
 
 		Evidence evidence;
 		evidence.cameras = cameraCount;
@@ -693,7 +689,7 @@ namespace lain::camera::registration::board
 				}
 				for (std::size_t i = 0; i < p.points.size(); ++i)
 				{
-					const double angle = detail::angleBetween(p.rays[i], cameraFromBoard.apply(p.points[i]));
+					const double angle = math::angleBetween(p.rays[i], cameraFromBoard.apply(p.points[i]));
 					sumAngles[p.camera] += angle * angle;
 				}
 				CameraEvidence& camera = diagnostics.cameras[p.camera];
@@ -708,7 +704,7 @@ namespace lain::camera::registration::board
 				}
 
 				// A planar board's second pose, chosen: the result agrees with it rather than the first.
-				if (p.poses.size() == 2 && rotationBetween(cameraFromBoard, p.poses[1]) < rotationBetween(cameraFromBoard, p.poses[0]))
+				if (p.poses.size() == 2 && math::rotationBetween(cameraFromBoard, p.poses[1]) < math::rotationBetween(cameraFromBoard, p.poses[0]))
 					boardDiagnostics.flips.push_back({data.groups[g]->group.identity(), camera.camera});
 			}
 		}
@@ -751,42 +747,42 @@ namespace lain::camera::registration::board
 					targets.push_back({g, o});
 			}
 			std::vector<Prediction> predictions(targets.size());
-			detail::forEach(targets.size(), request.execution,
-							[&](std::size_t i)
-							{
-								const auto [g, member] = targets[i];
-								const Posed& target = evidence.posed[member];
-								predictions[i].camera = target.camera;
-								Problem single;
-								for (const RigCamera& c : data.cameras)
-									single.models.push_back(c.model);
-								single.cameraFromReference = cameraFromReference;
-								single.reference = reference;
-								single.freeCameras = false;
-								single.noise = request.noise;
-								single.loss = request.loss;
-								single.maximumIterations = request.maximumIterations;
-								single.referenceFromBody.push_back(seedBody(evidence, g, cameraFromReference, member));
-								for (const std::uint32_t o : evidence.byGroup[g])
-								{
-									if (o == member)
-										continue;
-									const Posed& p = evidence.posed[o];
-									for (const cb::FeatureObservation& f : p.view->features)
-									{
-										const std::optional<math::Vec3d> corner = board.cornerPosition(f.id);
-										if (corner)
-											single.observations.push_back({p.camera, 0, *corner, f.pixel, f.covariance});
-									}
-								}
-								const Solution placed = refine(single);
-								if (!placed.usable() || placed.referenceFromBody.size() != 1)
-									return;
-								predictions[i].predicted = true;
-								predictions[i].residual =
-									cb::measure(data.cameras[target.camera].model, board, *target.view,
-												cameraFromReference[target.camera] * placed.referenceFromBody[0]);
-							});
+			detail::bulk(request.execution, targets.size(),
+						 [&](std::size_t i)
+						 {
+							 const auto [g, member] = targets[i];
+							 const Posed& target = evidence.posed[member];
+							 predictions[i].camera = target.camera;
+							 Problem single;
+							 for (const RigCamera& c : data.cameras)
+								 single.models.push_back(c.model);
+							 single.cameraFromReference = cameraFromReference;
+							 single.reference = reference;
+							 single.freeCameras = false;
+							 single.noise = request.noise;
+							 single.loss = request.loss;
+							 single.maximumIterations = request.maximumIterations;
+							 single.referenceFromBody.push_back(seedBody(evidence, g, cameraFromReference, member));
+							 for (const std::uint32_t o : evidence.byGroup[g])
+							 {
+								 if (o == member)
+									 continue;
+								 const Posed& p = evidence.posed[o];
+								 for (const cb::FeatureObservation& f : p.view->features)
+								 {
+									 const std::optional<math::Vec3d> corner = board.cornerPosition(f.id);
+									 if (corner)
+										 single.observations.push_back({p.camera, 0, *corner, f.pixel, f.covariance});
+								 }
+							 }
+							 const Solution placed = refine(single);
+							 if (!placed.usable() || placed.referenceFromBody.size() != 1)
+								 return;
+							 predictions[i].predicted = true;
+							 predictions[i].residual =
+								 cb::measure(data.cameras[target.camera].model, board, *target.view,
+											 cameraFromReference[target.camera] * placed.referenceFromBody[0]);
+						 });
 
 			// Gathered as registration::validate gathers its held-out tracks (detail::heldOutEvidence).
 			std::uint32_t unpredicted = 0;
@@ -824,9 +820,9 @@ namespace lain::camera::registration::board
 		{
 			const std::vector<std::vector<std::uint32_t>> draws = detail::bootstrapDraws(fitting, request.resamples, request.seed);
 			std::vector<std::optional<std::vector<math::RigidTransformd>>> registrations(draws.size());
-			detail::forEach(draws.size(), request.execution,
-							[&](std::size_t r)
-							{ registrations[r] = registerGroups(evidence, data.cameras, draws[r], reference, board, request); });
+			detail::bulk(request.execution, draws.size(),
+						 [&](std::size_t r)
+						 { registrations[r] = registerGroups(evidence, data.cameras, draws[r], reference, board, request); });
 
 			// Each camera's distance from the result in every resample, its spread taken robustly below.
 			std::vector<std::vector<double>> rotation(cameraCount), translation(cameraCount);
@@ -840,7 +836,7 @@ namespace lain::camera::registration::board
 				{
 					const math::RigidTransformd resampled = (*registration)[c].inverse();
 					const math::RigidTransformd& result = report.cameras[c].referenceFromCamera;
-					const double angle = rotationBetween(resampled, result);
+					const double angle = math::rotationBetween(resampled, result);
 					const math::Vec3d moved = resampled.translation() - result.translation();
 					rotation[c].push_back(angle);
 					translation[c].push_back(math::length(moved));
@@ -961,15 +957,15 @@ namespace lain::camera::registration::board
 			for (std::size_t m = 0; m < groups[g].members().size(); ++m)
 				slots.push_back({g, m});
 		}
-		detail::forEach(slots.size(), request.execution,
-						[&](std::size_t i)
-						{
-							const auto [g, m] = slots[i];
-							const auto [footage, position] = frames[g][m];
-							const image::Image frame = footage->image(position);
-							observed[g].detections[m] =
-								cb::detect(frame, groups[g].members()[m].frame, board, detection);
-						});
+		detail::bulk(request.execution, slots.size(),
+					 [&](std::size_t i)
+					 {
+						 const auto [g, m] = slots[i];
+						 const auto [footage, position] = frames[g][m];
+						 const image::Image frame = footage->image(position);
+						 observed[g].detections[m] =
+							 cb::detect(frame, groups[g].members()[m].frame, board, detection);
+					 });
 		return analyse(std::move(report), data, board, request, start);
 	}
 } // namespace lain::camera::registration::board

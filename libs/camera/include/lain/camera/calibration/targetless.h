@@ -49,7 +49,7 @@ namespace lain::camera::calibration::targetless
 	//    image geometry, every observation of a view with a frame, each covariance positive definite,
 	//    each identity once), the profile, the imported model, a geometry solver, a refiner, and one
 	//    that can estimate the requested model unless it is held;
-	// 2. the frames in capture order (timestamp, ordinal, source), and the tracks in capture order (by
+	// 2. the frames in capture order (media::capturedBefore), and the tracks in capture order (by
 	//    each one's first frame, then its pixel), so nothing depends on where the footage sits or how
 	//    its tracks are named;
 	// 3. the pairs of frames that may seed, tested once on their pixels: a pair whose shared tracks a

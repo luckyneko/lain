@@ -10,12 +10,11 @@
 // measure the same. Every case but the one comparing the two starts a pool of four, since without one
 // the resamples run inline on the case's thread.
 
-#include "syntheticscene.h"
-#include "targetlesscalibrationtext.h"
-
 #include <lain/camera/calibration/targetless.h>
 #include <lain/camera/ceres/register.h>
 #include <lain/camera/comparison.h>
+#include <lain/camera/testing/syntheticscene.h>
+#include <lain/camera/testing/targetlesscalibrationtext.h>
 #include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -180,9 +179,9 @@ TEST_CASE("the start nearest the truth is the result, whether the truth is short
 		double focalBound, rayBound;
 		Verdict verdict;
 	};
-	// Measured: at f = 250 the first start, 260.25, ends 0.49% out in focal length and 2.09 px in ray
-	// mapping, held out 0.87 mrad, and Rejected, since the scene covers 25% of so wide a lens's image;
-	// at f = 1000 the third, 1024.69, ends 0.12% and 1.46 px out, held out 0.34 mrad, Ready.
+	// Measured: at f = 250 the first start, 260.25, ends 0.16% out in focal length and 0.68 px in ray
+	// mapping, held out 0.83 mrad, and Rejected, since the scene covers 25% of so wide a lens's image;
+	// at f = 1000 the third, 1024.69, ends 0.0055% and 0.61 px out, held out 0.23 mrad, Ready.
 	for (const Case& c : {Case{250.0, 0, 0.01, 4.0, Verdict::Rejected}, Case{1000.0, 2, 0.0025, 3.0, Verdict::Ready}})
 	{
 		DYNAMIC_SECTION("f = " << c.f)
@@ -239,10 +238,10 @@ TEST_CASE("noise at the stated covariance calibrates to within it, Ready", "[cam
 		const Report report = run(scene::sequenceTrackSetOf(kStatedSigma, 5));
 		INFO(report.toString());
 		REQUIRE(report.status == CalibrationStatus::Succeeded);
-		// Measured: the focal length 0.247% long, the principal point 0.13 px off, the ray mapping 1.11 px
-		// out; held out 0.435 mrad, and 1.18 per axis whitened, since noise drawn at the stated covariance
-		// is as precise as it states; focal variation 0.106% and the principal point's 0.67 mrad; 6 of
-		// 1200 observations named, the noise's own share.
+		// Measured: the focal length 0.081% long, the principal point 0.17 px off, the ray mapping 0.42 px
+		// out; held out 0.413 mrad, and 1.12 per axis whitened, since noise drawn at the stated covariance
+		// is as precise as it states; focal variation 0.076% and the principal point's 0.56 mrad; 4 of
+		// 1197 observations named, the noise's own share.
 		const ModelComparison error = errorOf(report, truth);
 		CHECK(error.focalDifference < 0.005);
 		CHECK(error.worstPixels < 2.0);
@@ -270,8 +269,9 @@ TEST_CASE("noise at the stated covariance calibrates to within it, Ready", "[cam
 		const Report report = run(scene::sequenceTrackSetOf(kStatedSigma, 5));
 		INFO(report.toString());
 		REQUIRE(report.status == CalibrationStatus::Succeeded);
-		// Measured: the focal length 0.049% out, the ray mapping 0.374 px, the principal point's 0.25 px
-		// error included (0.135 px when it was held at the truth).
+		// Measured: the focal length 0.041% out, the ray mapping 0.343 px, the principal point's 0.23 px
+		// error included (0.110 px when it was held at the truth, on the grid that stopped short of the
+		// image's last row and column, before 2026-10-26).
 		const ModelComparison error = errorOf(report, truth);
 		CHECK(error.focalDifference < 0.001);
 		CHECK(error.worstPixels < 0.75);
@@ -302,15 +302,15 @@ TEST_CASE("a wrong match is named by its track and frame, and neither the model 
 	const auto named = std::find_if(outliers.begin(), outliers.end(), [&](const Outlier& o)
 									{ return o.track == wrong.tracks[7].identity && o.frame == frame; });
 	REQUIRE(named != outliers.end());
-	CHECK(named->rmsWhitened > 100); // measured 182
+	CHECK(named->rmsWhitened > 100); // measured 183
 	// Every other outlier is the noise's, which the clean run names too.
 	CHECK(outliers.size() == targetlessOf(before).outliers.size() + 1);
 
 	// The fit RMS is over the observations the result explains, so the named one, 25 px out, neither
-	// counts nor moves it. Measured: 0.167626 px over 1194 clean, 0.167585 over 1193 with it.
+	// counts nor moves it. Measured: 0.169065 px over 1196 clean, 0.169122 over 1195 with it.
 	CHECK(after.diagnostics.fitResiduals + 1 == before.diagnostics.fitResiduals);
 	CHECK(std::abs(after.diagnostics.fitRmsPixels - before.diagnostics.fitRmsPixels) < 1e-3);
-	// Measured: the focal length moved by 1.5e-6 of itself, and the held-out angle by 2e-6 mrad.
+	// Measured: the focal length moved by 1.3e-7 of itself, and the held-out angle by 1.4e-5 mrad.
 	CHECK(std::abs(after.model->intrinsics().fx / before.model->intrinsics().fx - 1) < 1e-4);
 	CHECK(std::abs(heldOutOf(after).rmsAngle - heldOutOf(before).rmsAngle) < 1e-6);
 	CHECK(after.verdict == Verdict::Ready);
@@ -342,7 +342,10 @@ TEST_CASE("a resample leaves out what the refined model cannot project, and keep
 		REQUIRE(project(truth, q.x, q.y, q.z).status == ProjectionStatus::OutsideDomain);
 		scene::scene().landmarks.push_back(landmark);
 	}
-	feature::TrackSet set = scene::sequenceTrackSetOf(kStatedSigma, 5);
+	// Seed 1, because frame 0 must be placed for the adjustment to fit its wrong matches at all. The
+	// reconstruction starts from frames 19 and 21, at the path's other end, and of seeds 1 to 12, seeds
+	// 3, 5, 7 and 9 leave frame 0 unplaced; every other seed names all eight, as here.
+	feature::TrackSet set = scene::sequenceTrackSetOf(kStatedSigma, 1);
 	std::vector<std::string> wrong;
 	for (feature::Track& track : set.tracks)
 	{
@@ -394,8 +397,8 @@ TEST_CASE("moving content is named, and the model does not move", "[camera][cere
 	INFO(report.toString());
 	REQUIRE(report.status == CalibrationStatus::Succeeded);
 
-	// Each moving track is named in most of the frames the adjustment saw it in (measured: at 19.8 to
-	// 495 sigma), and what else is named is the noise's share.
+	// Each moving track is named in most of the frames the adjustment saw it in (measured: at 17.6 to
+	// 492 sigma), and what else is named is the noise's share (measured 6).
 	std::map<std::string, std::size_t> namedIn, fittedIn;
 	for (const Outlier& o : targetlessOf(report).outliers)
 		++namedIn[o.track];
@@ -420,10 +423,11 @@ TEST_CASE("moving content is named, and the model does not move", "[camera][cere
 	}
 	CHECK(others < 12); // 1% of the static observations
 
-	// Measured: the ray mapping 0.84 px out. Each moving track keeps one observation the first
+	// Measured: the ray mapping 0.35 px out. Each moving track keeps one observation the first
 	// adjustment's result explains, so the second refines none of their landmarks, and the held-out
-	// frames see none of them: none beyond the inlier angle, and 0.405 mrad over 216. Adjusted once
-	// with every observation, the held-out frames counted 18 beyond it and measured 0.846 mrad.
+	// frames see none of them: none beyond the inlier angle, and 0.404 mrad over 216. Adjusted once
+	// with every observation, the held-out frames counted 18 beyond it and measured 0.846 mrad (under
+	// the Box-Muller noise this case had before core::standardNormal; not measured again).
 	const ModelComparison error = errorOf(report, truth);
 	CHECK(error.worstPixels < 2.0);
 	CHECK(targetlessOf(report).pruned > 0);

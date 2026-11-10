@@ -434,7 +434,6 @@ static std::filesystem::path loadPath(const Graph& graph)
 		}
 	}
 	FAIL("no loadimage path");
-	return {};
 }
 
 // What `file` stores as the first LoadImage's path.
@@ -453,7 +452,6 @@ static std::string storedLoadPath(const std::filesystem::path& file)
 		}
 	}
 	FAIL("no loadimage path stored");
-	return {};
 }
 
 static Graph loadingDocument(const std::filesystem::path& path)
@@ -530,7 +528,6 @@ static std::pair<int, int> gradientSize(const Graph& graph)
 		return {node.defaultOf(node.input(0).id())->get<int>(), node.defaultOf(node.input(1).id())->get<int>()};
 	}
 	FAIL("no gradient");
-	return {};
 }
 
 TEST_CASE("a gradient's size travels with its document, not with --size", "[graphio][gradient]")

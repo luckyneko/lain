@@ -1,5 +1,6 @@
 #include "lain/camera/feature/features.h"
 
+#include <lain/math/finite.h>
 #include <lain/meta/enums.h>
 #include <lain/string/format.h>
 
@@ -25,7 +26,7 @@ namespace lain::camera::feature
 		for (std::size_t i = 0; i < found.keypoints.size(); ++i)
 		{
 			const Keypoint& k = found.keypoints[i];
-			if (!std::isfinite(k.pixel.x) || !std::isfinite(k.pixel.y) || !std::isfinite(k.size) ||
+			if (!math::isFinite(k.pixel) || !std::isfinite(k.size) ||
 				!std::isfinite(k.angle) || !std::isfinite(k.response) || k.size < 0)
 				return string::format("keypoint {} is not finite", i);
 			if (k.pixel.x < -0.5 || k.pixel.y < -0.5 || k.pixel.x > double(image.width) - 0.5 ||

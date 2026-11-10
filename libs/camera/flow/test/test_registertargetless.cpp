@@ -9,10 +9,9 @@
 // Its own executable, as registerCameras' node test has: these stand-ins answer from a process-wide
 // scene of their own.
 
-#include "passthroughrefiner.h"
-#include "syntheticscene.h"
-
 #include <lain/camera/flow/registercamerastargetlessnode.h>
+#include <lain/camera/testing/passthroughrefiner.h>
+#include <lain/camera/testing/syntheticscene.h>
 #include <lain/flow/boundary.h>
 #include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>

@@ -19,12 +19,8 @@
 #include "camerafootage.h" // the footage, drawn in plain C++ and shared with flowview-examples
 #include "clibinders.h"
 #include "graphio.h"
-#include "rigcompare.h" // the truth as a registered rig
 #include "runmode.h"
 #include "scene.h"
-#include "syntheticfootage.h" // the footage, drawn in plain C++
-#include "testcamera.h"		  // the targetless rig's camera
-#include "texturedscene.h"	  // ... and the scene it sees, drawn in plain C++ too
 
 #include <lain/camera/backends.h>
 #include <lain/camera/board/detection.h>
@@ -42,6 +38,10 @@
 #include <lain/camera/registration/report.h>
 #include <lain/camera/serialize/cameramodel.h>
 #include <lain/camera/serialize/registeredrig.h>
+#include <lain/camera/testing/rigcompare.h>		  // a registered rig against its truth
+#include <lain/camera/testing/syntheticfootage.h> // the footage, drawn in plain C++
+#include <lain/camera/testing/testcamera.h>		  // the targetless rig's camera
+#include <lain/camera/testing/texturedscene.h>	  // ... and the scene it sees, drawn in plain C++ too
 #include <lain/core/uri.h>
 #include <lain/flow/boundary.h>
 #include <lain/flow/graph.h>
@@ -49,12 +49,15 @@
 #include <lain/io/data/save.h>
 #include <lain/io/image/codecs.h>
 #include <lain/io/image/save.h>
+#include <lain/io/sequence/open.h>
 #include <lain/io/sequence/openers.h>
 #include <lain/io/video/codecs.h>
+#include <lain/io/video/save.h>
 #include <lain/math/rigidtransform.h>
 #include <lain/media/framesequence.h>
 #include <lain/task/task.h>
 #include <lain/testing/scratch.h>
+#include <lain/testing/skip.h>
 #include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -65,6 +68,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <memory>
 #include <optional>
 #include <string>
 #include <variant>
@@ -306,16 +310,18 @@ static std::optional<camera::registration::RegisteredRig> readRig(const fs::path
 	return read.rig;
 }
 
-// How far a written rig is from `worldFromCamera`, the poses its cam0..cam2 footage was drawn from:
-// the truth built for the rig's own reference, so nothing is derived again. Each camera is named by
-// its footage folder within the rig's folder, so the truth names them cam0..cam2, and a rig that
-// named them otherwise shares no camera with it but its reference.
+// How far a written rig is from `worldFromCamera`, the poses its footage was drawn from: the truth
+// built for the rig's own reference, so nothing is derived again. Each camera is named by its footage
+// folder within the rig's folder, `names` (cam0..cam2 unless renamed), so the truth names them that
+// way, and a rig that named them otherwise shares no camera with it but its reference.
 static camera::RigComparison rigAgainstTruth(const camera::registration::RegisteredRig& rig,
-											 const std::vector<math::RigidTransformd>& worldFromCamera)
+											 const std::vector<math::RigidTransformd>& worldFromCamera,
+											 const std::vector<std::string>& names = {"cam0", "cam1", "cam2"})
 {
+	REQUIRE(names.size() == worldFromCamera.size());
 	std::vector<camera::capture::CameraIdentity> identities;
-	for (std::size_t c = 0; c < worldFromCamera.size(); ++c)
-		identities.push_back(camera::capture::CameraIdentity{"cam" + std::to_string(c)});
+	for (const std::string& name : names)
+		identities.push_back(camera::capture::CameraIdentity{name});
 	const camera::RigComparison comparison =
 		camera::compareRigs(camera::testing::truthRig(identities, worldFromCamera, rig.reference), rig);
 	INFO("comparison: " << comparison.toString());
@@ -448,6 +454,161 @@ TEST_CASE("run registers a rig from a folder of footage and a folder of models",
 		REQUIRE(same.compared());
 		CHECK(same.worstRotation()->rotation <= 1e-15);
 	}
+}
+
+// The board rig with its cameras renamed in `dir`'s rig and models folders, cam0..cam2 to `names` in turn.
+static void renameBoardRig(const fs::path& dir, const std::vector<std::string>& names)
+{
+	for (std::size_t c = 0; c < names.size(); ++c)
+	{
+		const std::string was = "cam" + std::to_string(c);
+		fs::rename(dir / "rig" / was, dir / "rig" / names[c]);
+		fs::rename(dir / "models" / (was + ".json"), dir / "models" / (names[c] + ".json"));
+	}
+}
+
+TEST_CASE("run registers each camera with its own model, however the names sort as files", "[camera][runmode]")
+{
+	// As folders, a sorts before a-b; as documents, a-b.json sorts before a.json, since '-' sorts below
+	// '.'. Listed by file name, a and a-b were registered with each other's models and nothing said so.
+	// Each camera has its own pinhole (camerafootage.h), so a camera given another's model is seen.
+	ensureRegistered();
+	if (!haveRegistrationBackends())
+		SKIP("a build without the registration backends: the names' order is test_camerafiles' to show");
+	const fs::path dir = lain::testing::scratchDir() / "rig-names-vertical";
+	fs::remove_all(dir);
+	fs::create_directories(dir);
+	cameraFootage::writeBoardRig(dir, 16, true);
+	const std::vector<std::string> names{"a", "a-b", "b"};
+	renameBoardRig(dir, names);
+
+	core::Factory<flow::Node> factory;
+	flowview::registerExampleNodes(factory, 8);
+	flowview::BoundaryBinders binders;
+	flowview::registerBoundaryBinders(binders);
+	flowview::RunOptions options;
+	options.graphPath = exampleDocument("register").string();
+	const fs::path reportText = dir / "report.txt";
+	const fs::path rigFile = dir / "rig.json";
+	options.bindings = {"--footage", (dir / "rig").string(), "--models", (dir / "models").string(), "--report",
+						reportText.string(), "--rig", rigFile.string()};
+	REQUIRE(flowview::runGraph(options, factory, binders) == 0);
+
+	const std::string report = readText(reportText);
+	INFO("report: " << report);
+	CHECK(report.rfind("Ready: 3 cameras", 0) == 0);
+	const std::optional<camera::registration::RegisteredRig> rig = readRig(rigFile);
+	REQUIRE(rig.has_value());
+	INFO("rig: " << rig->toString());
+	const camera::RigComparison difference = rigAgainstTruth(
+		*rig, {cameraFootage::boardRigCamera(0), cameraFootage::boardRigCamera(1), cameraFootage::boardRigCamera(2)}, names);
+	INFO("comparison: " << difference.toString());
+	// The bounds the rig vertical above holds the same footage to.
+	CHECK(std::abs(difference.scale - 1.0) < 0.005);
+	CHECK(difference.worstRotation()->rotation < 0.002);
+	CHECK(difference.worstCentre()->centre < 0.001);
+}
+
+// The board rig captured to video: each of cam0..cam2's stills in `dir`/rig encoded losslessly (FFV1)
+// as cam0.mkv..cam2.mkv beside them, and the stills removed. False when this build has no video writer.
+static bool boardRigAsVideo(const fs::path& dir)
+{
+	for (std::size_t c = 0; c < 3; ++c)
+	{
+		const std::string name = "cam" + std::to_string(c);
+		const std::optional<media::FrameSequence> stills = io::sequence::open(core::Uri::fromPath(dir / "rig" / name));
+		REQUIRE(stills.has_value());
+		media::FrameSpec spec = stills->spec();
+		spec.rate = {24, 1};
+		if (spec.colorSpace == image::ColorSpace::Unspecified)
+			spec.colorSpace = image::ColorSpace::sRGB; // what the renderer drew in
+		io::video::VideoWriterOptions options;
+		options.codec = io::video::VideoCodec::FFV1;
+		const std::unique_ptr<io::video::VideoWriter> writer =
+			io::video::openWriter(core::Uri::fromPath(dir / "rig" / (name + ".mkv")), spec, options);
+		if (!writer)
+			return false;
+		for (std::size_t k = 0; k < stills->size(); ++k)
+		{
+			image::Image frame = stills->image(k);
+			frame.setColorSpace(spec.colorSpace);
+			REQUIRE(writer->encode(frame));
+		}
+		REQUIRE(writer->finish());
+		fs::remove_all(dir / "rig" / name);
+	}
+	return true;
+}
+
+TEST_CASE("run registers a rig of videos, each camera named less its extension", "[camera][runmode]")
+{
+	// The repo owner's rule: a camera is named the same whatever it was captured to, so cam0.mkv is camera
+	// cam0, pairs with cam0.json, and is cam0 in the report and the rig document.
+	ensureRegistered();
+	if (!haveRegistrationBackends())
+		SKIP("a build without the registration backends: the names are test_camerafiles' to show");
+	const fs::path dir = lain::testing::scratchDir() / "rig-video-vertical";
+	fs::remove_all(dir);
+	fs::create_directories(dir);
+	cameraFootage::writeBoardRig(dir, 16, true);
+	if (!boardRigAsVideo(dir))
+		SKIP("this build has no video writer");
+
+	core::Factory<flow::Node> factory;
+	flowview::registerExampleNodes(factory, 8);
+	flowview::BoundaryBinders binders;
+	flowview::registerBoundaryBinders(binders);
+	flowview::RunOptions options;
+	options.graphPath = exampleDocument("register").string();
+	const fs::path reportText = dir / "report.txt";
+	const fs::path rigFile = dir / "rig.json";
+	options.bindings = {"--footage", (dir / "rig").string(), "--models", (dir / "models").string(), "--report",
+						reportText.string(), "--rig", rigFile.string()};
+	REQUIRE(flowview::runGraph(options, factory, binders) == 0);
+
+	const std::string report = readText(reportText);
+	INFO("report: " << report);
+	CHECK(report.rfind("Ready: 3 cameras relative to cam0, metric", 0) == 0);
+	const std::optional<camera::registration::RegisteredRig> rig = readRig(rigFile);
+	REQUIRE(rig.has_value());
+	INFO("rig: " << rig->toString());
+	const camera::RigComparison difference =
+		rigAgainstTruth(*rig, {cameraFootage::boardRigCamera(0), cameraFootage::boardRigCamera(1), cameraFootage::boardRigCamera(2)});
+	INFO("comparison: " << difference.toString());
+	// The bounds the rig vertical above holds the same footage, as stills, to.
+	CHECK(std::abs(difference.scale - 1.0) < 0.005);
+	CHECK(difference.worstRotation()->rotation < 0.002);
+	CHECK(difference.worstCentre()->centre < 0.001);
+}
+
+TEST_CASE("run refuses a rig whose two folders do not name the same cameras", "[camera][runmode]")
+{
+	// Three cameras' footage and three models, one named for a camera the rig does not have: paired by
+	// position, cam2's footage would have been registered with cam3's model, and nothing said so. Refused
+	// before anything runs, so nothing is written; blank footage, since nothing is ever read.
+	ensureRegistered();
+	const fs::path dir = lain::testing::scratchDir() / "rig-unpaired";
+	fs::remove_all(dir);
+	fs::create_directories(dir);
+	cameraFootage::writeBoardRig(dir, 2, false);
+	fs::rename(dir / "models" / "cam2.json", dir / "models" / "cam3.json");
+
+	core::Factory<flow::Node> factory;
+	flowview::registerExampleNodes(factory, 8);
+	flowview::BoundaryBinders binders;
+	flowview::registerBoundaryBinders(binders);
+	flowview::RunOptions options;
+	options.graphPath = exampleDocument("register").string();
+	const fs::path reportText = dir / "report.txt";
+	options.bindings = {"--footage", (dir / "rig").string(), "--models", (dir / "models").string(), "--report",
+						reportText.string()};
+	CHECK(flowview::runGraph(options, factory, binders) == 1);
+	CHECK_FALSE(fs::exists(reportText));
+
+	// Named alike, the same folders run.
+	fs::rename(dir / "models" / "cam3.json", dir / "models" / "cam2.json");
+	CHECK(flowview::runGraph(options, factory, binders) == 0);
+	CHECK(fs::exists(reportText));
 }
 
 namespace
@@ -770,9 +931,7 @@ TEST_CASE("the calibration fallback falls back to targetless calibration when th
 		return;
 	}
 
-#ifndef NDEBUG
-	SKIP("the targetless fallback runs in Release builds: a Debug build takes seconds to draw each frame");
-#endif
+	lain::testing::skipInDebug("the targetless fallback runs in Release builds: a Debug build takes seconds to draw each frame");
 	const lain::testing::ThreadPool pool;
 	const fs::path footage = cameraFootage::writeMovingFootage(dir, 40);
 	const FallbackRun run = runFallback(dir, footage, std::string{"board-then-targetless"});

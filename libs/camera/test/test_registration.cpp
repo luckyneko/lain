@@ -4,18 +4,20 @@
 // under test is everything the module decides around them. Its own executable: the registries only
 // grow, and these stand-ins must be the only backends registered.
 
-#include "syntheticrig.h"
-
 #include <lain/camera/registration/board.h>
+#include <lain/camera/testing/syntheticrig.h>
+#include <lain/math/angles.h>
 #include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <limits>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <variant>
 
 using namespace lain;
@@ -79,13 +81,6 @@ namespace
 				return c;
 		}
 		FAIL("no rig camera is " << camera.value);
-		return 0;
-	}
-
-	double rotationBetween(const math::RigidTransformd& a, const math::RigidTransformd& b)
-	{
-		const math::Quatd r = math::conjugate(a.rotation()) * b.rotation();
-		return 2.0 * std::atan2(std::sqrt(r.x * r.x + r.y * r.y + r.z * r.z), std::abs(r.w));
 	}
 
 	// Every registered camera against the truth relative to the report's reference.
@@ -99,7 +94,7 @@ namespace
 		{
 			CAPTURE(c.camera.value);
 			const math::RigidTransformd truth = rig::trueReferenceFromCamera(reference, indexOf(c.camera));
-			CHECK(rotationBetween(c.referenceFromCamera, truth) < rotation);
+			CHECK(math::rotationBetween(c.referenceFromCamera, truth) < rotation);
 			CHECK(math::length(c.referenceFromCamera.translation() - truth.translation()) < translation);
 		}
 	}
@@ -130,7 +125,6 @@ namespace
 				return c;
 		}
 		FAIL("no held-out evidence for " << camera);
-		return e.perCamera.front();
 	}
 } // namespace
 
@@ -288,7 +282,7 @@ TEST_CASE("a disconnected rig fails, with each component placed as a diagnostic"
 		for (const RegisteredCamera& c : estimate.cameras)
 		{
 			const math::RigidTransformd truth = rig::trueReferenceFromCamera(root, indexOf(c.camera));
-			CHECK(rotationBetween(c.referenceFromCamera, truth) < 1e-9);
+			CHECK(math::rotationBetween(c.referenceFromCamera, truth) < 1e-9);
 			CHECK(math::length(c.referenceFromCamera.translation() - truth.translation()) < 1e-9);
 		}
 	}
@@ -506,6 +500,36 @@ TEST_CASE("one resample far off moves no camera's spread", "[camera][registratio
 	CHECK(resampled->resamples == 10);
 	CHECK(resampled->rotationVariation < 1e-9);
 	CHECK(report.verdict == Verdict::Ready);
+}
+
+TEST_CASE("DeterministicDebug keeps every solve on the calling thread while a pool is running", "[camera][registration]")
+{
+	// Thread identity rather than order or result: with no pool, a parallel dispatch runs in order
+	// too, and the resamples' reports match whichever way they ran.
+	rig::reset();
+	const lain::testing::ThreadPool pool{4};
+	const std::thread::id caller = std::this_thread::get_id();
+	std::atomic<std::size_t> solves{0};
+	std::atomic<std::size_t> elsewhere{0};
+	{
+		std::lock_guard<std::mutex> lock(rig::refinerScript().mutex);
+		rig::refinerScript().adjust = [&](std::size_t, const refinement::Problem&, refinement::Solution&)
+		{
+			++solves;
+			if (std::this_thread::get_id() != caller)
+				++elsewhere;
+		};
+	}
+	Request request;
+	request.execution = ExecutionPolicy::DeterministicDebug;
+	const Report report = run(request);
+	{
+		std::lock_guard<std::mutex> lock(rig::refinerScript().mutex);
+		rig::refinerScript().adjust = nullptr;
+	}
+	REQUIRE(std::get_if<ResamplingEvidence>(&report.resampling) != nullptr);
+	CHECK(solves > 2); // the registration's own solves, then one for each resample
+	CHECK(elsewhere == 0);
 }
 
 TEST_CASE("the same work in parallel, serially, or listed in another order gives the same report", "[camera][registration]")

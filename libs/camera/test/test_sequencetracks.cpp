@@ -3,9 +3,8 @@
 // and none of it depending on the order the footage lists its frames in or on the execution policy.
 // Every count is the scene's own, worked out beside its check.
 
-#include "syntheticscene.h"
-
 #include <lain/camera/feature/sequenceextraction.h>
+#include <lain/camera/testing/syntheticscene.h>
 #include <lain/media/operations.h>
 #include <lain/testing/threadpool.h>
 

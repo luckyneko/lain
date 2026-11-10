@@ -5,7 +5,6 @@
 // also record what sub-slice 10 decides on (the threshold, the sampled frames, the cap).
 
 #include "renderedfeatures.h"
-#include "texturedscene.h"
 
 #include <lain/camera/capture/capturegroup.h>
 #include <lain/camera/feature/features.h>
@@ -13,9 +12,11 @@
 #include <lain/camera/feature/matching.h>
 #include <lain/camera/feature/sequenceextraction.h>
 #include <lain/camera/projection.h>
+#include <lain/camera/testing/texturedscene.h>
 #include <lain/core/time.h>
 #include <lain/media/framesequence.h>
 #include <lain/task/task.h>
+#include <lain/testing/skip.h>
 #include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -202,9 +203,7 @@ TEST_CASE("a moving camera's tracks are the same on the pool and agree with the 
 
 TEST_CASE("what a fundamental matrix keeps through four lenses", "[camera][opencv][feature][scale]")
 {
-#ifndef NDEBUG
-	SKIP("runs in Release builds: it draws and searches 16 frames of 1920 x 1080");
-#endif
+	lain::testing::skipInDebug("runs in Release builds: it draws and searches 16 frames of 1920 x 1080");
 	ensureBackend();
 	synthetic::Scene scene = synthetic::defaultScene();
 	scene.noise = 1.0;
@@ -234,14 +233,14 @@ TEST_CASE("what a fundamental matrix keeps through four lenses", "[camera][openc
 	std::vector<Features> features(lenses.size() * used.size());
 	{
 		const lain::testing::ThreadPool pool{4};
-		task::range(std::ptrdiff_t{0}, std::ptrdiff_t(features.size()),
-					[&](std::ptrdiff_t i)
+		task::range(std::size_t{0}, features.size(),
+					[&](std::size_t i)
 					{
-						const std::size_t l = std::size_t(i) / used.size(), f = used[std::size_t(i) % used.size()];
+						const std::size_t l = i / used.size(), f = used[i % used.size()];
 						const ExtractResult found =
 							extract(synthetic::render(scene, lenses[l], path[f], f, 2, f + 1), LongestSide{1920});
 						if (found.ok())
-							features[std::size_t(i)] = strongest(found.features, 8192);
+							features[i] = strongest(found.features, 8192);
 					});
 	}
 
@@ -357,9 +356,7 @@ TEST_CASE("what a fundamental matrix keeps through four lenses", "[camera][openc
 
 TEST_CASE("the time to match every pair of 40 frames", "[camera][opencv][feature][scale]")
 {
-#ifndef NDEBUG
-	SKIP("runs in Release builds, for its timings");
-#endif
+	lain::testing::skipInDebug("runs in Release builds, for its timings");
 	ensureBackend();
 	// The 1920 x 1080 camera along the path over the fine texture, so the cap binds, every frame drawn
 	// on the pool first so nothing below times a render.

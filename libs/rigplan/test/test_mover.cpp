@@ -3,6 +3,7 @@
 
 #include "testplan.h"
 
+#include <lain/math/angles.h>
 #include <lain/rigplan/mover.h>
 #include <lain/rigplan/realisation.h>
 #include <lain/rigplan/rigplan.h>
@@ -24,12 +25,6 @@ static void requireSame(const RigidTransformd& a, const RigidTransformd& b)
 {
 	REQUIRE(a.rotation() == b.rotation());
 	REQUIRE(a.translation() == b.translation());
-}
-
-// The angle between two rotations, radians.
-static double angleBetween(const Quatd& a, const Quatd& b)
-{
-	return 2.0 * std::acos(std::min(1.0, std::abs(lain::math::dot(a, b))));
 }
 
 static double distance(const Vec3d& a, const Vec3d& b)
@@ -59,10 +54,10 @@ TEST_CASE("a path holds its keys, and moves between them at a constant rate", "[
 		const RigidTransformd pose = lain::rigplan::poseAt(path, f);
 		const double t = double(f - 2) / 4.0;
 		REQUIRE(distance(pose.translation(), Vec3d{t, 1.0, 1.0 + t}) < 1e-12);
-		REQUIRE(angleBetween(pose.rotation(), keyPose(0).rotation()) == Catch::Approx(quarter * double(f - 2)).margin(1e-12));
+		REQUIRE(lain::math::rotationBetween(pose.rotation(), keyPose(0).rotation()) == Catch::Approx(quarter * double(f - 2)).margin(1e-12));
 	}
 	// And the next segment turns about the pose's own tilt, the rest staying where the keys put it.
-	REQUIRE(angleBetween(lain::rigplan::poseAt(path, 8).rotation(), keyPose(1).rotation()) ==
+	REQUIRE(lain::math::rotationBetween(lain::rigplan::poseAt(path, 8).rotation(), keyPose(1).rotation()) ==
 			Catch::Approx(lain::math::radians(15.0)).margin(1e-12));
 }
 
@@ -114,7 +109,7 @@ TEST_CASE("a board's squares are centred on its path, facing the camera that sha
 		const Vec3d forward = pose.rotate({0.0, 0.0, 1.0});
 		const RigidTransformd planFromCamera{pose.rotation(), pose.translation() - forward};
 		const RigidTransformd cameraFromBoard = planFromCamera.inverse() * planFromBoard;
-		REQUIRE(angleBetween(cameraFromBoard.rotation(), Quatd{1.0, 0.0, 0.0, 0.0}) < 1e-12);
+		REQUIRE(lain::math::rotationBetween(cameraFromBoard.rotation(), Quatd{1.0, 0.0, 0.0, 0.0}) < 1e-12);
 		REQUIRE(distance(cameraFromBoard.translation(), Vec3d{-centre.x, -centre.y, 1.0}) < 1e-12);
 	}
 }

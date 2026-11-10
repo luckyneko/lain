@@ -2,10 +2,9 @@
 // refuse, and what they normalise, whichever backend is behind them. The stand-ins are registered
 // under their own keys; a build with the OpenCV plugin tests that backend in its own suite.
 
-#include "testboard.h"
-
 #include <lain/camera/board/detection.h>
 #include <lain/camera/board/rendering.h>
+#include <lain/camera/testing/testboard.h>
 
 #include <catch2/catch_test_macros.hpp>
 

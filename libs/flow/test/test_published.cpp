@@ -48,7 +48,6 @@ static NodeId bodyOf(const Graph& inner)
 			return id;
 	}
 	FAIL("the interior has no body node");
-	return NodeId{};
 }
 
 // Everything `published` answers matches what `working` answers, at this level and every level

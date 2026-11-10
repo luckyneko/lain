@@ -2,6 +2,7 @@
 
 #include "common.h"
 
+#include <lain/math/angles.h>
 #include <lain/meta/enums.h>
 #include <lain/string/format.h>
 
@@ -53,7 +54,7 @@ namespace lain::camera::registration
 			const math::Vec3d& centre = c.referenceFromCamera.translation();
 			text += lain::string::format("; {} at ({:.4g}, {:.4g}, {:.4g}){} turned {:.3g} deg", c.camera.value, centre.x,
 										 centre.y, centre.z, metric ? " m" : "",
-										 math::degrees(detail::rotationBetween(math::RigidTransformd{}, c.referenceFromCamera)));
+										 math::degrees(math::rotationBetween(math::RigidTransformd{}, c.referenceFromCamera)));
 		}
 		return text;
 	}

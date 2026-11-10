@@ -7,6 +7,7 @@
 
 #include <lain/camera/capture/capturegroup.h>
 #include <lain/camera/registration/report.h>
+#include <lain/math/angles.h>
 #include <lain/math/rigidtransform.h>
 
 #include <catch2/catch_test_macros.hpp>

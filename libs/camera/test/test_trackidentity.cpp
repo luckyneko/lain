@@ -2,7 +2,7 @@
 // the text changes every identity a registration has reported. Pinned here against a digest computed
 // outside lain, with the text spelled out, so such a change has to be deliberate.
 
-#include "syntheticscene.h"
+#include <lain/camera/testing/syntheticscene.h>
 
 #include <catch2/catch_test_macros.hpp>
 

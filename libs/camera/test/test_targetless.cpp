@@ -3,11 +3,10 @@
 // held-out tracks predicted member by member (registration::validate), which cameras can be placed,
 // the seed, cheirality, stability, and the refusals. Every measured number is written beside its check.
 
-#include "passthroughrefiner.h"
-#include "syntheticscene.h"
-
 #include <lain/camera/registration/targetless.h>
 #include <lain/camera/registration/validation.h>
+#include <lain/camera/testing/passthroughrefiner.h>
+#include <lain/camera/testing/syntheticscene.h>
 #include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -593,7 +592,7 @@ TEST_CASE("a landmark behind a camera is left out of the refinement, and named",
 	setUp(4, 200);
 	// Camera 3 stands inside the scene facing away from the others, so it sees only the landmarks
 	// beyond it; a wrong match gives it one behind it.
-	scene::scene().referenceFromCamera[3] = scene::lookingAt(math::Vec3d{0.05, -0.1, -0.2}, math::Vec3d{0.0, 0.0, 3.0});
+	scene::scene().referenceFromCamera[3] = math::lookingAt(math::Vec3d{0.05, -0.1, -0.2}, math::Vec3d{0.0, 0.0, 3.0}, kCameraFrame).value();
 	scene::scene().renderedFrom = scene::scene().referenceFromCamera;
 	feature::TrackSet set = scene::trackSetOf();
 	feature::Track* wrong = nullptr;
@@ -636,7 +635,7 @@ TEST_CASE("a narrow rig seeds from its widest pair, and says the floor was not c
 	// Three cameras 3 cm apart, 3 m from the scene: no pair sees it with 2 degrees of parallax.
 	for (std::size_t c = 0; c < 3; ++c)
 		scene::scene().referenceFromCamera[c] =
-			scene::lookingAt(math::Vec3d{0.03 * double(c), -0.2, -3.0}, math::Vec3d{0.0, 0.0, 0.0});
+			math::lookingAt(math::Vec3d{0.03 * double(c), -0.2, -3.0}, math::Vec3d{0.0, 0.0, 0.0}, kCameraFrame).value();
 	scene::scene().renderedFrom = scene::scene().referenceFromCamera;
 	const Report report = run(scene::trackSetOf());
 	INFO(report.toString());
@@ -652,8 +651,8 @@ TEST_CASE("the seed is the pair with the most inliers that clears the parallax f
 	setUp(3, 300);
 	// Cameras 0 and 1 are 3 cm apart and share all 300 landmarks; camera 2 is far off and sees 150 of
 	// them. The narrow pair has the most inliers, and the wide pairs clear the floor.
-	scene::scene().referenceFromCamera[1] = scene::lookingAt(
-		scene::scene().referenceFromCamera[0].translation() + math::Vec3d{0.03, 0.0, 0.0}, math::Vec3d{0.0, 0.0, 0.0});
+	const math::Vec3d beside = scene::scene().referenceFromCamera[0].translation() + math::Vec3d{0.03, 0.0, 0.0};
+	scene::scene().referenceFromCamera[1] = math::lookingAt(beside, math::Vec3d{0.0, 0.0, 0.0}, kCameraFrame).value();
 	scene::scene().renderedFrom = scene::scene().referenceFromCamera;
 	seenOnlyBy(0, 150, {0, 1, 2});
 	seenOnlyBy(150, 300, {0, 1});

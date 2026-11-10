@@ -6,6 +6,8 @@ add_executable(test-math
 	test_rect.cpp
 	test_rigidtransform.cpp
 	test_axisconvention.cpp
+	test_angles.cpp
+	test_finite.cpp
 )
 
 target_compile_features(test-math PRIVATE cxx_std_17)

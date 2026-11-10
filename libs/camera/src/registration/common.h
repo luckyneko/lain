@@ -1,6 +1,5 @@
 #pragma once
 
-#include "angles.h"
 #include "execution.h"
 #include "footageindex.h"
 #include "lain/camera/cameramodel.h"
@@ -34,19 +33,18 @@
 namespace lain::camera::registration::detail
 {
 	// How a method module runs independent work, shared with calibration (execution.h), finds a
-	// member's frame in its footage, shared with feature extraction (footageindex.h), measures an angle
-	// or a rotation (angles.h), takes a median (median.h), finds a union-find root (unionfind.h), and
-	// holds evidence out and draws bootstrap resamples, shared with calibration (resampling.h); named
-	// here too, since inside registration this namespace hides lain::camera::detail. A residual is
-	// whitened as every method whitens one (whitening.h).
-	using camera::detail::angleBetween;
+	// member's frame in its footage, shared with feature extraction (footageindex.h), takes a median
+	// (median.h), joins cameras into components (unionfind.h), and holds evidence out and draws
+	// bootstrap resamples, shared with calibration (resampling.h); named here too, since inside
+	// registration this namespace hides lain::camera::detail. A residual is whitened, and a covariance
+	// checked, as every method does (whitening.h).
 	using camera::detail::bootstrapDraws;
+	using camera::detail::bulk;
 	using camera::detail::FootageIndex;
-	using camera::detail::forEach;
 	using camera::detail::holdOut;
 	using camera::detail::median;
-	using camera::detail::root;
-	using camera::detail::rotationBetween;
+	using camera::detail::positiveDefinite;
+	using camera::detail::UnionFind;
 	using camera::detail::whitenedSquared;
 
 	// How a person reads a count of `unit`s, plural: "groups", "tracks".

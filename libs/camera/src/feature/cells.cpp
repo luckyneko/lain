@@ -3,13 +3,13 @@
 #include "lain/camera/feature/matching.h"
 #include "unionfind.h"
 
+#include <lain/math/types.h>
 #include <lain/meta/enums.h>
 #include <lain/string/format.h>
 
 #include <algorithm>
 #include <cmath>
 #include <map>
-#include <numeric>
 #include <set>
 #include <tuple>
 
@@ -17,13 +17,11 @@ namespace lain::camera::detail
 {
 	// --- file-local helpers (named static, not an anonymous namespace) ----------
 
-	static constexpr double kTau = 6.283185307179586;
-
 	// An angle in [0, 2π).
 	static double wrapped(double angle)
 	{
-		const double a = std::fmod(angle, kTau);
-		return a < 0 ? a + kTau : a;
+		const double a = std::fmod(angle, math::two_pi<double>());
+		return a < 0 ? a + math::two_pi<double>() : a;
 	}
 
 	// The features of `f` at `keep`, in that order.
@@ -264,18 +262,17 @@ namespace lain::camera::detail
 			offset.push_back(nodes);
 			nodes += count;
 		}
-		std::vector<std::uint32_t> parent(nodes);
-		std::iota(parent.begin(), parent.end(), 0u);
+		UnionFind cells(nodes);
 		for (const VerifiedMatches& p : verified)
 		{
 			for (const auto& [ca, cb] : p.matches)
-				join(parent, offset[p.a] + ca, offset[p.b] + cb);
+				cells.join(offset[p.a] + ca, offset[p.b] + cb);
 		}
 		std::map<std::uint32_t, std::vector<CellPair>> components; // root -> (view, cell)
 		for (std::uint32_t v = 0; v < cellsPerView.size(); ++v)
 		{
 			for (std::uint32_t c = 0; c < cellsPerView[v]; ++c)
-				components[root(parent, offset[v] + c)].push_back({v, c});
+				components[cells.root(offset[v] + c)].push_back({v, c});
 		}
 		JoinedTracks out;
 		for (auto& [r, members] : components)

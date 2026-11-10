@@ -16,6 +16,8 @@
 #include <lain/camera/feature/extraction.h>
 #include <lain/camera/projection.h>
 #include <lain/camera/rig.h>
+#include <lain/core/random.h>
+#include <lain/math/angles.h>
 #include <lain/media/framesequence.h>
 #include <lain/media/framesource.h>
 
@@ -113,16 +115,6 @@ namespace lain::camera::testing::scene
 		return *CameraModel::create(parametersWith(brownConrady())).model;
 	}
 
-	// A camera at `position` looking at `target`, in the camera frame's convention (X right, Y down,
-	// Z forward), with the reference frame's +Y as down.
-	inline math::RigidTransformd lookingAt(const math::Vec3d& position, const math::Vec3d& target)
-	{
-		const math::Vec3d z = math::normalize(target - position);
-		const math::Vec3d x = math::normalize(math::cross(math::Vec3d{0, 1, 0}, z));
-		const math::Vec3d y = math::cross(z, x);
-		return math::RigidTransformd{math::quat_cast(math::Mat3d{x, y, z}), position};
-	}
-
 	inline std::uint32_t descriptorOf(const Landmark& l, std::size_t camera, std::size_t ordinal)
 	{
 		if (const auto at = l.descriptorAt.find(ordinal); at != l.descriptorAt.end())
@@ -183,7 +175,7 @@ namespace lain::camera::testing::scene
 		{
 			const double angle = cameras > 1 ? -0.45 + 0.9 * double(c) / double(cameras - 1) : 0.0;
 			const math::Vec3d position{3.0 * std::sin(angle), -0.2 + 0.05 * double(c), -3.0 * std::cos(angle)};
-			s.referenceFromCamera.push_back(lookingAt(position, math::Vec3d{0.0}));
+			s.referenceFromCamera.push_back(math::lookingAt(position, math::Vec3d{0.0}, kCameraFrame).value());
 		}
 		s.renderedFrom = s.referenceFromCamera;
 		std::mt19937_64 engine(seed);
@@ -213,7 +205,7 @@ namespace lain::camera::testing::scene
 		{
 			const double angle = frames > 1 ? -0.4 + 0.8 * double(k) / double(frames - 1) : 0.0;
 			const math::Vec3d position{3.0 * std::sin(angle), -0.3 + 0.05 * double(k), -3.0 * std::cos(angle)};
-			s.path.push_back(lookingAt(position, math::Vec3d{0.0}));
+			s.path.push_back(math::lookingAt(position, math::Vec3d{0.0}, kCameraFrame).value());
 		}
 	}
 
@@ -234,7 +226,7 @@ namespace lain::camera::testing::scene
 			const double angle = -0.4 + 0.8 * t;
 			const math::Vec3d position{3.0 * std::sin(angle), -0.2 + 0.05 * double(k), -3.0 * std::cos(angle)};
 			const math::Vec3d target{0.4 * std::sin(1.7 * double(k) + 0.3), 0.25 * std::sin(2.3 * double(k)), 0.0};
-			const math::RigidTransformd aimed = lookingAt(position, target);
+			const math::RigidTransformd aimed = math::lookingAt(position, target, kCameraFrame).value();
 			const math::Quatd roll = math::angleAxis(0.15 * std::sin(1.1 * double(k) + 0.5), math::Vec3d{0.0, 0.0, 1.0});
 			s.path.push_back(math::RigidTransformd{aimed.rotation() * roll, position});
 		}
@@ -254,7 +246,7 @@ namespace lain::camera::testing::scene
 		for (std::size_t k = 0; k < frames; ++k)
 		{
 			const double x = frames > 1 ? -0.8 + 1.6 * double(k) / double(frames - 1) : 0.0;
-			s.path.push_back(lookingAt(position, math::Vec3d{x, 0.0, 0.0}));
+			s.path.push_back(math::lookingAt(position, math::Vec3d{x, 0.0, 0.0}, kCameraFrame).value());
 		}
 	}
 
@@ -408,10 +400,10 @@ namespace lain::camera::testing::scene
 
 	// The scene's truth as a track set, as extraction would accept it from a perfect matcher: one view
 	// per camera (frame 0 of its source), and a track per landmark that two or more cameras see in
-	// frame 0, at its true pixel plus `sigma` pixels of Gaussian noise per axis (Box-Muller over a
-	// seeded engine, since the standard's distributions are implementation-defined). Identities are the
-	// landmark's index, zero-padded ("track00042"), so a case controls the order they sort in. Every
-	// observation carries the covariance extraction gives a stand-in feature, whose size is 4.
+	// frame 0, at its true pixel plus `sigma` pixels of Gaussian noise per axis (core::standardNormal
+	// from `seed`, so the same on every platform). Identities are the landmark's index, zero-padded
+	// ("track00042"), so a case controls the order they sort in. Every observation carries the
+	// covariance extraction gives a stand-in feature, whose size is 4.
 	inline feature::TrackSet trackSetOf(double sigma = 0.0, std::uint64_t seed = 1)
 	{
 		feature::TrackSet out;
@@ -423,13 +415,9 @@ namespace lain::camera::testing::scene
 			frame.source = core::Uri{sourceOf(c)};
 			out.views.push_back({capture::CameraIdentity{identityOf(c)}, m.image(), {frame}});
 		}
-		std::mt19937_64 engine(seed);
-		const auto gaussian = [&engine]
-		{
-			const double u1 = (double(engine() >> 11) + 0.5) * 0x1.0p-53;
-			const double u2 = double(engine() >> 11) * 0x1.0p-53;
-			return std::sqrt(-2.0 * std::log(u1)) * std::cos(6.283185307179586 * u2);
-		};
+		std::uint64_t draw = 0;
+		const auto gaussian = [&]
+		{ return core::standardNormal(seed, draw++); };
 		const double variance = (0.034 * 4.0) * (0.034 * 4.0);
 		for (std::size_t l = 0; l < scene().landmarks.size(); ++l)
 		{
@@ -467,13 +455,9 @@ namespace lain::camera::testing::scene
 			frame.ordinal = k;
 			out.views.push_back({capture::CameraIdentity{identityOf(0)}, m.image(), {frame}});
 		}
-		std::mt19937_64 engine(seed);
-		const auto gaussian = [&engine]
-		{
-			const double u1 = (double(engine() >> 11) + 0.5) * 0x1.0p-53;
-			const double u2 = double(engine() >> 11) * 0x1.0p-53;
-			return std::sqrt(-2.0 * std::log(u1)) * std::cos(6.283185307179586 * u2);
-		};
+		std::uint64_t draw = 0;
+		const auto gaussian = [&]
+		{ return core::standardNormal(seed, draw++); };
 		const double variance = (0.034 * 4.0) * (0.034 * 4.0);
 		for (std::size_t l = 0; l < scene().landmarks.size(); ++l)
 		{
@@ -580,11 +564,6 @@ namespace lain::camera::testing::scene
 		for (std::size_t i = 0; i < n; ++i)
 			out.push_back(i * count / n);
 		return out;
-	}
-
-	inline double angleBetween(const math::Vec3d& u, const math::Vec3d& v)
-	{
-		return std::atan2(math::length(math::cross(u, v)), math::dot(u, v));
 	}
 
 	// Of `scored` (a candidate's median sampled residual, the candidate), the best few: the ones a robust
@@ -702,7 +681,7 @@ namespace lain::camera::testing::scene
 					const math::RigidTransformd candidate{cFromA.rotation(), t * k};
 					std::vector<double> residuals;
 					for (const std::size_t i : sample)
-						residuals.push_back(angleBetween(pointRays[i].ray, candidate.apply(pointRays[i].point)));
+						residuals.push_back(math::angleBetween(pointRays[i].ray, candidate.apply(pointRays[i].point)));
 					const double residual = residuals.empty() ? 1.0 : medianOf(residuals);
 					if (residual <= angle)
 						scored.push_back({residual, candidate});

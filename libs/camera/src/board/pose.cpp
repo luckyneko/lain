@@ -2,6 +2,8 @@
 
 #include "lain/camera/projection.h"
 
+#include <lain/math/angles.h>
+
 #include <algorithm>
 #include <cmath>
 #include <memory>
@@ -14,12 +16,6 @@ namespace lain::camera::board
 	// plane's other pose. Measured with OpenCV: refining both IPPE solutions of a clean view lands
 	// them 3e-5 rad apart, while a genuine pair differs by about twice the board's tilt from square-on.
 	static constexpr double kSamePose = 1e-3;
-
-	static double rotationBetween(const math::RigidTransformd& a, const math::RigidTransformd& b)
-	{
-		const double w = std::abs(math::dot(a.rotation(), b.rotation()));
-		return 2.0 * std::acos(std::min(1.0, w));
-	}
 
 	static PoseCandidate candidate(const CameraModel& model, const Specification& board, const Observation& view,
 								   const math::RigidTransformd& cameraFromBoard)
@@ -107,7 +103,7 @@ namespace lain::camera::board
 		}
 		out.status = PoseStatus::Solved;
 		out.pose = candidate(model, board, view, poses[0]);
-		if (poses.size() > 1 && rotationBetween(poses[0], poses[1]) > kSamePose)
+		if (poses.size() > 1 && math::rotationBetween(poses[0], poses[1]) > kSamePose)
 			out.alternative = candidate(model, board, view, poses[1]);
 		return out;
 	}

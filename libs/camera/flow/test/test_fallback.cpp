@@ -13,10 +13,6 @@
 // What ran is read from the stand-ins' own logs: the board estimator's calls, and the refinements the
 // targetless method asked for and its matcher's searches. A method that is not needed must not run.
 
-#include "passthroughrefiner.h"
-#include "syntheticboard.h"
-#include "syntheticscene.h"
-
 #include <lain/camera/calibration/attempts.h>
 #include <lain/camera/flow/boardspecificationnode.h>
 #include <lain/camera/flow/calibratecameranode.h>
@@ -26,6 +22,9 @@
 #include <lain/camera/flow/cameramodelnode.h>
 #include <lain/camera/flow/nextattemptnode.h>
 #include <lain/camera/flow/register.h>
+#include <lain/camera/testing/passthroughrefiner.h>
+#include <lain/camera/testing/syntheticboard.h>
+#include <lain/camera/testing/syntheticscene.h>
 #include <lain/flow/boundary.h>
 #include <lain/flow/edit.h>
 #include <lain/flow/evaluation.h>

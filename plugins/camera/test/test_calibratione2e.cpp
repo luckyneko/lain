@@ -13,13 +13,15 @@
 // in seconds. Every bound is a measurement, written beside its check.
 
 #include "registration.h"
-#include "testboard.h"
-#include "texturedscene.h"
 
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/calibration/board.h>
 #include <lain/camera/calibration/targetless.h>
 #include <lain/camera/comparison.h>
+#include <lain/camera/projection.h>
+#include <lain/camera/testing/testboard.h>
+#include <lain/camera/testing/texturedscene.h>
+#include <lain/testing/skip.h>
 #include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -39,7 +41,7 @@ using Catch::Matchers::ContainsSubstring;
 
 namespace
 {
-	constexpr double kTau = 6.283185307179586;
+	const double kTau = math::two_pi<double>();
 
 	// A camera of `width` by `height` with focal lengths f and 1.004 f, its principal point `offset`
 	// from the image's centre, seen through `distortion`.
@@ -143,7 +145,7 @@ namespace
 										-std::cos(azimuth) * std::cos(elevation)};
 			const math::Vec3d at = centre + math::Vec3d{0.35 * std::cos(3 * kTau * s), 0.25 * std::sin(3 * kTau * s), 0.0};
 			const math::Vec3d position = centre + (1.0 + 0.2 * std::sin(2 * kTau * s + 1)) * direction;
-			close.push_back(synthetic::lookingAt(position, at) *
+			close.push_back(math::lookingAt(position, at, kCameraFrame).value() *
 							math::RigidTransformd{math::angleAxis(0.15 * std::sin(kTau * 1.5 * s), math::Vec3d{0.0, 0.0, 1.0}),
 												  math::Vec3d{0.0}});
 		}
@@ -153,7 +155,7 @@ namespace
 		for (std::size_t k = 1; k <= 6; ++k)
 		{
 			const double s = double(k) / 7.0;
-			out.poses.push_back(synthetic::lookingAt(from + s * (to - from), box + s * (centre - box)));
+			out.poses.push_back(math::lookingAt(from + s * (to - from), box + s * (centre - box), kCameraFrame).value());
 		}
 		out.poses.insert(out.poses.end(), close.begin(), close.end());
 		out.scene.board = synthetic::boardSurface(std::make_shared<const board::Rendering>(*rendered.rendering), square,
@@ -167,7 +169,7 @@ namespace
 	std::vector<math::RigidTransformd> panPath(std::size_t frames)
 	{
 		const math::Vec3d position = synthetic::arcCamera(0.0).translation();
-		const math::RigidTransformd base = synthetic::lookingAt(position, {-0.2, 0.35, 0.1});
+		const math::RigidTransformd base = math::lookingAt(position, {-0.2, 0.35, 0.1}, kCameraFrame).value();
 		std::vector<math::RigidTransformd> path;
 		for (std::size_t k = 0; k < frames; ++k)
 		{
@@ -189,9 +191,7 @@ namespace
 TEST_CASE("one camera calibrated with a board and without one agrees with itself and its truth",
 		  "[camera][calibration][e2e]")
 {
-#ifndef NDEBUG
-	SKIP("calibration end to end runs in Release builds: a Debug build takes seconds to draw each frame");
-#endif
+	lain::testing::skipInDebug("calibration end to end runs in Release builds: a Debug build takes seconds to draw each frame");
 	fixture::ensureRegistered();
 	const lain::testing::ThreadPool pool;
 	const CameraModel truth = cameraOf(640, 480, 500.0, {8.0, -6.0}, BrownConrady5{-0.1, -0.05, 0.001, -0.002, 0.01});
@@ -259,9 +259,7 @@ TEST_CASE("one camera calibrated with a board and without one agrees with itself
 
 TEST_CASE("a printed board's repeated corners do not pull the targetless model off", "[camera][calibration][e2e]")
 {
-#ifndef NDEBUG
-	SKIP("calibration end to end runs in Release builds: a Debug build takes seconds to draw each frame");
-#endif
+	lain::testing::skipInDebug("calibration end to end runs in Release builds: a Debug build takes seconds to draw each frame");
 	fixture::ensureRegistered();
 	const lain::testing::ThreadPool pool;
 	// The footage of the case above at seed 5, the worst of the three seeds where the model adjusted
@@ -290,9 +288,7 @@ TEST_CASE("a printed board's repeated corners do not pull the targetless model o
 TEST_CASE("the default sampled frames calibrate a moving camera through a normal, a wide and an HD lens",
 		  "[camera][calibration][e2e]")
 {
-#ifndef NDEBUG
-	SKIP("calibration end to end runs in Release builds: a Debug build takes seconds to draw each frame");
-#endif
+	lain::testing::skipInDebug("calibration end to end runs in Release builds: a Debug build takes seconds to draw each frame");
 	fixture::ensureRegistered();
 	const lain::testing::ThreadPool pool;
 	// 40 frames along sub-slice 8's arc, the default 40 of them sampled, at seed 2.
@@ -369,9 +365,7 @@ TEST_CASE("the default sampled frames calibrate a moving camera through a normal
 
 TEST_CASE("a rendered pan is refused before any start", "[camera][calibration][e2e]")
 {
-#ifndef NDEBUG
-	SKIP("calibration end to end runs in Release builds: a Debug build takes seconds to draw each frame");
-#endif
+	lain::testing::skipInDebug("calibration end to end runs in Release builds: a Debug build takes seconds to draw each frame");
 	fixture::ensureRegistered();
 	const lain::testing::ThreadPool pool;
 	const CameraModel truth = cameraOf(640, 480, 500.0, {1.3, -0.8}, BrownConrady5{});
@@ -395,9 +389,7 @@ TEST_CASE("a rendered pan is refused before any start", "[camera][calibration][e
 
 TEST_CASE("a strongly distorted lens leaves no frame unplaced", "[camera][calibration][e2e]")
 {
-#ifndef NDEBUG
-	SKIP("calibration end to end runs in Release builds: a Debug build takes seconds to draw each frame");
-#endif
+	lain::testing::skipInDebug("calibration end to end runs in Release builds: a Debug build takes seconds to draw each frame");
 	fixture::ensureRegistered();
 	const lain::testing::ThreadPool pool;
 	// Sub-slice 8's strongest lens: k1 = -0.25 alone at 1920x1080 with f = 1500, which moves the image's

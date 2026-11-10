@@ -82,7 +82,7 @@ namespace lain::camera::feature
 
 	// The feature tracks of one moving camera's footage. In order:
 	// 1. every check that needs no frame, so a request that cannot succeed decodes nothing;
-	// 2. the frames in capture order (timestamp, then ordinal, then source), and `samples` of them at
+	// 2. the frames in capture order (media::capturedBefore), and `samples` of them at
 	//    the centres of equal bins, so the order the footage lists them in does not matter;
 	// 3. per sampled frame, one task: decoded, its features extracted, the image released, and the
 	//    keypoints at one pixel kept together as one feature at several orientations, capped;

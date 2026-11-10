@@ -18,6 +18,7 @@
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/cameramodel.h>
 #include <lain/camera/projection.h>
+#include <lain/core/random.h>
 #include <lain/image/image.h>
 #include <lain/image/procedural.h>
 #include <lain/math/rigidtransform.h>
@@ -41,16 +42,8 @@ namespace lain::camera::synthetic
 {
 	// --- the texture ---------------------------------------------------------------------
 
-	inline std::uint64_t mix(std::uint64_t x)
-	{
-		x += 0x9e3779b97f4a7c15ull;
-		x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ull;
-		x = (x ^ (x >> 27)) * 0x94d049bb133111ebull;
-		return x ^ (x >> 31);
-	}
-
 	// The texture is lain::image's procedural texture, lifted from here: one implementation, sampled per
-	// ray as it always was. `mix` above stays, since each frame's noise is seeded from it.
+	// ray as it always was.
 	using Texture = image::ProceduralTexture;
 
 	inline double textureAt(const Texture& t, double u, double v)
@@ -148,21 +141,12 @@ namespace lain::camera::synthetic
 		return s;
 	}
 
-	// A camera at `position` looking at `target`, with the reference frame's +Y as down.
-	inline math::RigidTransformd lookingAt(const math::Vec3d& position, const math::Vec3d& target)
-	{
-		const math::Vec3d z = math::normalize(target - position);
-		const math::Vec3d x = math::normalize(math::cross(math::Vec3d{0, 1, 0}, z));
-		const math::Vec3d y = math::cross(z, x);
-		return math::RigidTransformd{math::quat_cast(math::Mat3d{x, y, z}), position};
-	}
-
 	// A camera on an arc `radius` from `target`, `angle` radians round it and `rise` above it, looking
 	// at it. The defaults stand round the middle of the default scene.
 	inline math::RigidTransformd arcCamera(double angle, double radius = 3.2, const math::Vec3d& target = {-0.2, 0.2, 0.4},
 										   double rise = 0.5)
 	{
-		return lookingAt(target + math::Vec3d{radius * std::sin(angle), -rise, -radius * std::cos(angle)}, target);
+		return math::lookingAt(target + math::Vec3d{radius * std::sin(angle), -rise, -radius * std::cos(angle)}, target, kCameraFrame).value();
 	}
 
 	// A moving camera's path round the default scene, a pose per frame. It runs along arcCamera's arc
@@ -174,7 +158,7 @@ namespace lain::camera::synthetic
 	// box stays in view of the test camera in every frame, which the moving camera's first case checks.
 	inline std::vector<math::RigidTransformd> arcPath(std::size_t frames)
 	{
-		constexpr double tau = 6.283185307179586;
+		const double tau = math::two_pi<double>();
 		const math::Vec3d centre{-0.2, 0.2, 0.4}; // arcCamera's target, so the arc is its arc
 		const math::Vec3d box{-0.2, 0.35, 0.1};	  // the middle of defaultScene's box
 		std::vector<math::RigidTransformd> path;
@@ -186,7 +170,7 @@ namespace lain::camera::synthetic
 			const double roll = 0.12 * std::sin(tau * 1.5 * s + 0.5);
 			const math::Vec3d aim = box + math::Vec3d{0.25 * std::sin(tau * 0.8 * s + 1.0), 0.15 * std::sin(tau * 1.3 * s), 0.0};
 			const math::Vec3d position = centre + math::Vec3d{3.2 * std::sin(angle), -rise, -3.2 * std::cos(angle)};
-			path.push_back(lookingAt(position, aim) *
+			path.push_back(math::lookingAt(position, aim, kCameraFrame).value() *
 						   math::RigidTransformd{math::angleAxis(roll, math::Vec3d{0.0, 0.0, 1.0}), math::Vec3d{0.0}});
 		}
 		return path;
@@ -298,13 +282,19 @@ namespace lain::camera::synthetic
 	{
 		const int w = int(model.image().width), h = int(model.image().height);
 		image::Image out{w, h, image::PixelFormat::Gray8, image::ColorSpace::sRGB};
-		std::mt19937_64 engine(mix(scene.noiseSeed ^ mix(seed ^ mix(frame + 1))));
+		// The engine's seed scrambles the frame, then this render's seed with it, then the scene's noise
+		// seed with both, one SplitMix64 step each.
+		const std::uint64_t frameKey = core::splitMix64(std::uint64_t(frame) + 1, 1);
+		const std::uint64_t renderKey = core::splitMix64(seed ^ frameKey, 1);
+		std::mt19937_64 engine(core::splitMix64(scene.noiseSeed ^ renderKey, 1));
 		const auto gaussian = [&engine]
 		{
-			// Box-Muller over mt19937_64, since std::normal_distribution is implementation-defined.
+			// Box-Muller over mt19937_64, since std::normal_distribution is implementation-defined. The one
+			// copy not on core::standardNormal, deliberately: the rendered suites' seeds pin behaviour this
+			// noise produced, so it moves with M15's rig-plan footage (WORK.md, Outstanding work).
 			const double u1 = (double(engine() >> 11) + 0.5) * 0x1.0p-53;
 			const double u2 = double(engine() >> 11) * 0x1.0p-53;
-			return std::sqrt(-2.0 * std::log(u1)) * std::cos(6.283185307179586 * u2);
+			return std::sqrt(-2.0 * std::log(u1)) * std::cos(math::two_pi<double>() * u2);
 		};
 		const math::Vec3d origin = referenceFromCamera.translation();
 		for (int y = 0; y < h; ++y)
@@ -387,9 +377,9 @@ namespace lain::camera::synthetic
 				}
 			}
 			std::vector<image::Image> drawn(missing.size());
-			task::range(std::ptrdiff_t{0}, std::ptrdiff_t(missing.size()),
-						[&](std::ptrdiff_t i)
-						{ drawn[std::size_t(i)] = draw(missing[std::size_t(i)]); });
+			task::range(std::size_t{0}, missing.size(),
+						[&](std::size_t i)
+						{ drawn[i] = draw(missing[i]); });
 			const std::lock_guard<std::mutex> lock(m_drawing);
 			for (std::size_t i = 0; i < missing.size(); ++i)
 				m_drawn.emplace(missing[i], std::move(drawn[i]));

@@ -146,7 +146,6 @@ namespace lain::camera::calibration::board
 	}
 
 	using detail::failed;
-	using detail::forEach;
 
 	static std::vector<cb::Observation> observationsAt(const std::vector<cb::DetectionReport>& detections,
 													   const std::vector<std::uint32_t>& positions)
@@ -220,9 +219,9 @@ namespace lain::camera::calibration::board
 		}
 
 		std::vector<std::optional<CameraModelParameters>> estimates(draws.size());
-		forEach(draws.size(), request.execution,
-				[&](std::size_t r)
-				{ estimates[r] = estimator.estimate(image, draws[r], board, request.model, initial).parameters; });
+		detail::bulk(request.execution, draws.size(),
+					 [&](std::size_t r)
+					 { estimates[r] = estimator.estimate(image, draws[r], board, request.model, initial).parameters; });
 
 		return detail::stability(estimates, false);
 	}
@@ -497,12 +496,12 @@ namespace lain::camera::calibration::board
 		// Detect in every frame, one decoded frame per task.
 		std::vector<cb::DetectionReport>& detections = std::get<BoardDiagnostics>(report.diagnostics.method).detections;
 		detections.resize(footage.size());
-		forEach(footage.size(), request.execution,
-				[&](std::size_t i)
-				{
-					const image::Image frame = footage.image(i);
-					detections[i] = cb::detect(frame, footage.frame(i), board, detection);
-				});
+		detail::bulk(request.execution, footage.size(),
+					 [&](std::size_t i)
+					 {
+						 const image::Image frame = footage.image(i);
+						 detections[i] = cb::detect(frame, footage.frame(i), board, detection);
+					 });
 		return analyse(std::move(report), image, board, request, std::get<std::unique_ptr<Estimator>>(prepared).get(), start);
 	}
 } // namespace lain::camera::calibration::board

@@ -50,6 +50,13 @@ namespace lain::media
 		// Exact, because the source is indexed at open rather than estimated from a duration.
 		std::size_t frameCount() const { return m_frameCount; }
 
+		// Whether this source is a CONTAINER, one file holding every frame (a video), rather than a
+		// folder or a pattern naming a file per frame (an image sequence). What the uri names is the
+		// medium's to know, so the medium says: nothing about a uri tells a video from a folder whose
+		// name has a dot in it. lain::camera names a camera by its footage's source, a container less
+		// its extension (capture/location.h). False unless a medium says otherwise.
+		virtual bool isContainer() const { return false; }
+
 		// The identity of frame `ordinal`, WITHOUT decoding it. Out of range yields an invalid
 		// FrameRef.
 		FrameRef frame(std::size_t ordinal) const;

@@ -10,11 +10,10 @@
 // component estimate, the cheirality filter, the parallax floor, and the hold-out guard's reading of
 // the closure. The labels are the method-neutral names; there is no earlier text to stay equal to.
 
-#include "goldentext.h"
-#include "passthroughrefiner.h"
-#include "syntheticscene.h"
-
 #include <lain/camera/registration/targetless.h>
+#include <lain/camera/testing/goldentext.h>
+#include <lain/camera/testing/passthroughrefiner.h>
+#include <lain/camera/testing/syntheticscene.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -204,7 +203,7 @@ namespace
 
 		// 5. Camera 3 inside the scene facing away, with a wrong match behind it: the cheirality filter.
 		setUp(4, 200);
-		scene::scene().referenceFromCamera[3] = scene::lookingAt(math::Vec3d{0.05, -0.1, -0.2}, math::Vec3d{0.0, 0.0, 3.0});
+		scene::scene().referenceFromCamera[3] = math::lookingAt(math::Vec3d{0.05, -0.1, -0.2}, math::Vec3d{0.0, 0.0, 3.0}, kCameraFrame).value();
 		scene::scene().renderedFrom = scene::scene().referenceFromCamera;
 		feature::TrackSet behind = scene::trackSetOf();
 		feature::Track* wrong = nullptr;
@@ -224,7 +223,7 @@ namespace
 		setUp(3, 200);
 		for (std::size_t c = 0; c < 3; ++c)
 			scene::scene().referenceFromCamera[c] =
-				scene::lookingAt(math::Vec3d{0.03 * double(c), -0.2, -3.0}, math::Vec3d{0.0, 0.0, 0.0});
+				math::lookingAt(math::Vec3d{0.03 * double(c), -0.2, -3.0}, math::Vec3d{0.0, 0.0, 0.0}, kCameraFrame).value();
 		scene::scene().renderedFrom = scene::scene().referenceFromCamera;
 		text += run("narrow", scene::trackSetOf());
 

@@ -1,8 +1,6 @@
 // The facades with NO backend registered. Its own executable, because a core::Factory only grows: in
 // test-camera, a stand-in registered by another case would already be there.
 
-#include "testboard.h"
-
 #include <lain/camera/board/detection.h>
 #include <lain/camera/board/pose.h>
 #include <lain/camera/board/rendering.h>
@@ -17,6 +15,7 @@
 #include <lain/camera/refinement/refiner.h>
 #include <lain/camera/registration/board.h>
 #include <lain/camera/registration/targetless.h>
+#include <lain/camera/testing/testboard.h>
 #include <lain/media/framesequence.h>
 #include <lain/media/framesource.h>
 

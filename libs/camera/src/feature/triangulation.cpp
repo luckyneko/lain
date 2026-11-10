@@ -1,6 +1,7 @@
 #include "lain/camera/feature/triangulation.h"
 
-#include "angles.h"
+#include <lain/math/angles.h>
+#include <lain/math/finite.h>
 
 #include <algorithm>
 #include <cmath>
@@ -12,11 +13,6 @@ namespace lain::camera::feature
 	// far below any minimum angle a caller asks for.
 	static constexpr double kSingular = 1e-20;
 
-	static bool finite(const math::Vec3d& v)
-	{
-		return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
-	}
-
 	Triangulation triangulate(const std::vector<Ray>& rays, double minimumAngle)
 	{
 		std::vector<Ray> usable;
@@ -24,7 +20,7 @@ namespace lain::camera::feature
 		for (const Ray& r : rays)
 		{
 			const double length = math::length(r.direction);
-			if (finite(r.centre) && finite(r.direction) && length > 0)
+			if (math::isFinite(r.centre) && math::isFinite(r.direction) && length > 0)
 				usable.push_back({r.centre, r.direction / length});
 		}
 
@@ -34,7 +30,7 @@ namespace lain::camera::feature
 		for (std::size_t i = 0; i < usable.size(); ++i)
 		{
 			for (std::size_t j = i + 1; j < usable.size(); ++j)
-				out.angle = std::max(out.angle, detail::angleBetween(usable[i].direction, usable[j].direction));
+				out.angle = std::max(out.angle, math::angleBetween(usable[i].direction, usable[j].direction));
 		}
 
 		// Least squares over the perpendicular distances: Σ(I − ddᵀ) x = Σ(I − ddᵀ) c.

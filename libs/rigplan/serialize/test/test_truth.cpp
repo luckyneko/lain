@@ -26,7 +26,6 @@ static Value& member(Value& object, std::string_view key)
 			return v;
 	}
 	FAIL("no member " << key);
-	throw; // unreachable: FAIL throws
 }
 
 static Value& element(Value& array, std::size_t index)

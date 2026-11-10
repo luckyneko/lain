@@ -1,14 +1,13 @@
 // Targetless registration through the Ceres refiner (registration::targetless): its evidence, held-out
 // tracks predicted member by member with every camera held (registration::validate); a noisy rig; a
 // wrong match named; a landmark behind a camera kept out of the solve; and, in Release, a rig of 100
-// cameras. The stand-in scene is libs/camera/test's (syntheticscene.h). Every tolerance is a
+// cameras. The stand-in scene is lain::camera::testing's (syntheticscene.h). Every tolerance is a
 // measurement, written beside its check.
-
-#include "syntheticscene.h"
 
 #include <lain/camera/ceres/register.h>
 #include <lain/camera/registration/targetless.h>
 #include <lain/camera/registration/validation.h>
+#include <lain/camera/testing/syntheticscene.h>
 #include <lain/core/time.h>
 #include <lain/testing/threadpool.h>
 
@@ -76,8 +75,8 @@ TEST_CASE("held-out tracks of a true registration are predicted to within their 
 	CHECK(e.predictions == members);
 	CHECK(e.unpredicted == 0);
 	// A member's observed pixel is off by the noise in two axes, and its prediction, from three noisy
-	// others, adds its own error: the RMS pixel residual sits above sqrt(2) * sigma. Measured 0.587 px,
-	// 1.38 times that, at 1.12 mrad RMS, the worst member 1.80 px out.
+	// others, adds its own error: the RMS pixel residual sits above sqrt(2) * sigma. Measured 0.571 px,
+	// 1.35 times that, at 1.09 mrad RMS, the worst member 1.75 px out.
 	CHECK(e.rmsPixels > std::sqrt(2.0) * sigma);
 	CHECK(e.rmsPixels < 2 * std::sqrt(2.0) * sigma);
 }
@@ -130,10 +129,11 @@ TEST_CASE("a noisy rig registers to within its noise, Ready", "[camera][ceres][t
 	INFO(report.toString());
 	REQUIRE(report.status == RegistrationStatus::Succeeded);
 	const Errors errors = errorsOf(report);
-	// Measured: the worst camera 0.454 mrad out, the worst centre 0.039% of the median depth; held out
-	// 0.551 mrad over 80 tracks; 6 outliers in 1280 observations, as a 3-sigma cut of Gaussian noise
-	// leaves.
-	CHECK(errors.rotation < 0.0006);
+	// Measured: the worst camera 0.727 mrad out, the worst centre 0.034% of the median depth; held out
+	// 0.507 mrad over 80 tracks; 8 outliers in 1280 observations. Over seeds 1 to 12, every one Ready,
+	// the worst camera is 0.28 to 0.91 mrad out and the worst centre 0.011% to 0.063%, with 2 to 8
+	// outliers.
+	CHECK(errors.rotation < 0.001);
 	CHECK(errors.centre < 0.002);
 	CHECK(report.verdict == Verdict::Ready);
 }
@@ -162,7 +162,7 @@ TEST_CASE("a landmark behind a camera at the start is kept out of the solve, whi
 {
 	registerScene();
 	scene::reset(4, 200);
-	scene::scene().referenceFromCamera[3] = scene::lookingAt(math::Vec3d{0.05, -0.1, -0.2}, math::Vec3d{0.0, 0.0, 3.0});
+	scene::scene().referenceFromCamera[3] = math::lookingAt(math::Vec3d{0.05, -0.1, -0.2}, math::Vec3d{0.0, 0.0, 3.0}, kCameraFrame).value();
 	scene::scene().renderedFrom = scene::scene().referenceFromCamera;
 	feature::TrackSet set = scene::trackSetOf();
 	feature::Track* wrong = nullptr;
@@ -196,9 +196,9 @@ TEST_CASE("a rig of 100 cameras and 50000 tracks registers", "[camera][ceres][ta
 	scene::Scene& s = scene::scene();
 	for (std::size_t c = 0; c < 100; ++c)
 	{
-		const double a = 6.283185307179586 * double(c) / 100.0;
+		const double a = math::two_pi<double>() * double(c) / 100.0;
 		s.referenceFromCamera[c] =
-			scene::lookingAt(math::Vec3d{std::sin(a), -0.05 * double(c % 3), -std::cos(a)}, math::Vec3d{0.0});
+			math::lookingAt(math::Vec3d{std::sin(a), -0.05 * double(c % 3), -std::cos(a)}, math::Vec3d{0.0}, kCameraFrame).value();
 	}
 	s.renderedFrom = s.referenceFromCamera;
 	for (std::size_t l = 0; l < 50000; ++l)
@@ -218,10 +218,11 @@ TEST_CASE("a rig of 100 cameras and 50000 tracks registers", "[camera][ceres][ta
 	INFO(report.toString());
 	REQUIRE(report.status == RegistrationStatus::Succeeded);
 	const Errors errors = errorsOf(report);
-	// Measured on linux-x86_64, Release, four cores: 40 s in the method, 7.0 s of it the refinement, the
+	// Timed on linux-x86_64, Release, four cores: 40 s in the method, 7.0 s of it the refinement, the
 	// rest mostly the ten bootstrap registrations; 1.26 GB at peak for the whole test, its scene
-	// included. The worst camera is 0.66 mrad out and the worst centre 0.057% of the median depth, a
-	// ring's drift; held out 0.416 mrad over 10,000 tracks; 2,488 outliers in 320,000 observations.
+	// included. Measured: the worst camera is 0.75 mrad out and the worst centre 0.074% of the median
+	// depth, a ring's drift; held out 0.415 mrad over 10,000 tracks; 2,186 outliers in 320,000
+	// observations.
 	CHECK(seconds < 120);
 	CHECK(errors.rotation < 0.001);
 	CHECK(report.verdict == Verdict::Ready);

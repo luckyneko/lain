@@ -9,6 +9,8 @@
 #include "lain/camera/projection.h"
 #include "reconstruction.h"
 
+#include <lain/math/angles.h>
+#include <lain/media/frameref.h>
 #include <lain/string/format.h>
 
 #include <algorithm>
@@ -76,12 +78,6 @@ namespace lain::camera::calibration::targetless
 	// (SeedPairs). COLMAP's max_H_inlier_ratio; provisional, as kInlierPixels is.
 	static constexpr double kHomographyShare = 0.8;
 
-	// A frame's place in capture order, as the sequence extraction sorts frames.
-	static auto captureOrder(const media::FrameRef& frame)
-	{
-		return std::make_tuple(frame.timestamp, frame.ordinal, frame.source.toString());
-	}
-
 	// The angle `kInlierPixels` is at `model`'s focal length.
 	static double inlierAngle(const CameraModel& model)
 	{
@@ -94,12 +90,6 @@ namespace lain::camera::calibration::targetless
 		geometry.angle = angle;
 		geometry.seed = request.seed;
 		return geometry;
-	}
-
-	static bool positiveDefinite(const std::array<double, 3>& c)
-	{
-		return std::isfinite(c[0]) && std::isfinite(c[1]) && std::isfinite(c[2]) && c[0] > 0 && c[2] > 0 &&
-			   c[0] * c[2] - c[1] * c[1] > 0;
 	}
 
 	static std::string shortId(const std::string& identity)
@@ -220,22 +210,22 @@ namespace lain::camera::calibration::targetless
 				candidates.push_back(e);
 		}
 		std::vector<feature::HomographyResult> results(candidates.size());
-		detail::forEach(candidates.size(), request.execution,
-						[&](std::size_t i)
-						{
-							// The pixels of every track the two frames share, in capture order.
-							const GraphEdge& e = candidates[i];
-							std::vector<std::uint32_t> shared;
-							std::set_intersection(ofFrame[e.a].begin(), ofFrame[e.a].end(), ofFrame[e.b].begin(),
-												  ofFrame[e.b].end(), std::back_inserter(shared));
-							std::vector<feature::PixelPair> pairs;
-							for (const std::uint32_t t : shared)
-								pairs.push_back({pixelIn(tracks[t], e.a), pixelIn(tracks[t], e.b)});
-							feature::HomographyRequest homography;
-							homography.threshold = kInlierPixels;
-							homography.seed = request.seed;
-							results[i] = feature::homography(pairs, homography);
-						});
+		detail::bulk(request.execution, candidates.size(),
+					 [&](std::size_t i)
+					 {
+						 // The pixels of every track the two frames share, in capture order.
+						 const GraphEdge& e = candidates[i];
+						 std::vector<std::uint32_t> shared;
+						 std::set_intersection(ofFrame[e.a].begin(), ofFrame[e.a].end(), ofFrame[e.b].begin(),
+											   ofFrame[e.b].end(), std::back_inserter(shared));
+						 std::vector<feature::PixelPair> pairs;
+						 for (const std::uint32_t t : shared)
+							 pairs.push_back({pixelIn(tracks[t], e.a), pixelIn(tracks[t], e.b)});
+						 feature::HomographyRequest homography;
+						 homography.threshold = kInlierPixels;
+						 homography.seed = request.seed;
+						 results[i] = feature::homography(pairs, homography);
+					 });
 		SeedPairs out;
 		out.tested = std::uint32_t(candidates.size());
 		for (std::size_t i = 0; i < candidates.size(); ++i)
@@ -672,7 +662,7 @@ namespace lain::camera::calibration::targetless
 		for (std::size_t i = 0; i < pointRays.size(); ++i)
 		{
 			const math::Vec3d q = posed.pose->apply(pointRays[i].point);
-			const double a = detail::angleBetween(pointRays[i].ray, q);
+			const double a = math::angleBetween(pointRays[i].ray, q);
 			if (!(a <= angle))
 			{
 				++out.outliers;
@@ -734,7 +724,7 @@ namespace lain::camera::calibration::targetless
 		if (given.empty())
 			return failed(report, start, Failure::NoFootage, "no view of the track set holds a frame");
 		std::sort(given.begin(), given.end(), [](const auto& x, const auto& y)
-				  { return captureOrder(x.first) < captureOrder(y.first); });
+				  { return media::capturedBefore(x.first, y.first); });
 		out.image = set.views.front().image;
 		out.ofView.assign(set.views.size(), std::nullopt);
 		for (std::size_t i = 0; i < given.size(); ++i)
@@ -763,7 +753,7 @@ namespace lain::camera::calibration::targetless
 				if (!views.insert(o.view).second)
 					return failed(report, start, Failure::InvalidDataset,
 								  lain::string::format("track {} holds two observations of view {}", shortId(track.identity), o.view));
-				if (o.covariance && !positiveDefinite(*o.covariance))
+				if (o.covariance && !detail::positiveDefinite(*o.covariance))
 					return failed(report, start, Failure::InvalidDataset,
 								  "track " + shortId(track.identity) + " has a covariance that is not positive definite");
 			}
@@ -1102,16 +1092,16 @@ namespace lain::camera::calibration::targetless
 		// them more closely than the right one fits all of them. Among those, the lowest final cost per
 		// residual, since a wrong minimum costs several times a right one; ties to the shorter focal length.
 		std::vector<Fit> fits(starts.size());
-		detail::forEach(starts.size(), request.execution,
-						[&](std::size_t i)
-						{
-							if (starts[i].model)
-								fits[i] = fitFrom(*starts[i].model, n, tracks, heldOut, seedPairs, settings, request);
-							else
-								fits[i].failures.push_back(
-									{Failure::InitialisationFailed, lain::string::format("a focal length of {:.4g} gives no valid {} model",
-																						 starts[i].focalLength, displayName(request.model))});
-						});
+		detail::bulk(request.execution, starts.size(),
+					 [&](std::size_t i)
+					 {
+						 if (starts[i].model)
+							 fits[i] = fitFrom(*starts[i].model, n, tracks, heldOut, seedPairs, settings, request);
+						 else
+							 fits[i].failures.push_back(
+								 {Failure::InitialisationFailed, lain::string::format("a focal length of {:.4g} gives no valid {} model",
+																					  starts[i].focalLength, displayName(request.model))});
+					 });
 		std::optional<std::uint32_t> winner;
 		for (std::uint32_t i = 0; i < fits.size(); ++i)
 		{
@@ -1250,8 +1240,8 @@ namespace lain::camera::calibration::targetless
 			}
 		}
 		std::vector<FrameMeasure> measures(held.size());
-		detail::forEach(held.size(), request.execution, [&](std::size_t h)
-						{ measures[h] = measureFrame(model, held[h], request); });
+		detail::bulk(request.execution, held.size(), [&](std::size_t h)
+					 { measures[h] = measureFrame(model, held[h], request); });
 		detail::CoverageCells heldCells{};
 		std::uint32_t posed = 0;
 		if (held.empty())
@@ -1311,9 +1301,9 @@ namespace lain::camera::calibration::targetless
 			const std::vector<std::vector<std::uint32_t>> draws = detail::bootstrapDraws(landmarks, request.resamples, request.seed);
 			const Evidence fitted = fittedUnder(model, narrowed, begin, entryOf);
 			std::vector<std::optional<CameraModelParameters>> estimates(draws.size());
-			detail::forEach(draws.size(), request.execution,
-							[&](std::size_t r)
-							{ estimates[r] = resampled(fitted, solution, narrowed.placement.order, fit.freedom, settings, draws[r]); });
+			detail::bulk(request.execution, draws.size(),
+						 [&](std::size_t r)
+						 { estimates[r] = resampled(fitted, solution, narrowed.placement.order, fit.freedom, settings, draws[r]); });
 			report.resampling = detail::stability(estimates, !settings.freePrincipalPoint);
 		}
 

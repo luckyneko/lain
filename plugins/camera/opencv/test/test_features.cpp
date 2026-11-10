@@ -4,7 +4,6 @@
 // marked Release only also record what slice 3 left provisional (WORK.md, M9 slice 3, sub-slice 7).
 
 #include "renderedfeatures.h"
-#include "texturedscene.h"
 
 #include <lain/camera/capture/capturegroup.h>
 #include <lain/camera/feature/extraction.h>
@@ -12,8 +11,11 @@
 #include <lain/camera/feature/geometry.h>
 #include <lain/camera/feature/matching.h>
 #include <lain/camera/projection.h>
+#include <lain/camera/testing/texturedscene.h>
 #include <lain/core/time.h>
+#include <lain/math/angles.h>
 #include <lain/media/framesequence.h>
+#include <lain/testing/skip.h>
 #include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -51,21 +53,11 @@ using synthetic::projectInto;
 
 namespace
 {
-	constexpr double kTau = 6.283185307179586;
+	const double kTau = math::two_pi<double>();
 
 	CameraModel model()
 	{
 		return camera::testing::cameraWith(camera::testing::brownConrady());
-	}
-
-	double rotationBetween(const math::RigidTransformd& a, const math::RigidTransformd& b)
-	{
-		return 2.0 * std::acos(std::min(1.0, std::abs(math::dot(a.rotation(), b.rotation()))));
-	}
-
-	double angleBetween(const math::Vec3d& u, const math::Vec3d& v)
-	{
-		return std::atan2(math::length(math::cross(u, v)), math::dot(u, v));
 	}
 
 	math::Vec3d rayOf(const CameraModel& m, const math::Vec2d& pixel)
@@ -304,13 +296,13 @@ TEST_CASE("the relative and absolute poses of two views are recovered", "[camera
 		// All four decompositions of each essential matrix, so lain chooses among them.
 		CHECK(relative.candidates > 0);
 		CHECK(relative.candidates % 4 == 0);
-		CHECK(rotationBetween(*relative.pose, truthBFromA) < 1e-3);
-		CHECK(angleBetween(relative.pose->translation(), truthBFromA.translation()) < 2.5e-3);
+		CHECK(math::rotationBetween(*relative.pose, truthBFromA) < 1e-3);
+		CHECK(math::angleBetween(relative.pose->translation(), truthBFromA.translation()) < 2.5e-3);
 
 		const GeometryResult absolute = absolutePose(pointRays, request);
 		REQUIRE(absolute.ok());
 		CHECK(absolute.candidates >= 1);
-		CHECK(rotationBetween(*absolute.pose, truthCameraFromReference) < 2e-3);
+		CHECK(math::rotationBetween(*absolute.pose, truthCameraFromReference) < 2e-3);
 		CHECK(math::length(absolute.pose->translation() - truthCameraFromReference.translation()) < 3e-3);
 	}
 }
@@ -703,9 +695,7 @@ TEST_CASE("approximate search is refused under deterministic debugging, with the
 
 TEST_CASE("an 8K frame is searched at the default size in bounded memory", "[camera][opencv][feature][scale]")
 {
-#ifndef NDEBUG
-	SKIP("runs in Release builds: it renders an 8K frame and measures the search");
-#endif
+	lain::testing::skipInDebug("runs in Release builds: it renders an 8K frame and measures the search");
 	ensureBackend();
 	// Measured on four cores: the render takes 11 s; searching it at a longest side of 1600 px took
 	// 0.54 s and found 1050 features, at 1920 px 0.60 s and 976. SIFT's first octave doubles the
@@ -742,9 +732,7 @@ TEST_CASE("an 8K frame is searched at the default size in bounded memory", "[cam
 
 TEST_CASE("exact and approximate search at 8192 features a view", "[camera][opencv][feature][scale]")
 {
-#ifndef NDEBUG
-	SKIP("runs in Release builds, for its timings");
-#endif
+	lain::testing::skipInDebug("runs in Release builds, for its timings");
 	ensureBackend();
 	// Two 1920 x 1080 views 0.3 rad apart of a finely textured scene: 13238 and 12745 SIFT keypoints,
 	// capped at the 8192 strongest features each with all their orientations, as extractTracks caps

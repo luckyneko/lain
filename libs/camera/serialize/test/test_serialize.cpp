@@ -293,7 +293,6 @@ static Value& memberOf(Value& document, const std::string& key)
 			return value;
 	}
 	FAIL("no member " << key);
-	return document;
 }
 
 // cameras[index] of a rig document.
