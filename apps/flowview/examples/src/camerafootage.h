@@ -45,16 +45,11 @@ namespace flowview::examples::footage
 	lain::math::RigidTransformd boardRigCamera(std::size_t camera);
 	lain::camera::CameraModel boardRigModel(std::size_t camera);
 
-	// A rig of three fixed cameras round the textured scene: `dir`/rig/cam0..cam2, three stills each
-	// from a point on an arc, and `dir`/models/cam0..cam2.json. texturedRigCamera(c) is camera c's pose
-	// on the arc, in the scene's frame.
-	void writeTexturedRig(const std::filesystem::path& dir, bool rendered);
-	lain::math::RigidTransformd texturedRigCamera(std::size_t camera);
-
 	// Everything above, for a person to bind by hand, under `folder`: board/footage (24 frames),
-	// moving/footage (40), board-rig (24 frames a camera) and textured-rig, with a README.txt saying
-	// which example each is for and the command that runs it. Beside them, what each was drawn with, for
-	// compare-models.json and compare-rigs.json to score a result against: board/truth.json (the board
-	// camera's model) and each rig's truth.json (its poses, relative to cam0).
+	// moving/footage (40) and board-rig (24 frames a camera), with a README.txt saying which example each
+	// is for and the command that runs it. Beside them, what each was drawn with, for compare-models.json
+	// and compare-rigs.json to score a result against: board/truth.json (the board camera's model) and
+	// board-rig/truth.json (its poses, relative to cam0). register-targetless.json's footage is a
+	// committed rig plan's capture instead (the synthetic-capture target), which the README says.
 	void writeAll(const std::filesystem::path& folder);
 } // namespace flowview::examples::footage

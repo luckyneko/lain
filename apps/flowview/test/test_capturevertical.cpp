@@ -12,8 +12,13 @@
 // camera; with its nominal ones, measurably worse. The truth is relative to the rig plan's reference
 // and the registration chooses its own, so the comparison also derives the truth again (slice 6).
 //
-// Built only where a board renderer is, since the plan waves M9's board. Without a refiner the same
-// capture registers to a report naming the one it is missing.
+// And the same for registration without a target: apps/rigplan/examples/two-methods.json rendered,
+// register-targetless.json run with its truth/models, compare-rigs.json scoring the rig against its
+// truth with a scale fitted, and the same footage copied elsewhere on disk registering the same, byte for
+// byte (capture/location.h). Both run in Release only.
+//
+// Built only where a board renderer is, since both plans wave a board. Without a refiner the same
+// captures register to a report naming the one it is missing.
 
 #include "camerafiles.h"
 #include "clibinders.h"
@@ -97,14 +102,16 @@ struct Registration
 	fs::path rigFile;
 };
 
-// `flowview run -g register.json --footage <capture>/rig --models <capture>/<models> --report ... --rig ...`.
-static Registration registerCapture(const fs::path& capture, const std::string& models, const fs::path& into,
-									const core::Factory<flow::Node>& factory, const flowview::BoundaryBinders& binders)
+// `flowview run -g <document>.json --footage <capture>/rig --models <capture>/<models> --report ... --rig ...`,
+// `document` register or register-targetless.
+static Registration registerCapture(const std::string& document, const fs::path& capture, const std::string& models,
+									const fs::path& into, const core::Factory<flow::Node>& factory,
+									const flowview::BoundaryBinders& binders)
 {
 	fs::create_directories(into);
 	Registration registration{{}, into / "rig.json"};
 	flowview::RunOptions options;
-	options.graphPath = flowviewExample("register");
+	options.graphPath = flowviewExample(document);
 	const fs::path report = into / "report.txt";
 	options.bindings = {"--footage", (capture / "rig").string(), "--models", (capture / models).string(),
 						"--report", report.string(), "--rig", registration.rigFile.string()};
@@ -166,8 +173,8 @@ TEST_CASE("a synthetic capture registers near-exactly with its true models and w
 
 	// 2. The same pixels registered twice: with the models the cameras were rendered through, and with the
 	// models they were meant to have.
-	const Registration withTruth = registerCapture(capture, "truth/models", dir / "truth", factory, binders);
-	const Registration withNominal = registerCapture(capture, "nominal", dir / "nominal", factory, binders);
+	const Registration withTruth = registerCapture("register", capture, "truth/models", dir / "truth", factory, binders);
+	const Registration withNominal = registerCapture("register", capture, "nominal", dir / "nominal", factory, binders);
 	INFO("with truth/models: " << withTruth.report);
 	INFO("with nominal/: " << withNominal.report);
 
@@ -211,4 +218,66 @@ TEST_CASE("a synthetic capture registers near-exactly with its true models and w
 	// ones (each about 1 times) are nowhere near.
 	CHECK(nominalScore.worstRotation()->rotation > 5.0 * truthScore.worstRotation()->rotation);
 	CHECK(nominalScore.worstCentre()->centre > 5.0 * truthScore.worstCentre()->centre);
+}
+
+TEST_CASE("a synthetic capture registers without a target, the same wherever its footage sits",
+		  "[rigplan][camera][runmode][gpu]")
+{
+	lain::testing::skipInDebug("the synthetic-capture vertical runs in Release builds: a Debug build takes minutes to render and extract");
+	registerEverything();
+	REQUIRE(camera::board::canRender()); // this test is built only where a board renderer is
+	acm::Device& device = render::testing::device();
+	const lain::testing::ThreadPool pool(4);
+
+	const fs::path dir = lain::testing::scratchDir() / "capture-targetless";
+	fs::remove_all(dir);
+	fs::create_directories(dir);
+
+	// 1. The committed plan, rendered as it is stored.
+	const rigplan::RigPlan plan = rigplan::testing::examplePlan("two-methods");
+	rigplan::CaptureOptions options;
+	options.out = dir / "capture";
+	rigplan::testing::renderCapture(plan, device, options);
+	const fs::path capture = options.out;
+
+	core::Factory<flow::Node> factory;
+	flowview::registerExampleNodes(factory, 8);
+	flowview::BoundaryBinders binders;
+	flowview::registerBoundaryBinders(binders);
+
+	// 2. Registered without a target, with the models the cameras were rendered through.
+	const Registration registered = registerCapture("register-targetless", capture, "truth/models", dir / "run", factory, binders);
+	INFO("report: " << registered.report);
+	if (!camera::refinement::canRefine())
+	{
+		// The document loads whole and runs, and the report names what is missing before any frame is
+		// read. A failed registration has no rig, so nothing is written.
+		CHECK(registered.report.rfind("Failed: NoRefiner", 0) == 0);
+		CHECK_FALSE(fs::exists(registered.rigFile));
+		return;
+	}
+	// The reference is whichever camera shares the most, and nothing measured the rig, so its scale is
+	// arbitrary. Measured, on an RTX 4090 and on the CPU device: relative to cam2, 274 and 269 usable
+	// tracks, held out 0.107 and 0.131 mrad (median-based; RMS 0.72 and 0.65).
+	CHECK(registered.report.rfind("Ready: 4 cameras relative to cam", 0) == 0);
+	CHECK(registered.report.find("arbitrary scale") != std::string::npos);
+
+	// 3. Scored against the truth, the scale fitted. Measured: 1.14 and 0.46 mrad, 2.73 and 1.50 mm, at a
+	// scale of 4.22. The bounds are the flowview vertical's this case replaced: it is the path a user
+	// takes that is checked here, and test-camera-comparison holds the same registration to the truth
+	// more tightly.
+	const camera::RigComparison score = scoreRig(capture / "truth" / "rig.json", registered.rigFile, dir / "run", factory, binders);
+	INFO("scored: " << score.toString());
+	CHECK(score.worstRotation()->rotation < 0.003);
+	CHECK(score.worstCentre()->centre < 0.01);
+
+	// 4. The same footage and models somewhere else on disk register the same, byte for byte: a camera
+	// is named by its folder within the rig's, never by where the rig sits.
+	const fs::path elsewhere = dir / "elsewhere" / "on" / "disk";
+	fs::create_directories(elsewhere);
+	fs::copy(capture / "rig", elsewhere / "rig", fs::copy_options::recursive);
+	fs::copy(capture / "truth" / "models", elsewhere / "models", fs::copy_options::recursive);
+	const Registration moved = registerCapture("register-targetless", elsewhere, "models", elsewhere / "run", factory, binders);
+	CHECK(moved.report == registered.report);
+	CHECK(readText(moved.rigFile) == readText(registered.rigFile));
 }

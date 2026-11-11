@@ -41,10 +41,10 @@ meant to have, and the comparison shows what not calibrating them costs.
 
 `--deviation 0` renders the plan as designed, where the nominal models are the truth.
 
-`cmake --build build --target synthetic-capture` renders it into `build/synthetic-capture`, with a
-README.txt of these commands spelled out for that build. ctest's `test-flowview-capture` runs the
-same render, registrations and comparisons on every device the machine has, and CI runs them through
-the shipped binaries on the CPU device.
+`cmake --build build --target synthetic-capture` renders it into `build/synthetic-capture/three-poles`,
+with a README.txt of these commands spelled out for that build. ctest's `test-flowview-capture` runs
+the same render, registrations and comparisons on every device the machine has, and CI runs them
+through the shipped binaries on the CPU device.
 
 ## two-methods
 
@@ -67,6 +67,11 @@ flowview run -g apps/flowview/examples/compare-rigs.json --expected capture/trut
 ```
 
 A targetless rig is at an arbitrary scale, which the comparison fits before it measures the centres.
+
+`synthetic-capture` renders it too, into `build/synthetic-capture/two-methods`, with these commands in
+its README.txt. ctest's `test-flowview-capture` runs the same render, registration and comparison on
+every device the machine has, and runs it again from a copy elsewhere on disk to show the report and
+the rig come out byte for byte the same.
 
 ## Regenerating
 

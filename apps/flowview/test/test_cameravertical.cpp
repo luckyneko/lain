@@ -621,21 +621,26 @@ namespace
 
 } // namespace
 
-TEST_CASE("run registers a rig without a target from a folder of footage and a folder of models", "[camera][runmode]")
+TEST_CASE("register-targetless names the targetless backend a build lacks", "[camera][runmode]")
 {
-	ensureRegistered();
-	const fs::path dir = lain::testing::scratchDir() / "targetless-vertical";
+	// With every backend, the document runs end to end on a committed rig plan's capture, in Release, in
+	// test-flowview-capture ("a synthetic capture registers without a target"). Where one is missing,
+	// the document still loads whole and runs, and its report names what is missing before any frame is
+	// read, so blank footage of the right size is enough.
+	ensureRegistered(); // before asking which backends there are: registering is what makes them
+	if (haveTargetlessBackends())
+		SKIP("this build has every targetless backend: test-flowview-capture runs the document on a capture");
+	const fs::path dir = lain::testing::scratchDir() / "targetless-refused";
 	fs::remove_all(dir);
 	fs::create_directories(dir);
-	const fs::path document = exampleDocument("register-targetless");
-	cameraFootage::writeTexturedRig(dir, haveTargetlessBackends());
+	cameraFootage::writeBoardRig(dir, 2, false);
 
 	core::Factory<flow::Node> factory;
 	flowview::registerExampleNodes(factory, 8);
 	flowview::BoundaryBinders binders;
 	flowview::registerBoundaryBinders(binders);
 	flowview::RunOptions options;
-	options.graphPath = document.string();
+	options.graphPath = exampleDocument("register-targetless").string();
 	const fs::path reportText = dir / "report.txt";
 	const fs::path rigFile = dir / "rig.json";
 	options.bindings = {"--footage", (dir / "rig").string(), "--models", (dir / "models").string(), "--report",
@@ -644,54 +649,8 @@ TEST_CASE("run registers a rig without a target from a folder of footage and a f
 
 	const std::string report = readText(reportText);
 	INFO("report: " << report);
-	if (!camera::feature::canExtract())
-	{
-		// The document loads whole and runs without a backend, and the report says what is missing.
-		CHECK(report.rfind("Failed: NoFeatureExtractor", 0) == 0);
-		CHECK_FALSE(fs::exists(rigFile));
-		return;
-	}
-	if (!haveTargetlessBackends())
-	{
-		CHECK(report.rfind("Failed: NoRefiner", 0) == 0);
-		CHECK_FALSE(fs::exists(rigFile));
-		return;
-	}
-	// Each camera is named by its footage folder within the rig's folder; the reference is whichever
-	// shares the most, and nothing measured the rig, so its scale is arbitrary.
-	//
-	// Measured: 432 usable tracks, 346 landmarks, 86 held out, relative to cam1; 12 s in Debug. Until
-	// 2026-10-21 a camera's name was its folder's absolute path, which held this run's scratch
-	// directory: a track's identity digests its cameras' names, and every k-th track in identity order
-	// is held out, so each run held out other tracks (over 20 runs 0.68 to 1.26 mrad held out, Ready
-	// every time). Now the same footage gives the same report wherever it is, which the end of this
-	// case checks.
-	CHECK(report.rfind("Ready: 3 cameras relative to cam", 0) == 0);
-	CHECK(report.find("arbitrary scale") != std::string::npos);
-	CHECK(report.find("landmarks from") != std::string::npos);
-
-	// The rig document holds every camera's transform, at the arbitrary scale the report names, so its
-	// centres are held to the truth after a scale fit.
-	const std::optional<camera::registration::RegisteredRig> rig = readRig(rigFile);
-	REQUIRE(rig.has_value());
-	INFO("rig: " << rig->toString());
-	CHECK(rig->scale.scale == camera::registration::Scale::Arbitrary);
-	CHECK(report.find("relative to " + rig->reference.value) != std::string::npos);
-	const camera::RigComparison difference =
-		rigAgainstTruth(*rig, {cameraFootage::texturedRigCamera(0), cameraFootage::texturedRigCamera(1), cameraFootage::texturedRigCamera(2)});
-	INFO("comparison: " << difference.toString());
-	// Measured over five runs, which held out different tracks before 2026-10-21 (above): 0.18 to 0.51
-	// mrad, and 0.7 to 1.7 mm on cameras 3.2 m from the scene.
-	CHECK(difference.worstRotation()->rotation < 0.003);
-	CHECK(difference.worstCentre()->centre < 0.01);
-
-	// The same footage somewhere else on disk registers the same, byte for byte (capture/location.h).
-	const fs::path elsewhere = copyElsewhere(dir, {"rig", "models"});
-	options.bindings = {"--footage", (elsewhere / "rig").string(), "--models", (elsewhere / "models").string(),
-						"--report", (elsewhere / "report.txt").string(), "--rig", (elsewhere / "rig.json").string()};
-	REQUIRE(flowview::runGraph(options, factory, binders) == 0);
-	CHECK(readText(elsewhere / "report.txt") == report);
-	CHECK(readText(elsewhere / "rig.json") == readText(rigFile));
+	CHECK(report.rfind(camera::feature::canExtract() ? "Failed: NoRefiner" : "Failed: NoFeatureExtractor", 0) == 0);
+	CHECK_FALSE(fs::exists(rigFile));
 }
 
 TEST_CASE("a targetless registration's matching travels in its document by name", "[camera][runmode]")

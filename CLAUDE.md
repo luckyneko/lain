@@ -1400,6 +1400,25 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-11 — fixed-rig footage, step 5: flowview's targetless vertical on the capture
+
+`register-targetless.json` runs end to end on the committed `two-methods` capture, in a new
+`test-flowview-capture` case. It renders on every device kind, registers through `runGraph`, scores with
+`compare-rigs.json`, and checks that a copy three folders deeper writes the same report and rig bytes.
+`ctest -j8` gives **1717/1717** MSVC Debug and **1725/1725** MSVC Release, with video, camera and Ceres
+on. The build is warning-clean and format-check is clean. **Not run:** GCC and macOS, and the refusal
+branches below (only a build missing a backend reaches them). Full notes are in WORK.md's *Step 5 built*.
+
+- **Measured:** Ready relative to cam2, 1.14 and 0.46 mrad and 2.73 and 1.50 mm from the truth on an
+  RTX 4090 and on the CPU device, and the copy elsewhere byte-identical on both.
+- **`test_cameravertical`'s targetless case keeps only its refusals**, on blank footage, since the
+  backends are checked before a frame is read. It skips with every backend. My first cut asked which
+  backends there were before registering them, so it ran and failed; it now registers first.
+- **`camerafootage`'s textured rig is gone**, and **`testcameraparameters.h` is folded back into
+  `testcamera.h`**: the textured rig was its one Catch2-free consumer.
+- **`synthetic-capture` renders both plans**, each into its own folder with a README of its flowview
+  commands. Three-poles' capture moved down a folder.
+
 ### Update 2026-11-11 — fixed-rig footage, step 4: the targetless end-to-end case retired
 
 `test_targetlesse2e.cpp` is deleted. Step 3's comparison on the committed capture makes every claim it

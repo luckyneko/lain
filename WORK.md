@@ -19875,7 +19875,7 @@ Verified:
   the `seedOf` case), M9's rendered suites among them, since they draw the texture item 2 touched;
   warning-clean; `format-check` clean. **Not run:** GCC and macOS.
 
-## Fixed-rig footage from committed rig plans (planned 2026-11-10; steps 1 to 4 built)
+## Fixed-rig footage from committed rig plans (planned 2026-11-10; steps 1 to 5 built)
 
 NOTES.txt follow-up 6, from the answer to point 4b: M9's fixed-rig end-to-end footage moves off
 `texturedscene.h`, the exact per-ray renderer, onto a committed M15 rig plan rendered by
@@ -19920,7 +19920,7 @@ Read against the code, the answer overclaimed:
 4. **`test_targetlesse2e.cpp` deleted**, and with it `renderedrig.h`'s still-scene check. Its rig and
    `camerasOf` stay, for the tracks measured against their truth (built, below).
 5. **flowview's textured rig onto the capture**: `test-flowview-capture` gains the targetless cli case,
-   and `camerafootage`'s `writeTexturedRig` goes.
+   and `camerafootage`'s `writeTexturedRig` goes (built, below).
 6. **The docs**, with the triggers this fires.
 
 ### Step 1 built (2026-11-10): `two-methods.json`
@@ -20151,6 +20151,60 @@ says so.
   on: one fewer each, and the retired case is gone from ctest's list.
 - The build is warning-clean, and format-check is clean over 939 files.
 - **Not run:** GCC and macOS.
+
+### Step 5 built (2026-11-11): flowview's targetless vertical on the capture
+
+`register-targetless.json` now runs end to end on the committed `two-methods` capture, in
+`test-flowview-capture`'s new case "a synthetic capture registers without a target, the same wherever
+its footage sits". It runs in Release, on every device kind, as a user does:
+- `rigplan::testing::renderCapture`, then the document through `runGraph` with `--footage capture/rig
+  --models capture/truth/models`;
+- `compare-rigs.json` against `truth/rig.json`, with the scale fitted;
+- the same footage and models copied three folders deeper, which must register to the same report and
+  rig document, byte for byte (the location-independence check, moved here).
+
+`registerCapture` takes the document's name, so the three-poles case and this one share it.
+
+- **Measured**, on an RTX 4090 and on the CPU device:
+  - the run chose cam2 as its reference, and was Ready over 274 and 269 usable tracks, holding out
+    0.107 and 0.131 mrad (median-based; RMS 0.72 and 0.65);
+  - against the truth it was 1.14 and 0.46 mrad and 2.73 and 1.50 mm out, at a scale of 4.22;
+  - the copy elsewhere wrote the same bytes on both devices;
+  - the case took 82 s for both devices together.
+
+  The bounds are the old flowview vertical's (3 mrad, 10 mm). This case checks the path a user takes,
+  and `test-camera-comparison` holds the same registration to the truth more tightly.
+- **`test_cameravertical`'s targetless case keeps only its refusals.** It is now "register-targetless
+  names the targetless backend a build lacks", on blank board-rig footage (`writeBoardRig(dir, 2,
+  false)`). Targetless registration checks its backends before it reads a frame, so blank footage of
+  the right size is enough. With every backend the case skips, since `test-flowview-capture` runs the
+  document on a capture; the case exists for the CI legs without Ceres or without OpenCV, where
+  `test-flowview-capture` is not built or cannot register.
+  - **My first cut asked which backends there were before registering them**, so with every backend
+    it ran instead of skipping, and failed. It now registers first, and the line says why.
+- **`camerafootage`'s textured rig is deleted**: `writeTexturedRig`, `texturedRigCamera`, its truth,
+  and its README block. The `camera-footage` README now points at `synthetic-capture` for
+  `register-targetless.json`'s footage.
+- **`testcameraparameters.h` is folded back into `testcamera.h`.** It was split out (2026-10-21) only
+  so `flowview-examples` could use the textured rig's camera without Catch2, and that was its one
+  Catch2-free consumer. `lain::camera::testing`'s CMake notes and `testcameras.h`'s comment are
+  updated.
+- **`synthetic-capture` renders both plans**, into `build/synthetic-capture/three-poles` and
+  `.../two-methods`, each with a README.txt of its flowview commands. The two-methods README gives
+  `register-targetless.json` and `compare-rigs.json`, and says why `register.json` does not detect its
+  80 mm board. **Three-poles' capture moved down a folder**, and the examples README says where. CI's
+  shipped-binaries step renders on its own and stays on `three-poles`.
+
+#### Verified
+
+- `ctest -j8` gives **1717/1717** MSVC Debug and **1725/1725** MSVC Release, with video, camera and
+  Ceres on. That is one case added and one replaced against step 4, with the refusal case skipping in
+  both. The build is warning-clean and format-check is clean.
+- **`synthetic-capture` was run**, rendering both captures in 32 s on the RTX 4090. The two-methods
+  README's commands, run as written through the shipped `flowview`, give ctest's numbers exactly: Ready
+  relative to cam2, 1.14 mrad and 2.73 mm from the truth.
+- **Not run:** the refusal case's branches, which only a build missing a backend reaches (CI's legs);
+  GCC and macOS.
 
 ## Outstanding work — one index
 
@@ -20503,9 +20557,9 @@ The rest of the answers' follow-ups, each its own commit. *(§NOTES.txt (2026-11
   committed rig plans (below), which leaves `texturedscene.h` only the moving-camera generator.
 - **Fixed-rig end-to-end footage from committed rig plans** (M15): `test_comparison`,
   `test_targetlesse2e` and flowview's textured rig onto `two-methods.json`. Planned 2026-11-10 in six
-  steps; steps 1 (the plan), 2 (`lain::rigplan::testing`), 3 (the comparison on the capture) and 4
-  (`test_targetlesse2e` retired) built, the tracks measured against their truth kept on the per-ray
-  footage. *(§Fixed-rig footage
+  steps; steps 1 to 5 built (the plan, `lain::rigplan::testing`, the comparison on the capture,
+  `test_targetlesse2e` retired, flowview's targetless vertical on the capture), the tracks measured
+  against their truth kept on the per-ray footage. Step 6, the docs, is left. *(§Fixed-rig footage
   from committed rig plans.)*
 - **Node sets under `plugins/flow/{image,sequence,camera}`**, always built (a node kind is vocabulary),
   with `CompareNode` moving to `libs/flow/nodes`.

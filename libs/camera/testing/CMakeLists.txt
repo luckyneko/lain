@@ -8,9 +8,8 @@
 # Built wherever something uses it, which is tests AND apps: flowview-examples draws the camera
 # examples' footage with the tests' own scenes (camerafootage.cpp), so a person and a test see the same
 # frames, and it is built with the apps whether or not the tests are. That tool includes only headers
-# that need no test framework (syntheticfootage.h, texturedscene.h, testcameraparameters.h), which is
-# why testcameraparameters.h is apart from testcamera.h. The rest assert through Catch2, so they are
-# usable only in a build that has it, and the target links Catch2 only where it was built.
+# that need no test framework (syntheticfootage.h, texturedscene.h). The rest assert through Catch2, so
+# they are usable only in a build that has it, and the target links Catch2 only where it was built.
 #
 # The golden reports are not here: they are the data of libs/camera/test's own cases, and goldentext.h
 # finds them through LAIN_CAMERA_GOLDEN_DIR, which the test that includes it defines.

@@ -5,7 +5,7 @@
 //
 // At scale 1 each is 640x480 with every intrinsic distinct (fx != fy, the principal point off the
 // centre), so a transposed parameter moves the answer. The coefficients are strong where
-// testcameraparameters.h's are mild, since the capture pass has to bend straight lines visibly:
+// testcamera.h's are mild, since the capture pass has to bend straight lines visibly:
 // Brown-Conrady's corner sits at a distorted radius of 1 with a k2 that keeps it from folding, and
 // the fisheye sees about 168 degrees across its diagonal. A scale keeps the field of view and changes
 // the resolution, through camera::scaled, as looking through a camera at a reduced resolution does.
