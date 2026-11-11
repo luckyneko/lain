@@ -64,11 +64,12 @@ endif()
 
 catch_discover_tests(test-camera-fixture TEST_PREFIX "(camera::fixture) ")
 
-# Registration end to end through both real backends, on footage drawn in plain C++: board and
-# targetless registration each alone, and a rig's feature tracks measured against their truth (in
-# Release only). OpenCV detects, extracts and poses, Ceres refines. Built only where both plugins are.
+# Registration end to end through both real backends, on footage drawn in plain C++: board
+# registration, and a rig's feature tracks measured against their truth (in Release only). OpenCV
+# detects, extracts and poses, Ceres refines. Targetless registration end to end is the comparison's,
+# on a committed rig plan's capture (test-camera-comparison, below). Built only where both plugins are.
 if(TARGET lain::camera::opencv AND TARGET lain::camera::ceres)
-	add_executable(test-camera-registration-e2e test_registration.cpp test_rendering.cpp test_targetlesse2e.cpp test_tracktruth.cpp)
+	add_executable(test-camera-registration-e2e test_registration.cpp test_rendering.cpp test_tracktruth.cpp)
 	target_compile_features(test-camera-registration-e2e PRIVATE cxx_std_17)
 	target_link_libraries(test-camera-registration-e2e PRIVATE
 		lain::camera::backends

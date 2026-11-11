@@ -19875,7 +19875,7 @@ Verified:
   the `seedOf` case), M9's rendered suites among them, since they draw the texture item 2 touched;
   warning-clean; `format-check` clean. **Not run:** GCC and macOS.
 
-## Fixed-rig footage from committed rig plans (planned 2026-11-10; steps 1 to 3 built)
+## Fixed-rig footage from committed rig plans (planned 2026-11-10; steps 1 to 4 built)
 
 NOTES.txt follow-up 6, from the answer to point 4b: M9's fixed-rig end-to-end footage moves off
 `texturedscene.h`, the exact per-ray renderer, onto a committed M15 rig plan rendered by
@@ -19918,7 +19918,7 @@ Read against the code, the answer overclaimed:
    from the capture and every bound measured again on both device kinds (built, below; its second case
    stays on the per-ray footage).
 4. **`test_targetlesse2e.cpp` deleted**, and with it `renderedrig.h`'s still-scene check. Its rig and
-   `camerasOf` stay, for the tracks measured against their truth.
+   `camerasOf` stay, for the tracks measured against their truth (built, below).
 5. **flowview's textured rig onto the capture**: `test-flowview-capture` gains the targetless cli case,
    and `camerafootage`'s `writeTexturedRig` goes.
 6. **The docs**, with the triggers this fires.
@@ -20122,6 +20122,34 @@ shows.
     held out).
   - **The unscaled truth taken relative to the wrong camera:** the centres come out 592 mm off, against
     2 mm.
+- **Not run:** GCC and macOS.
+
+### Step 4 built (2026-11-11): the targetless end-to-end case retired
+
+`plugins/camera/test/test_targetlesse2e.cpp` is deleted. It registered three cameras without a target,
+over the per-ray scene with a disc crossing it. The comparison on the capture (step 3) makes all of its
+claims:
+- the result is Ready;
+- the backends are recorded (OpenCV extractor, matcher and geometry; Ceres refiner);
+- the truth bounds and the held-out transfer hold;
+- no moving content gets into the tracks.
+
+`renderedrig.h` loses its still-scene check and its `projectInto` alias, which only the retired files
+read. It keeps `rig` and `camerasOf` for `test_tracktruth.cpp`, its one remaining user, and its header now
+says so.
+
+- **What is lost, and recorded in `test_comparison.cpp`'s header:**
+  - **No Debug build now registers a rig without a target through the real backends.** The retired case
+    ran in Debug in 13.6 s; the comparison runs in Release only.
+  - **Its tracks no longer read beside `test_features.cpp`'s footage case**, whose scene was its own,
+    exactly.
+- **Nothing else read either file**: the hits outside the retired files were WORK.md's history.
+
+#### Verified
+
+- `ctest -j8` gives **1716/1716** MSVC Debug and **1724/1724** MSVC Release, with video, camera and Ceres
+  on: one fewer each, and the retired case is gone from ctest's list.
+- The build is warning-clean, and format-check is clean over 939 files.
 - **Not run:** GCC and macOS.
 
 ## Outstanding work — one index
@@ -20475,8 +20503,9 @@ The rest of the answers' follow-ups, each its own commit. *(§NOTES.txt (2026-11
   committed rig plans (below), which leaves `texturedscene.h` only the moving-camera generator.
 - **Fixed-rig end-to-end footage from committed rig plans** (M15): `test_comparison`,
   `test_targetlesse2e` and flowview's textured rig onto `two-methods.json`. Planned 2026-11-10 in six
-  steps; steps 1 (the plan), 2 (`lain::rigplan::testing`) and 3 (the comparison on the capture)
-  built, the tracks measured against their truth kept on the per-ray footage. *(§Fixed-rig footage
+  steps; steps 1 (the plan), 2 (`lain::rigplan::testing`), 3 (the comparison on the capture) and 4
+  (`test_targetlesse2e` retired) built, the tracks measured against their truth kept on the per-ray
+  footage. *(§Fixed-rig footage
   from committed rig plans.)*
 - **Node sets under `plugins/flow/{image,sequence,camera}`**, always built (a node kind is vocabulary),
   with `CompareNode` moving to `libs/flow/nodes`.

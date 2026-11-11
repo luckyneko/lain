@@ -1400,6 +1400,19 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-11 — fixed-rig footage, step 4: the targetless end-to-end case retired
+
+`test_targetlesse2e.cpp` is deleted. Step 3's comparison on the committed capture makes every claim it
+made: Ready, the backends recorded, the truth bounds, the held-out transfer, and no moving content in the
+tracks. `renderedrig.h` drops its still-scene check and its `projectInto` alias, keeping `rig` and
+`camerasOf` for `test_tracktruth.cpp`. `ctest -j8` gives **1716/1716** MSVC Debug and **1724/1724** MSVC
+Release (one fewer each). The build is warning-clean and format-check is clean. **Not run:** GCC and
+macOS. Full notes are in WORK.md's *Step 4 built*.
+
+- **What is lost, as the plan accepted and `test_comparison.cpp`'s header now records:** no Debug build
+  registers a rig without a target through the real backends any more, since the comparison is
+  Release-only. The retired case's tracks also no longer read beside `test_features.cpp`'s footage case.
+
 ### Update 2026-11-11 — fixed-rig footage, step 3: the comparison on the committed capture
 
 Step 3 of NOTES.txt follow-up 6 is built. `test_comparison.cpp` now renders `two-methods.json` with

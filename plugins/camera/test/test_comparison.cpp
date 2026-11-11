@@ -13,6 +13,13 @@
 //
 // 1280x720 at a focal length of 1000, the operating point registration-targetless/1's angles were set
 // for, so the case runs in Release only: a Debug build takes minutes to detect and extract.
+//
+// It also makes the claims of the targetless end-to-end case it replaced (three cameras over the
+// per-ray scene with a disc crossing it, test_targetlesse2e.cpp until 2026-11-11): Ready, the backends
+// recorded, the truth bounds, the held-out transfer, and no moving content in the tracks. What that
+// case had and this one does not: it ran in Debug, so no Debug build now registers a rig without a
+// target through the real backends; and its scene was test_features.cpp's footage case exactly, so its
+// tracks read beside that case's.
 
 #include "gpu.h"
 #include "registration.h"
