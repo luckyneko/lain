@@ -1,6 +1,7 @@
 # lain::render — the raster renderer over archimedes (WORK.md M15, ADR-0028): a render scene of
 # meshes, materials and lights, drawn through a pinhole, offscreen and read back, or into a viewport a
-# pane shows with overlay lines over it, or as how far a view sees, for the visibility map. It knows
+# pane shows with overlay lines over it, or as how far a view sees, for the visibility map; and asked on
+# the CPU what a ray meets (raycast.h), for a click or a test. It knows
 # nothing of rig plans; a rig plan's realisation at one frame is turned into a render scene elsewhere.
 #
 # Its GLSL is compiled at build time and embedded (cmake/lainShaders.cmake), so nothing is staged
@@ -14,6 +15,7 @@ add_library(render STATIC
 	src/renderer.cpp
 	src/viewport.cpp
 	src/capture.cpp
+	src/raycast.cpp
 )
 add_library(lain::render ALIAS render)
 

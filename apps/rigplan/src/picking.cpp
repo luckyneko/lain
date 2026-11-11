@@ -4,8 +4,9 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdint>
+#include <cstddef>
 #include <limits>
+#include <optional>
 #include <utility>
 #include <variant>
 
@@ -19,31 +20,6 @@ namespace rigplan
 		const lain::camera::Intrinsics& k = view.intrinsics;
 		const math::Vec3d inCamera{(pixel.x - k.cx) / k.fx, (pixel.y - k.cy) / k.fy, 1.0};
 		return {view.worldFromCamera.translation(), math::normalize(view.worldFromCamera.rotate(inCamera))};
-	}
-
-	std::optional<double> hitTriangle(const Ray& ray, const math::Vec3d& a, const math::Vec3d& b, const math::Vec3d& c)
-	{
-		// Moller-Trumbore, either face: a room is seen from inside and a plane from both sides. A hair of
-		// slack on the edges, since a click on an edge two triangles share (a rectangle's diagonal, through
-		// its centre) can otherwise fall between them by rounding and miss both.
-		constexpr double kSlack = 1e-9;
-		const math::Vec3d ab = b - a;
-		const math::Vec3d ac = c - a;
-		const math::Vec3d p = math::cross(ray.direction, ac);
-		const double det = math::dot(ab, p);
-		if (std::abs(det) < 1e-12)
-			return std::nullopt; // edge on
-		const double inverse = 1.0 / det;
-		const math::Vec3d s = ray.origin - a;
-		const double u = math::dot(s, p) * inverse;
-		if (u < -kSlack || u > 1.0 + kSlack)
-			return std::nullopt;
-		const math::Vec3d q = math::cross(s, ab);
-		const double v = math::dot(ray.direction, q) * inverse;
-		if (v < -kSlack || u + v > 1.0 + kSlack)
-			return std::nullopt;
-		const double t = math::dot(ac, q) * inverse;
-		return t > 0.0 ? std::optional<double>(t) : std::nullopt;
 	}
 
 	// The distance along `ray` to where it enters the box of half extents `half` about `pose`'s origin,
@@ -86,24 +62,6 @@ namespace rigplan
 		const double half = std::sqrt(radius * radius - miss);
 		const double t = along - half > 0.0 ? along - half : along + half;
 		return t > 0.0 ? std::optional<double>(t) : std::nullopt;
-	}
-
-	// The nearest triangle of `instance` along `ray`.
-	static std::optional<double> hitInstance(const Ray& ray, const lain::render::Scene& scene, const lain::render::Instance& instance)
-	{
-		if (instance.mesh >= scene.meshes.size() || !scene.meshes[instance.mesh])
-			return std::nullopt;
-		const lain::mesh::Mesh& mesh = *scene.meshes[instance.mesh];
-		const auto placed = [&](std::uint32_t index)
-		{ return math::Vec3d(instance.worldFromMesh * math::Vec4d(math::Vec3d(mesh.positions[index]), 1.0)); };
-		std::optional<double> nearest;
-		for (std::size_t i = 0; i + 2 < mesh.indices.size(); i += 3)
-		{
-			const std::optional<double> t = hitTriangle(ray, placed(mesh.indices[i]), placed(mesh.indices[i + 1]), placed(mesh.indices[i + 2]));
-			if (t && (!nearest || *t < *nearest))
-				nearest = t;
-		}
-		return nearest;
 	}
 
 	// The selection a scene instance stands for.
@@ -156,7 +114,7 @@ namespace rigplan
 		for (std::size_t i = 0; i < scene.scene.instances.size() && i < scene.owners.size(); ++i)
 		{
 			const rp::SceneOwner& owner = scene.owners[i];
-			const std::optional<double> hit = hitInstance(ray, scene.scene, scene.scene.instances[i]);
+			const std::optional<double> hit = lain::render::hitInstance(ray, scene.scene, scene.scene.instances[i]);
 			(owner.object == rp::SceneObject::Room ? room : nearest).offer(hit, ownerSelection(owner));
 		}
 
