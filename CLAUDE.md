@@ -1400,6 +1400,29 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-11 — fixed-rig footage, step 3: the comparison on the committed capture
+
+Step 3 of NOTES.txt follow-up 6 is built. `test_comparison.cpp` now renders `two-methods.json` with
+`writeCapture` on every device kind, in its own `test-camera-comparison`, and reads the capture back as
+a user would: footage, `truth/models`, `truth/rig.json`, `truth/poses.json` and `truth/board.json`.
+`ctest -j8` gives **1717/1717** MSVC Debug and **1725/1725** MSVC Release, with video, camera and Ceres on
+(unchanged: one case moved executables). The comparison takes 15.5 s on an RTX 4090 and 48.1 s on the
+CPU device. The build is warning-clean and format-check is clean. Full notes are in WORK.md's *Step 3
+built*. **Not run:** GCC and macOS.
+
+- **Every bound held on both devices but two, and those were restated rather than loosened blind:**
+  - **The pan guard is judged by how little the pan moves cam2's two-member tracks**, not by where they
+    end, since on the CPU device's footage they start at 1.22 mrad.
+  - **The still scene allows 2%, up from 1%.** All 2 and 3 tracks off it are wrong matches between floor
+    or wall features, never the board's. Four of the five are two-member tracks slid along their epipolar
+    line, which validation cannot see.
+- **Decided with the repo owner: "the rig's feature tracks measured against their truth" stays on the
+  per-ray footage**, in `test_tracktruth.cpp` under its old name. On the capture's ~270 tracks its
+  localisation bands and epipolar ratio swing between devices (band 4-8 px: 0.86 against 2.31), so they
+  stop measuring the model they are the evidence for. Step 4 therefore keeps `renderedrig.h`'s rig.
+- **Two sabotages, both caught on both devices**: extraction's static rule disabled puts 825 of 1191
+  tracks off the still scene, and the unscaled truth taken relative to the wrong camera is 592 mm out.
+
 ### Update 2026-11-11 — fixed-rig footage, step 2: `lain::rigplan::testing`, and a render scene's ray cast
 
 Step 2 of NOTES.txt follow-up 6 is built. `libs/rigplan/testing` is an INTERFACE target built with the

@@ -19875,7 +19875,7 @@ Verified:
   the `seedOf` case), M9's rendered suites among them, since they draw the texture item 2 touched;
   warning-clean; `format-check` clean. **Not run:** GCC and macOS.
 
-## Fixed-rig footage from committed rig plans (planned 2026-11-10; steps 1 and 2 built)
+## Fixed-rig footage from committed rig plans (planned 2026-11-10; steps 1 to 3 built)
 
 NOTES.txt follow-up 6, from the answer to point 4b: M9's fixed-rig end-to-end footage moves off
 `texturedscene.h`, the exact per-ray renderer, onto a committed M15 rig plan rendered by
@@ -19902,7 +19902,9 @@ Read against the code, the answer overclaimed:
 
 - **One plan for both methods.** `test_comparison`'s footage becomes the committed plan.
   `test_targetlesse2e` is deleted, since that plan's targetless half makes all its claims. flowview's
-  textured rig and its cli case move onto the same capture. `renderedrig.h` goes.
+  textured rig and its cli case move onto the same capture. `renderedrig.h` goes. *(Amended at step 3:
+  the comparison's second case, the tracks measured against their truth, stays on the per-ray footage
+  by the repo owner's call, so `renderedrig.h` keeps its rig for it.)*
 - **The still-scene truth is a CPU ray cast** over the meshes the renderer draws, movers left out. The
   capture format does not change.
 - **M9 merged into M15 first** (the section above), ahead of M9's acceptance.
@@ -19913,8 +19915,10 @@ Read against the code, the answer overclaimed:
 2. **A `lain::rigplan::testing` target**: `examplePlan`, a capture-rendering helper, and a ray cast,
    with driver-free tests of its own (built, below; the cast is `cast`, not the planned `stillPoint`).
 3. **`test_comparison` on the capture**, in a new `test-camera-comparison` executable, its truth read
-   from the capture and every bound measured again on both device kinds.
-4. **`test_targetlesse2e.cpp` and `renderedrig.h` deleted.**
+   from the capture and every bound measured again on both device kinds (built, below; its second case
+   stays on the per-ray footage).
+4. **`test_targetlesse2e.cpp` deleted**, and with it `renderedrig.h`'s still-scene check. Its rig and
+   `camerasOf` stay, for the tracks measured against their truth.
 5. **flowview's textured rig onto the capture**: `test-flowview-capture` gains the targetless cli case,
    and `camerafootage`'s `writeTexturedRig` goes.
 6. **The docs**, with the triggers this fires.
@@ -20038,6 +20042,86 @@ which the hidden-fraction check needs, since there the board is the answer.
   (+3 each). The capture vertical ran in Release on both device kinds (93 s), through `examplePlan` and
   `renderCapture`. The build is warning-clean and format-check is clean.
 - With all three off, the configuration generates; it was not built.
+- **Not run:** GCC and macOS.
+
+### Step 3 built (2026-11-11): the comparison on the capture
+
+`plugins/camera/test/test_comparison.cpp` now renders `two-methods.json` with `writeCapture`, on every
+device kind (`gpu.h`), in its own executable, `test-camera-comparison`. It is built where the renderer and
+both plugins are, runs in Release only, and counts as four processors to ctest. The capture is read back
+as a user reads one:
+- `rig/<camera>` is opened through `io::sequence`, named by `identitiesByLocation` and grouped by
+  position;
+- the models come from `truth/models`;
+- the truth comes from `truth/rig.json`, `truth/poses.json` and `truth/board.json`.
+
+Where a pixel's feature came from is asked of `captureScene`'s build through step 2's cast. The case
+first checks that build against `truth/poses.json` to 1e-12, so the casts ask the scene the capture
+shows.
+
+- **What changed in the checks:**
+  - **The board's motion** is read from `truth/board.json`'s corners in view, in place of projecting
+    `footage()`'s board poses.
+  - **What the board hides** is cast into the scene at each sampled frame (`renderScene`, the board
+    kept).
+  - **The still scene** is `staticScene` over the build, cast from each track's first member.
+  - **The truth** is `truth/rig.json`, relative to the plan's first camera. `compareRigs` derives it again
+    for the cam1 both methods chose, and the unscaled check uses `rigRelativeTo` on `truth/poses.json`.
+  - **The backend records** from `test_targetlesse2e` are added (OpenCV extractor, matcher and geometry;
+    Ceres refiner).
+- **Two checks were restated, because the capture showed what they meant:**
+  - **The pan guard.** A pan keeps cam2's rays in their epipolar planes, so two-member tracks cannot see
+    it. The old check put them under 1 mrad after the turn. On the CPU device's footage they start at
+    1.22 mrad untouched, from about 25 tracks, so the check is now that the pan moves them by under
+    0.5 mrad. Measured: 0.67 -> 0.72 on the GPU, 1.22 -> 1.46 on the CPU device, while a tilt takes them to 6.6
+    and 7.0.
+  - **The still scene.** 2 of 274 and 3 of 269 tracks are off it, against a bound of 1%. None is the
+    board's: the board covers their pixels in at most 2 of 5 sampled frames. Each is a wrong match
+    between features of the floor or the far wall that are not one point, its members' rays meeting the
+    room 73 mm to 1.4 m apart. Validation against the truth sees only one of the five (12 mrad out); the
+    other four are two-member tracks slid along their epipolar line, which the plane they are scored
+    against cannot see. The bound is now 2%.
+- **Every other bound held as it was.** Measured on an RTX 4090 and on the CPU device:
+
+  | | RTX 4090 | CPU device |
+  |---|---|---|
+  | board seen by each camera | 16 of 16 | 16 of 16 |
+  | slowest corner in view; image the board hides | 22.0 px; 4.6% | the same |
+  | board vs truth: rotation / centre (scale) | 0.15 mrad / 0.34 mm (1.00014) | 0.20 / 0.41 (1.00018) |
+  | board vs truth, unscaled centre | 0.26 mm | 0.33 mm |
+  | targetless vs truth: rotation / centre | 1.02 mrad / 2.72 mm | 0.25 / 0.87 |
+  | board vs targetless | 0.91 mrad / 2.72 mm | 0.34 / 1.03 |
+  | held out: tracks, members; board / targetless RMS | 55, 150; 0.69 / 0.72 mrad | 54, 147; 0.66 / 0.65 |
+  | tracks; off the still scene; worst member | 274; 2; 17.2 px | 269; 3; 14.2 px |
+  | verdicts | Ready, Ready | Ready, Ready |
+  | time with its render | 15.5 s | 48.1 s |
+
+- **Decided with the repo owner: the second case stays on the per-ray footage.** "The rig's feature tracks
+  measured against their truth" was to move unchanged, since it needs only the true rig. On the capture its
+  numbers swing between devices on the same plan:
+  - the 4-8 px band reads 0.86 on the GPU and 2.31 on the CPU device, and the 8-16 px band 2.27 and 0.60;
+  - the epipolar ratio reads 0.98 and 2.19 natively.
+
+  With about 270 tracks, an RMS without a robust loss is decided by the few tracks just under 10 mrad.
+  These numbers are the recorded evidence for `localisationPerSize = 0.034`, for counting an epipolar
+  residual twice, and for no floor on the stated sigma. On the per-ray footage (503 tracks) they are
+  stable, and the per-ray render is the exact instrument for localisation. So the case moved, unchanged,
+  into `test_tracktruth.cpp` in `test-camera-registration-e2e`, under its old ctest name. Its header
+  records why. Moving it with what holds, or with median-based statistics, were the alternatives.
+- **The moved code drops its anonymous namespaces** for `static` functions, as this repo's code does.
+
+#### Verified
+
+- `ctest -j8` gives **1717/1717** MSVC Debug and **1725/1725** MSVC Release, with video, camera and Ceres
+  on. Both counts are unchanged: one case moved executables and none was added. In Release the comparison
+  ran on both device kinds in 64 s. The build is warning-clean, and format-check is clean over 940 files.
+- **Two sabotages, both caught on both devices:**
+  - **Extraction's static rule disabled** (a feature found in one frame counts as static): 825 of 1191
+    and 733 of 1097 tracks fall off the still scene, against the 2% bound. Unlike the per-ray footage,
+    where 22 disc tracks got in and the registration was still Ready, validation sees this too (84 mrad
+    held out).
+  - **The unscaled truth taken relative to the wrong camera:** the centres come out 592 mm off, against
+    2 mm.
 - **Not run:** GCC and macOS.
 
 ## Outstanding work — one index
@@ -20391,7 +20475,9 @@ The rest of the answers' follow-ups, each its own commit. *(§NOTES.txt (2026-11
   committed rig plans (below), which leaves `texturedscene.h` only the moving-camera generator.
 - **Fixed-rig end-to-end footage from committed rig plans** (M15): `test_comparison`,
   `test_targetlesse2e` and flowview's textured rig onto `two-methods.json`. Planned 2026-11-10 in six
-  steps; step 1 (the plan) and step 2 (`lain::rigplan::testing`) built. *(§Fixed-rig footage from committed rig plans.)*
+  steps; steps 1 (the plan), 2 (`lain::rigplan::testing`) and 3 (the comparison on the capture)
+  built, the tracks measured against their truth kept on the per-ray footage. *(§Fixed-rig footage
+  from committed rig plans.)*
 - **Node sets under `plugins/flow/{image,sequence,camera}`**, always built (a node kind is vocabulary),
   with `CompareNode` moving to `libs/flow/nodes`.
 - **Measurements out of ctest**: a `camera-bench` for the Release-only and `[scale]` cases.

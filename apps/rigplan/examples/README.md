@@ -48,8 +48,9 @@ the shipped binaries on the CPU device.
 
 ## two-methods
 
-One rig for registering with a board and without one from the same pixels: M9's comparison scene
-(`plugins/camera/test/test_comparison.cpp`) as a rig plan. Four cameras stand 0.6 m apart on an arc
+One rig for registering with a board and without one from the same pixels: the rig ctest's
+`test-camera-comparison` (`plugins/camera/test/test_comparison.cpp`) renders, registers both ways and
+scores against its truth, on every device the machine has. Four cameras stand 0.6 m apart on an arc
 3.2 m from a textured 6 x 4.5 x 2.4 m room with a box on its floor, at 1280 x 720 behind a 2 mm lens
 (f = 1000 px). A 7 x 5 board of 80 mm squares moves through their shared view 1.6 m away, turning as it
 goes, over 16 frames. Targetless registration places the cameras by the room and drops the board as

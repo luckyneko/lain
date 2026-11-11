@@ -1,26 +1,47 @@
-// One rig registered by both methods from the same footage, through both real backends: four fixed
-// cameras over a textured scene with a printed board moving through it. Board registration finds the
-// board and places the cameras metrically; targetless registration finds the scene, drops the board
-// as moving content, and places them up to scale. Both results are validated on the same held-out
-// feature tracks (registration::validate), compared with each other and with the truth, and the
-// rig's tracks are measured against the truth for the thresholds slice 3 left provisional.
+// One rig registered by both methods from the same footage, through both real backends: the committed
+// rig plan apps/rigplan/examples/two-methods.json (four fixed cameras round a textured room, a printed
+// board moving through their shared view), rendered by lain::rigplan::writeCapture on every kind of
+// device the machine offers (gpu.h) and read back as a user reads a capture: its rig/ footage, its
+// truth/models, truth/rig.json, truth/poses.json and truth/board.json. Board registration finds the
+// board and places the cameras metrically; targetless registration finds the room, drops the board as
+// moving content, and places them up to scale. Both results are validated on the same held-out feature
+// tracks (registration::validate) and compared with each other and with the truth. The rig's tracks
+// measured against their truth stay on the per-ray footage (test_tracktruth.cpp says why).
 //
-// Rendered at 1280x720 with a focal length of 1000, the operating point registration-targetless/1's
-// angles were set for, so these cases run in Release only: a Debug build draws a frame in seconds.
+// Where a pixel's feature came from is asked of the scene the capture was rendered from, on the CPU
+// (lain::rigplan::testing's cast): the still scene behind the board, or the whole scene at a frame.
+//
+// 1280x720 at a focal length of 1000, the operating point registration-targetless/1's angles were set
+// for, so the case runs in Release only: a Debug build takes minutes to detect and extract.
 
+#include "gpu.h"
 #include "registration.h"
-#include "renderedrig.h"
 
-#include <lain/camera/board/rendering.h>
+#include <lain/camera/board/specification.h>
+#include <lain/camera/capture/capturegroup.h>
+#include <lain/camera/capture/location.h>
 #include <lain/camera/comparison.h>
 #include <lain/camera/feature/extraction.h>
 #include <lain/camera/projection.h>
 #include <lain/camera/registration/board.h>
 #include <lain/camera/registration/targetless.h>
 #include <lain/camera/registration/validation.h>
-#include <lain/camera/testing/rigcompare.h>
-#include <lain/camera/testing/testboard.h>
-#include <lain/camera/testing/testcamera.h>
+#include <lain/camera/serialize/cameramodel.h>
+#include <lain/camera/serialize/registeredrig.h>
+#include <lain/core/uri.h>
+#include <lain/data/value.h>
+#include <lain/io/data/load.h>
+#include <lain/io/sequence/open.h>
+#include <lain/math/angles.h>
+#include <lain/rigplan/capture.h>
+#include <lain/rigplan/realisation.h>
+#include <lain/rigplan/scene.h>
+#include <lain/rigplan/serialize/truth.h>
+#include <lain/rigplan/testing/capture.h>
+#include <lain/rigplan/testing/exampleplan.h>
+#include <lain/rigplan/testing/scenecast.h>
+#include <lain/rigplan/truth.h>
+#include <lain/testing/scratch.h>
 #include <lain/testing/skip.h>
 #include <lain/testing/threadpool.h>
 
@@ -29,7 +50,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <memory>
+#include <filesystem>
+#include <limits>
 #include <optional>
 #include <set>
 #include <string>
@@ -38,184 +60,249 @@
 
 using namespace lain;
 using namespace lain::camera;
-namespace compare = lain::camera::testing;
+namespace fs = std::filesystem;
 
-namespace
+constexpr std::size_t kFrames = 16;
+
+// A document of the capture, read through the io seam.
+static data::Value document(const fs::path& file)
 {
-	const double kTau = math::two_pi<double>();
-	constexpr std::size_t kFrames = 16;
-	constexpr double kFocal = 1000.0;
+	std::optional<data::Value> value = io::data::load(core::Uri::fromPath(file));
+	INFO(file.string());
+	REQUIRE(value.has_value());
+	return *value;
+}
 
-	CameraModel hdCamera()
+// two-methods' capture, rendered on `device` into `dir` and opened as M9 opens a rig: each camera's
+// footage named by its folder, its model its truth/models document, grouped by position.
+struct Capture
+{
+	rigplan::testing::CaptureScene scene; // what it was rendered from, which the casts ask
+	std::vector<capture::CameraIdentity> identities;
+	std::vector<registration::RigFootage> footage;
+	std::vector<capture::CaptureGroup> groups;
+	std::vector<rigplan::CameraPose> poses;	  // truth/poses.json
+	registration::RegisteredRig truth;		  // truth/rig.json
+	std::vector<rigplan::BoardTruth> board;	  // truth/board.json, frames ascending
+	std::optional<board::Specification> spec; // the plan's board
+};
+
+static Capture captureOf(acm::Device& device, const fs::path& dir)
+{
+	fixture::ensureRegistered();
+	const rigplan::RigPlan plan = rigplan::testing::examplePlan("two-methods");
+	REQUIRE(plan.timeline.frames == kFrames);
+	fs::remove_all(dir);
+	rigplan::CaptureOptions options;
+	options.out = dir / "capture";
+	rigplan::testing::renderCapture(plan, device, options);
+	const fs::path capture = options.out;
+
+	Capture c;
+	c.scene = rigplan::testing::captureScene(plan, options);
+	std::vector<media::FrameSequence> sequences;
+	for (const rigplan::RealisedCamera& camera : c.scene.realisation.cameras)
 	{
-		CameraModelParameters p;
-		p.image = {1280, 720};
-		p.intrinsics = {kFocal, 1002.0, 641.3, 359.2};
-		p.distortion = camera::testing::brownConrady();
-		ModelResult result = CameraModel::create(p);
-		REQUIRE(result.model.has_value());
-		return *result.model;
+		std::optional<media::FrameSequence> footage = io::sequence::open(core::Uri::fromPath(capture / "rig" / camera.name));
+		INFO(camera.name);
+		REQUIRE(footage.has_value());
+		sequences.push_back(*footage);
+	}
+	c.identities = capture::identitiesByLocation(sequences);
+	std::vector<capture::CameraFootage> byPosition;
+	for (std::size_t i = 0; i < sequences.size(); ++i)
+	{
+		const CameraModelRead model = cameraModelFromValue(document(capture / "truth" / "models" / (c.identities[i].value + ".json")));
+		REQUIRE(model.model.has_value());
+		c.footage.push_back({c.identities[i], *model.model, sequences[i]});
+		byPosition.push_back({c.identities[i], sequences[i]});
+	}
+	const capture::GroupingResult grouping = capture::groupsByPosition(byPosition);
+	REQUIRE(grouping.groups.size() == kFrames);
+	c.groups = grouping.groups;
+
+	const rigplan::PosesRead poses = rigplan::posesFromValue(document(capture / "truth" / "poses.json"));
+	REQUIRE(poses.poses.has_value());
+	c.poses = *poses.poses;
+	const registration::RegisteredRigRead rig = registration::registeredRigFromValue(document(capture / "truth" / "rig.json"));
+	REQUIRE(rig.rig.has_value());
+	c.truth = *rig.rig;
+	const rigplan::BoardTruthRead board = rigplan::boardTruthFromValue(document(capture / "truth" / "board.json"));
+	REQUIRE(board.truth.has_value());
+	c.board = *board.truth;
+	REQUIRE(c.board.size() == kFrames);
+
+	// The scene the casts ask is the one the capture was rendered from: its build's cameras are where
+	// the capture says they were, and each folder is named as the build names its camera.
+	REQUIRE(c.poses.size() == c.scene.realisation.cameras.size());
+	for (std::size_t i = 0; i < c.poses.size(); ++i)
+	{
+		const rigplan::RealisedCamera& built = c.scene.realisation.cameras[i];
+		CHECK(c.identities[i].value == built.name);
+		CHECK(c.poses[i].name == built.name);
+		CHECK(math::length(c.poses[i].planFromCamera.translation() - built.planFromCamera.translation()) < 1e-12);
+		CHECK(math::rotationBetween(c.poses[i].planFromCamera.rotation(), built.planFromCamera.rotation()) < 1e-12);
 	}
 
-	// The rig's footage: four cameras 0.6 m apart on the default scene's arc, and the board sweeping
-	// a Lissajous 1.6 m in front of them, turning as it goes, so every corner moves well between any
-	// two sampled frames and no part of the scene stays covered in most of them.
-	struct Footage
-	{
-		rendered::Rig rig;
-		board::Specification spec;
-		std::vector<math::RigidTransformd> boardPoses; // worldFromBoard, per frame
-	};
+	const camera::board::PatternResult pattern = camera::board::Pattern::create(plan.boards.front().pattern);
+	REQUIRE(pattern.pattern.has_value());
+	const camera::board::SpecificationResult spec = camera::board::Specification::create(*pattern.pattern, plan.boards.front().instance);
+	REQUIRE(spec.specification.has_value());
+	c.spec = *spec.specification;
+	return c;
+}
 
-	Footage footage()
-	{
-		fixture::ensureRegistered();
-		const board::Specification spec = camera::testing::specification(camera::testing::pattern(), 80.0);
-		const board::RenderResult rendered = board::render(spec.pattern(), board::RenderRequest{120, 30});
-		REQUIRE(rendered.rendering.has_value());
+static std::vector<registration::RigCamera> camerasOf(const Capture& c)
+{
+	std::vector<registration::RigCamera> out;
+	for (const registration::RigFootage& f : c.footage)
+		out.push_back({f.camera, f.model});
+	return out;
+}
 
-		std::vector<math::RigidTransformd> cameras;
-		math::Vec3d middle{0.0};
-		for (const double angle : {-0.28, -0.094, 0.094, 0.28})
+// The camera of the build a capture's camera was rendered as.
+static const rigplan::RealisedCamera& realised(const Capture& c, const capture::CameraIdentity& camera)
+{
+	for (const rigplan::RealisedCamera& r : c.scene.realisation.cameras)
+	{
+		if (r.name == camera.value)
+			return r;
+	}
+	FAIL("no camera of the build is named " << camera.value);
+}
+
+// Where a realised camera sees a plan-frame point, or nothing.
+static std::optional<math::Vec2d> projectInto(const rigplan::RealisedCamera& camera, const math::Vec3d& point)
+{
+	const math::Vec3d inCamera = camera.planFromCamera.inverse().apply(point);
+	const Projection<double> p = project(camera.model, inCamera.x, inCamera.y, inCamera.z);
+	if (!p.ok())
+		return std::nullopt;
+	return math::Vec2d{p.u, p.v};
+}
+
+// One camera's corners in view at one frame, from truth/board.json.
+static const std::vector<rigplan::CornerTruth>& cornersAt(const Capture& c, std::size_t frame, const capture::CameraIdentity& camera)
+{
+	for (const rigplan::CameraCorners& corners : c.board.at(frame).cameras)
+	{
+		if (corners.name == camera.value)
+			return corners.inView;
+	}
+	FAIL("truth/board.json names no camera " << camera.value << " at frame " << frame);
+}
+
+struct StillScene
+{
+	std::size_t off = 0; // tracks that are no point of the still scene
+	double worst = 0;	 // pixels, the furthest a member of any other track lands from its point
+};
+
+// Whether `tracks` are points of the scene without its moving content: each track's first member
+// cast into the still scene the capture was rendered from (staticScene over its build), and the
+// point found projected into its other members' cameras. A track off by more than `tolerance` px is
+// moving content that got in. Validation against the true rig cannot tell: a synchronised rig sees
+// a moving feature at one instant from every camera, which is a consistent point at that instant.
+// The still scene can, since behind the board is a wall or the box, a metre or more further away.
+static StillScene stillScene(const Capture& c, const feature::TrackSet& tracks, double tolerance = 20.0)
+{
+	const rigplan::SceneResult still = rigplan::staticScene(c.scene.plan, c.scene.realisation, c.scene.assets);
+	REQUIRE(still.problems.empty());
+	StillScene out;
+	for (const feature::Track& t : tracks.tracks)
+	{
+		const feature::SceneObservation& first = t.observations.front();
+		const std::optional<rigplan::testing::SceneHit> hit =
+			rigplan::testing::cast(still, realised(c, tracks.views[first.view].camera), first.pixel);
+		double furthest = hit ? 0.0 : std::numeric_limits<double>::infinity();
+		for (std::size_t o = 1; o < t.observations.size() && hit; ++o)
 		{
-			cameras.push_back(synthetic::arcCamera(angle));
-			middle += cameras.back().translation() / 4.0;
+			const feature::SceneObservation& other = t.observations[o];
+			const std::optional<math::Vec2d> p = projectInto(realised(c, tracks.views[other.view].camera), hit->point);
+			furthest = std::max(furthest, p ? math::length(*p - other.pixel) : std::numeric_limits<double>::infinity());
 		}
-		const math::Vec3d target{-0.2, 0.2, 0.4};
-		const math::Vec3d ahead = math::normalize(target - middle);
-		const math::Vec3d centre = middle + 1.6 * ahead;
-		// The board's axes when square on: X right, Y down, Z away from the rig.
-		const math::RigidTransformd facing = math::lookingAt(centre, centre + ahead, kCameraFrame).value();
-		const board::PatternParameters& p = spec.pattern().parameters();
-		const double square = spec.instance().squareLength.value.metres();
-		const math::Vec3d boardMiddle{p.squaresX * square / 2, p.squaresY * square / 2, 0.0};
-		std::vector<math::RigidTransformd> poses;
-		for (std::size_t i = 0; i < kFrames; ++i)
-		{
-			const double t = (double(i) + 0.5) / double(kFrames);
-			const math::Vec3d offset{0.3 * std::sin(kTau * t), 0.15 * std::sin(2 * kTau * t + 0.7), 0.0};
-			const math::Quatd turn = facing.rotation() * math::angleAxis(0.35 * std::sin(2 * kTau * t), math::Vec3d{0, 1, 0}) *
-									 math::angleAxis(0.25 * std::cos(3 * kTau * t), math::Vec3d{1, 0, 0});
-			const math::Vec3d at = centre + facing.rotate(offset);
-			poses.push_back(math::RigidTransformd{turn, at - turn * boardMiddle});
-		}
-
-		synthetic::Scene scene = synthetic::defaultScene();
-		scene.noise = 1.0;
-		scene.board =
-			synthetic::boardSurface(std::make_shared<const board::Rendering>(*rendered.rendering), square, poses);
-		return Footage{rendered::rig(scene, hdCamera(), cameras, kFrames, 3), spec, poses};
+		if (furthest > tolerance)
+			++out.off;
+		else
+			out.worst = std::max(out.worst, furthest);
 	}
+	return out;
+}
 
-	registration::HeldOutEvidence evidence(const std::variant<registration::HeldOutEvidence, camera::Unavailable>& v)
+static registration::HeldOutEvidence evidence(const std::variant<registration::HeldOutEvidence, camera::Unavailable>& v)
+{
+	const auto* e = std::get_if<registration::HeldOutEvidence>(&v);
+	if (!e)
+		FAIL("validation unavailable: " << std::get<camera::Unavailable>(v).reason);
+	return *e;
+}
+
+// A camera's RMS transfer residual over every member it saw: what a camera's error does to its
+// evidence.
+static double perCamera(const registration::HeldOutEvidence& e, const capture::CameraIdentity& camera)
+{
+	for (const registration::HeldOutCamera& c : e.perCamera)
 	{
-		const auto* e = std::get_if<registration::HeldOutEvidence>(&v);
-		if (!e)
-			FAIL("validation unavailable: " << std::get<camera::Unavailable>(v).reason);
-		return *e;
+		if (c.camera == camera)
+			return c.rmsAngle;
 	}
+	FAIL("no evidence for " << camera.value);
+}
 
-	// A camera's RMS transfer residual over every member it saw: what a camera's error does to its
-	// evidence.
-	double perCamera(const registration::HeldOutEvidence& e, const capture::CameraIdentity& camera)
+// Of `ids`, those whose track has `members` observations (or more, with `orMore`).
+static std::vector<std::string> withMembers(const feature::TrackSet& set, const std::vector<std::string>& ids,
+											std::size_t members, bool orMore)
+{
+	std::set<std::string> wanted(ids.begin(), ids.end());
+	std::vector<std::string> out;
+	for (const feature::Track& t : set.tracks)
 	{
-		for (const registration::HeldOutCamera& c : e.perCamera)
-		{
-			if (c.camera == camera)
-				return c.rmsAngle;
-		}
-		FAIL("no evidence for " << camera.value);
+		if (wanted.count(t.identity) == 0)
+			continue;
+		const std::size_t n = t.observations.size();
+		if (n == members || (orMore && n > members))
+			out.push_back(t.identity);
 	}
-
-	// Of `ids`, those whose track has `members` observations (or more, with `orMore`).
-	std::vector<std::string> withMembers(const feature::TrackSet& set, const std::vector<std::string>& ids,
-										 std::size_t members, bool orMore)
-	{
-		std::set<std::string> wanted(ids.begin(), ids.end());
-		std::vector<std::string> out;
-		for (const feature::Track& t : set.tracks)
-		{
-			if (wanted.count(t.identity) == 0)
-				continue;
-			const std::size_t n = t.observations.size();
-			if (n == members || (orMore && n > members))
-				out.push_back(t.identity);
-		}
-		return out;
-	}
-
-	// One track judged against the true rig: its median member's size and stated localisation, and
-	// how far the truth predicts each member from where it was found.
-	struct TrackTruth
-	{
-		std::string id;
-		std::size_t members = 0;
-		double size = 0;	 // the median member's keypoint size, in processed pixels
-		double sigma = 0;	 // the median member's stated localisation, radians at the focal length
-		double residual = 0; // RMS transfer against the true rig, radians
-	};
-
-	std::vector<TrackTruth> truthOf(const std::vector<registration::RigCamera>& cameras, const registration::Report& truth,
-									const feature::ExtractionResult& extracted)
-	{
-		std::vector<TrackTruth> out;
-		const double scale = extracted.report.cameras.front().scale;
-		for (const feature::Track& track : extracted.trackSet.tracks)
-		{
-			TrackTruth t;
-			t.id = track.identity;
-			t.members = track.observations.size();
-			std::vector<double> sigmas;
-			for (const feature::SceneObservation& o : track.observations)
-				sigmas.push_back(std::sqrt((*o.covariance)[0]));
-			std::sort(sigmas.begin(), sigmas.end());
-			const double sigma = sigmas[sigmas.size() / 2]; // source pixels
-			t.size = sigma / extracted.report.request.localisationPerSize * scale;
-			t.sigma = sigma / kFocal;
-			t.residual = evidence(registration::validate(cameras, truth, extracted.trackSet, {t.id})).rmsAngle;
-			out.push_back(t);
-		}
-		return out;
-	}
-
-	double rmsOver(const std::vector<registration::RigCamera>& cameras, const registration::Report& truth,
-				   const feature::TrackSet& set, const std::vector<std::string>& ids)
-	{
-		return ids.empty() ? 0.0 : evidence(registration::validate(cameras, truth, set, ids)).rmsAngle;
-	}
-} // namespace
+	return out;
+}
 
 TEST_CASE("one rig registered with a board and without one agrees with itself and its truth",
-		  "[camera][registration][comparison]")
+		  "[camera][registration][comparison][gpu]")
 {
-	lain::testing::skipInDebug("the comparison runs in Release builds: a Debug build takes seconds to draw each HD frame");
+	lain::testing::skipInDebug("the comparison runs in Release builds: a Debug build takes minutes to detect and extract");
+	acm::Device& device = lain::render::testing::device();
 	const lain::testing::ThreadPool pool;
-	const Footage f = footage();
-	const rendered::Rig& rig = f.rig;
-	const std::vector<registration::RigCamera> cameras = rendered::camerasOf(rig);
+	const Capture c = captureOf(device, lain::testing::scratchDir() / "comparison");
+	const std::vector<registration::RigCamera> cameras = camerasOf(c);
 
-	// Both methods over the same footage and capture groups, relative to the same camera. Measured:
-	// board registration 56.7 s, nearly all of it drawing the 64 frames it detects in; targetless
-	// 3.3 s on the 20 frames it samples, already drawn.
+	// Both methods over the same footage and capture groups, relative to the same camera. Measured, each
+	// with its render: 15.5 s on an RTX 4090, 48.1 s on the CPU device (two threads), which renders the
+	// 64 frames in about 43 s.
 	registration::Request request;
-	request.reference = rig.identities[1];
-	const registration::Report board =
-		registration::board::registerCameras(rig.footage, rig.groups, f.spec, camera::board::DetectionRequest{}, request);
+	request.reference = c.identities[1];
+	const registration::Report board = registration::board::registerCameras(c.footage, c.groups, *c.spec,
+																			camera::board::DetectionRequest{}, request);
 	INFO(board.toString());
 	REQUIRE(board.status == registration::RegistrationStatus::Succeeded);
 	const registration::Report targetless =
-		registration::targetless::registerCameras(rig.footage, rig.groups, feature::ExtractionRequest{}, request);
+		registration::targetless::registerCameras(c.footage, c.groups, feature::ExtractionRequest{}, request);
 	INFO(targetless.toString());
 	REQUIRE(targetless.status == registration::RegistrationStatus::Succeeded);
+	const registration::TargetlessRecord& record = std::get<registration::TargetlessRecord>(targetless.reproducibility.method);
+	CHECK(record.extractor.backend == "opencv");
+	CHECK(record.matcher.backend == "opencv");
+	CHECK(record.geometry.backend == "opencv");
+	CHECK(targetless.reproducibility.refiner.backend == "ceres");
+	CHECK(board.reproducibility.refiner.backend == "ceres");
 	const registration::TargetlessDiagnostics& t = std::get<registration::TargetlessDiagnostics>(targetless.diagnostics.method);
 	REQUIRE(t.trackSet.has_value());
 	const feature::TrackSet& tracks = *t.trackSet;
 
 	// 1. What the footage must be for the comparison to mean anything.
 	// Every camera sees the board in nearly every frame, so board registration has the capture groups
-	// its Ready needs. Measured: all 16, in every camera.
+	// its Ready needs. Measured: all 16, in every camera, on both devices.
 	const registration::BoardDiagnostics& b = std::get<registration::BoardDiagnostics>(board.diagnostics.method);
-	for (const capture::CameraIdentity& id : rig.identities)
+	for (const capture::CameraIdentity& id : c.identities)
 	{
 		std::size_t seen = 0;
 		for (const registration::GroupDetections& g : b.detections)
@@ -228,45 +315,49 @@ TEST_CASE("one rig registered with a board and without one agrees with itself an
 	}
 	// The board moves well between any two sampled frames in every camera, so none of its features
 	// can pass for static: no repeated pose, no slow drift, no corner held still on a camera's line of
-	// sight. Measured: every visible corner at least 21.7 px from where it was.
+	// sight. Measured, from truth/board.json: every corner in view at least 22.0 px from where it was.
 	double slowest = 1e9;
-	for (std::size_t c = 0; c < rig.identities.size(); ++c)
+	for (std::size_t v = 0; v < tracks.views.size(); ++v)
 	{
-		const std::vector<media::FrameRef>& sampled = tracks.views[c].frames;
+		const std::vector<media::FrameRef>& sampled = tracks.views[v].frames;
 		for (std::size_t i = 0; i < sampled.size(); ++i)
 		{
 			for (std::size_t j = i + 1; j < sampled.size(); ++j)
 			{
-				for (std::uint32_t id = 0; id < f.spec.pattern().cornerCount(); ++id)
+				for (const rigplan::CornerTruth& a : cornersAt(c, sampled[i].ordinal, tracks.views[v].camera))
 				{
-					const math::Vec3d corner = *f.spec.cornerPosition(id);
-					const auto a = rendered::projectInto(rig.model, rig.worldFromCamera[c], f.boardPoses[sampled[i].ordinal].apply(corner));
-					const auto z = rendered::projectInto(rig.model, rig.worldFromCamera[c], f.boardPoses[sampled[j].ordinal].apply(corner));
-					if (a && z)
-						slowest = std::min(slowest, math::length(*a - *z));
+					for (const rigplan::CornerTruth& z : cornersAt(c, sampled[j].ordinal, tracks.views[v].camera))
+					{
+						if (a.corner == z.corner)
+							slowest = std::min(slowest, math::length(a.pixel - z.pixel));
+					}
 				}
 			}
 		}
 	}
 	CHECK(slowest > 10.0);
-	// What the board hides in most of the sampled frames, where no static feature can come from.
-	// Measured: at most 5.3% of an image.
+	// What the board hides in most of the sampled frames, where no static feature can come from, cast
+	// into the scene at each sampled frame. Measured: at most 4.6% of an image, over 5 sampled frames.
+	std::vector<rigplan::SceneResult> atFrame;
+	for (std::size_t frame = 0; frame < kFrames; ++frame)
+		atFrame.push_back(rigplan::renderScene(c.scene.plan, c.scene.realisation, c.scene.assets, frame));
 	double hidden = 0;
-	for (std::size_t c = 0; c < rig.identities.size(); ++c)
+	for (std::size_t v = 0; v < tracks.views.size(); ++v)
 	{
+		const rigplan::RealisedCamera& camera = realised(c, tracks.views[v].camera);
 		std::size_t points = 0, covered = 0;
 		for (int y = 8; y < 720; y += 16)
 		{
 			for (int x = 8; x < 1280; x += 16)
 			{
 				std::size_t on = 0;
-				for (const media::FrameRef& frame : tracks.views[c].frames)
+				for (const media::FrameRef& frame : tracks.views[v].frames)
 				{
-					const std::optional<synthetic::Hit> hit =
-						synthetic::truthAt(rig.scene, rig.model, rig.worldFromCamera[c], math::Vec2d{double(x), double(y)}, frame.ordinal);
-					on += hit && hit->surface == synthetic::kBoardSurface ? 1 : 0;
+					const std::optional<rigplan::testing::SceneHit> hit =
+						rigplan::testing::cast(atFrame.at(frame.ordinal), camera, math::Vec2d{double(x), double(y)});
+					on += hit && hit->owner.object == rigplan::SceneObject::Board ? 1 : 0;
 				}
-				covered += on * 2 > tracks.views[c].frames.size() ? 1 : 0;
+				covered += on * 2 > tracks.views[v].frames.size() ? 1 : 0;
 				++points;
 			}
 		}
@@ -274,47 +365,55 @@ TEST_CASE("one rig registered with a board and without one agrees with itself an
 	}
 	CHECK(hidden < 0.1);
 
-	// 2. Each method against the truth, and the two against each other, in the truth's metres.
-	// Measured: the board result 0.34 mrad and 0.61 mm from the truth with no scale fitted (a fitted
-	// scale of 1.00004); the targetless result 0.74 mrad and 1.8 mm, once scaled; the two 0.55 mrad
-	// and 1.3 mm apart, the board's scale making the targetless result metric (one normalised unit is
-	// 4.18 m). The cameras stand 3.2 m from the scene and 0.6 m apart, the board 1.6 m away.
+	// 2. Each method against the truth, and the two against each other, in the truth's metres. The
+	// truth is relative to the rig plan's first camera and both methods chose another, so the
+	// comparison derives the truth again for theirs. Measured, on a hardware GPU and on the CPU device:
+	// - the board result 0.15 and 0.20 mrad and 0.34 and 0.41 mm from the truth once scaled, by 1.00014
+	//   and 1.00018; unscaled, its centres 0.26 and 0.33 mm out;
+	// - the targetless result 1.02 and 0.25 mrad and 2.72 and 0.87 mm, scaled by 4.219 and 4.223;
+	// - the two 0.91 and 0.34 mrad and 2.72 and 1.03 mm apart.
+	// The targetless result moves with the device as much as with the seed (WORK.md, *Fixed-rig footage
+	// from committed rig plans*), so its bounds keep a hardware GPU's margin. The cameras stand 3.2 m
+	// from the room's far side and 0.6 m apart, the board 1.6 m away.
 	const std::optional<registration::RegisteredRig> byBoard = board.rig();
 	const std::optional<registration::RegisteredRig> byScene = targetless.rig();
 	REQUIRE(byBoard.has_value());
 	REQUIRE(byScene.has_value());
-	// Both chose cam01, which every camera shares the most with.
-	CHECK(byBoard->reference == rig.identities[1]);
-	CHECK(byScene->reference == rig.identities[1]);
-	const registration::RegisteredRig truth = compare::truthRig(rig.identities, rig.worldFromCamera, byBoard->reference);
-	const RigComparison boardTruth = compareRigs(truth, *byBoard);
+	CHECK(byBoard->reference == c.identities[1]);
+	CHECK(byScene->reference == c.identities[1]);
+	CHECK(c.truth.reference == c.identities[0]);
+	const RigComparison boardTruth = compareRigs(c.truth, *byBoard);
+	REQUIRE(boardTruth.compared());
+	// Unscaled, against the truth relative to the board's own reference, derived from truth/poses.json.
+	const registration::RegisteredRig truthAtReference = rigplan::rigRelativeTo(c.poses, byBoard->reference.value);
 	double unscaled = 0;
-	for (std::size_t c = 0; c < truth.cameras.size(); ++c)
+	for (std::size_t i = 0; i < truthAtReference.cameras.size(); ++i)
 	{
-		unscaled = std::max(unscaled, math::length(byBoard->cameras[c].referenceFromCamera.translation() -
-												   truth.cameras[c].referenceFromCamera.translation()));
+		unscaled = std::max(unscaled, math::length(byBoard->cameras[i].referenceFromCamera.translation() -
+												   truthAtReference.cameras[i].referenceFromCamera.translation()));
 	}
 	CHECK(std::abs(boardTruth.scale - 1.0) < 0.001);
 	CHECK(boardTruth.worstRotation()->rotation < 0.001);
 	CHECK(unscaled < 0.002);
-	const RigComparison sceneTruth = compareRigs(truth, *byScene);
+	const RigComparison sceneTruth = compareRigs(c.truth, *byScene);
+	REQUIRE(sceneTruth.compared());
 	CHECK(sceneTruth.worstRotation()->rotation < 0.0015);
 	CHECK(sceneTruth.worstCentre()->centre < 0.004);
 	const RigComparison between = compareRigs(*byBoard, *byScene);
+	REQUIRE(between.compared());
 	CHECK(between.worstRotation()->rotation < 0.0015);
 	CHECK(between.worstCentre()->centre < 0.004);
-	for (const RigComparison* c : {&boardTruth, &sceneTruth, &between})
+	for (const RigComparison* comparison : {&boardTruth, &sceneTruth, &between})
 	{
-		CHECK(c->onlyExpected.empty());
-		CHECK(c->onlyFound.empty());
+		CHECK(comparison->onlyExpected.empty());
+		CHECK(comparison->onlyFound.empty());
 	}
 
 	// 3. Both validated on the tracks the targetless registration held out: the same predictions of
-	// the same members, so the two numbers compare one method with the other. Measured: 101 tracks,
-	// 259 members (110 of them scored against the epipolar plane); 0.70 mrad for the board's result,
-	// 0.72 for the targetless one, though the board's is twice as close to the truth. Held-out
-	// transfer sees what the tracks can see: a camera turned (below), not the rig's weak mode, which
-	// is what the bootstrap's rotation spread is for.
+	// the same members, so the two numbers compare one method with the other. Held-out transfer sees
+	// what the tracks can see: a camera turned (below), not the rig's weak mode, which is what the
+	// bootstrap's rotation spread is for. Measured: 55 and 54 tracks, 150 and 147 members; 0.69 and
+	// 0.66 mrad for the board's result, 0.72 and 0.65 for the targetless one.
 	const std::vector<std::string>& held = targetless.diagnostics.heldOutUnits;
 	const registration::HeldOutEvidence onBoard = evidence(registration::validate(cameras, board, tracks, held));
 	const registration::HeldOutEvidence onScene = evidence(registration::validate(cameras, targetless, tracks, held));
@@ -330,152 +429,54 @@ TEST_CASE("one rig registered with a board and without one agrees with itself an
 
 	// 4. The guard: one camera of the board's result turned 5 mrad about its own centre. Its
 	// baselines all lie in a near-horizontal plane, so a pan keeps its rays in their epipolar planes,
-	// where a two-member track cannot see it, and a tilt takes them out. Measured, cam02's transfer
-	// and the rig's RMS from 0.58 and 0.70 mrad:
-	// - pan: cam02 3.78 mrad, the rig 4.51; in two-member tracks 0.53 -> 0.71, in longer ones
-	//   0.62 -> 5.07;
-	// - tilt: cam02 5.75 mrad, the rig 4.12; in two-member tracks 0.53 -> 6.63, in longer ones
-	//   0.62 -> 4.90.
-	// Either way the rig's RMS crosses Ready's 2 mrad, but only because it has four cameras. That is why
-	// fitness judges each camera's held-out residual too since 2026-10-20 (FitnessThresholds), so one
-	// such camera among many is seen.
+	// where a two-member track cannot see it, and a tilt takes them out. Either way the rig's RMS
+	// crosses Ready's 2 mrad, but only because it has four cameras. That is why fitness judges each
+	// camera's held-out residual too since 2026-10-20 (FitnessThresholds), so one such camera among
+	// many is seen. Measured, cam02's transfer and the rig's RMS on a hardware GPU, then the CPU device:
+	// - pan: cam02 4.13 and 3.98 mrad, the rig 4.71 and 4.81; in two-member tracks 0.67 -> 0.72 and
+	//   1.22 -> 1.46, in longer ones 0.45 -> 4.97 and 0.19 -> 5.00;
+	// - tilt: cam02 5.43 and 5.79 mrad, the rig 3.76 and 4.30; in two-member tracks 0.67 -> 6.6 and
+	//   1.22 -> 7.0, in longer ones 0.45 -> 4.77 and 0.19 -> 4.79.
+	// So a pan is judged by how little it moves two-member tracks, not by where they end: about 25 of
+	// them per camera, and on the CPU device's footage they start above 1 mrad.
 	const std::vector<std::string> pairs = withMembers(tracks, held, 2, false);
 	const std::vector<std::string> longer = withMembers(tracks, held, 3, true);
+	const double untouchedTwo = perCamera(evidence(registration::validate(cameras, board, tracks, pairs)), c.identities[2]);
 	for (const bool tilt : {false, true})
 	{
 		CAPTURE(tilt);
 		registration::Report turned = board;
-		for (registration::RegisteredCamera& c : turned.cameras)
+		for (registration::RegisteredCamera& camera : turned.cameras)
 		{
-			if (c.camera == rig.identities[2])
-				c.referenceFromCamera = c.referenceFromCamera *
-										math::RigidTransformd{math::angleAxis(0.005, tilt ? math::Vec3d{1, 0, 0} : math::Vec3d{0, 1, 0}),
-															  math::Vec3d{0.0}};
+			if (camera.camera == c.identities[2])
+				camera.referenceFromCamera = camera.referenceFromCamera *
+											 math::RigidTransformd{math::angleAxis(0.005, tilt ? math::Vec3d{1, 0, 0} : math::Vec3d{0, 1, 0}),
+																   math::Vec3d{0.0}};
 		}
 		const registration::HeldOutEvidence all = evidence(registration::validate(cameras, turned, tracks, held));
 		const registration::HeldOutEvidence two = evidence(registration::validate(cameras, turned, tracks, pairs));
 		const registration::HeldOutEvidence more = evidence(registration::validate(cameras, turned, tracks, longer));
-		CHECK(perCamera(all, rig.identities[2]) > (tilt ? 4.5e-3 : 3e-3));
+		CHECK(perCamera(all, c.identities[2]) > (tilt ? 4.5e-3 : 3e-3));
 		CHECK(all.rmsAngle > 0.002);
-		CHECK(perCamera(more, rig.identities[2]) > 4e-3);
+		CHECK(perCamera(more, c.identities[2]) > 4e-3);
 		if (tilt)
-			CHECK(perCamera(two, rig.identities[2]) > 5e-3);
+			CHECK(perCamera(two, c.identities[2]) > 5e-3);
 		else
-			CHECK(perCamera(two, rig.identities[2]) < 1e-3);
+			CHECK(perCamera(two, c.identities[2]) - untouchedTwo < 0.5e-3);
 	}
 
-	// 5. Every track is a point of the scene behind the board: none of the board's features got in.
-	// Measured: 2 of 503 off it, and both are wrong matches between scene features the board hid in 2
-	// of 5 sampled frames, not the board's: one 275 mrad out, one a two-camera match 138 px along its
-	// epipolar line, which the plane sees as 7.8 mrad. Every other member within 15.9 px.
-	const rendered::StillScene still = rendered::stillScene(rig, tracks);
-	CHECK(still.off * 100 <= tracks.tracks.size());
+	// 5. Every track is a point of the room behind the board: none of the board's features got in.
+	// Measured: 2 of 274 and 3 of 269 off it, and none is the board's, which covers their pixels in at
+	// most 2 of 5 sampled frames. Each is a wrong match between features of the floor or the far wall
+	// that are not one point: its members' rays meet the room 73 mm to 1.4 m apart. Validation against
+	// the truth sees one of the five (12 mrad out); the other four are two-member tracks slid along
+	// their epipolar line, which the plane they are scored against cannot see. Every other member
+	// within 17.2 px. With extraction's static rule disabled, 825 of 1191 and 733 of 1097 tracks are
+	// off it.
+	const StillScene still = stillScene(c, tracks);
+	CHECK(still.off * 50 <= tracks.tracks.size());
 
-	// 6. Both results against their profiles. Measured, targetless against registration-targetless/1's
-	// Ready: 220 tracks for the fewest-shared camera (100), no weak bridge, 0.72 mrad held out (2),
-	// a rotation spread of 0.53 mrad (1) and a translation spread of 0.034% of depth (0.5%), and 15
-	// outliers in 1042 observations (5%); a seed angle of 7.6 degrees, 503 tracks, 402 fitted. Board
-	// against registration/1: 0.083 mrad held out, a rotation spread of 0.25 mrad, 0.027% (0.46 mm).
+	// 6. Both results against their profiles: Ready on both devices.
 	CHECK(targetless.verdict == Verdict::Ready);
 	CHECK(board.verdict == Verdict::Ready);
-}
-
-TEST_CASE("the rig's feature tracks measured against their truth", "[camera][registration][comparison]")
-{
-	lain::testing::skipInDebug("the comparison runs in Release builds: a Debug build takes seconds to draw each HD frame");
-	const lain::testing::ThreadPool pool;
-	const Footage f = footage();
-	const rendered::Rig& rig = f.rig;
-	const std::vector<registration::RigCamera> cameras = rendered::camerasOf(rig);
-	// The truth scored as a registration, so validate measures the tracks alone.
-	const registration::Report truth = compare::truthReport(rig.identities, compare::rebased(rig.worldFromCamera, 1));
-
-	// Measured, the default extraction (native search, Exact): 503 tracks in 20.6 s, 1.47 descriptor
-	// rows per feature, 2 features dropped as ambiguous, 3 conflicts rejected. Approximate search:
-	// the same 503 tracks in 1.86 s. Half scale: 464 tracks in 1.22 s.
-	const feature::ExtractionResult native = feature::extractTracks(rig.footage, rig.groups, feature::ExtractionRequest{});
-	REQUIRE(native.ok());
-	std::uint64_t found = 0, orientations = 0;
-	for (const feature::CameraExtraction& c : native.report.cameras)
-	{
-		found += c.found;
-		orientations += c.orientations;
-	}
-	const double rowsPerFeature = double(found) / double(found - orientations);
-	CHECK(rowsPerFeature > 1.3);
-	CHECK(rowsPerFeature < 1.6);
-	// The feature cap is not what limits these frames: measured, about 1100 features a frame (1620
-	// rows), against a cap of 8192.
-	for (const feature::CameraExtraction& c : native.report.cameras)
-		CHECK(c.capped == 0);
-	feature::ExtractionRequest approximate;
-	approximate.matching.search = feature::MatchSearch::Approximate;
-	const feature::ExtractionResult fast = feature::extractTracks(rig.footage, rig.groups, approximate);
-	REQUIRE(fast.ok());
-	CHECK(double(fast.trackSet.tracks.size()) > 0.95 * double(native.trackSet.tracks.size()));
-	feature::ExtractionRequest half;
-	half.scale = ScaleFactor{0.5};
-	const feature::ExtractionResult coarse = feature::extractTracks(rig.footage, rig.groups, half);
-	REQUIRE(coarse.ok());
-
-	for (const feature::ExtractionResult* extracted : {&native, &coarse})
-	{
-		CAPTURE(extracted->report.cameras.front().scale);
-		const std::vector<TrackTruth> tracks = truthOf(cameras, truth, *extracted);
-		std::vector<std::string> good, pairs, longer;
-		for (const TrackTruth& track : tracks)
-		{
-			if (track.residual > 0.01)
-				continue;
-			good.push_back(track.id);
-			(track.members == 2 ? pairs : longer).push_back(track.id);
-		}
-
-		// Wrong tracks that verified: more than 10 mrad from where the truth puts them. Measured: 2 of
-		// 503 natively, one 275 mrad out on a 2 px feature and one 13 mrad out on a 42 px one; 1 of 464
-		// at half scale. Everything else: a median of 0.16 mrad and a 95th percentile of 2.1. The
-		// wrong ones are why validate over every track reads 15.3 mrad natively: its RMS has no robust
-		// loss, so one wrong track among the held-out ones would fail Ready's 2 mrad on its own
-		// (WORK.md, sub-slice 9).
-		const std::size_t wrong = tracks.size() - good.size();
-		CHECK(wrong * 100 <= tracks.size());
-		CHECK(rmsOver(cameras, truth, extracted->trackSet, good) < 0.0012);
-
-		// The epipolar doubling: two-member tracks against longer ones, both against the truth.
-		// Measured: 0.98 against 0.78 mrad natively (287 and 214 tracks), 1.18 against 0.95 at half
-		// scale, a ratio of 1.25 both times. Counting an epipolar residual twice over-counts a little,
-		// as expected: it carries both members' noise out of the plane, where a transfer residual
-		// carries one member's and a landmark fixed by two or more others.
-		const double ratio = rmsOver(cameras, truth, extracted->trackSet, pairs) /
-							 rmsOver(cameras, truth, extracted->trackSet, longer);
-		CHECK(ratio > 1.0);
-		CHECK(ratio < 1.5);
-
-		// The localisation model, size band by size band: each band's RMS against its RMS stated sigma,
-		// on the tracks that are right. Measured, natively: 1.25, 1.50 and 1.40 for 4-8, 8-16 and over 16
-		// processed px, about the root two a transfer between two equally sure members should show;
-		// and 13 for features under 4 px (a median of 2.3 times the stated sigma, against 0.2 above),
-		// which is SIFT's doubled first octave stating 0.1 px where it localises to about 1. At half
-		// scale: 1.65, 1.80, 2.33 and 1.39, small features included. A floor on the stated sigma did not
-		// help: on this footage 0.25 px left the rig where it was and 0.5 px moved it from 0.74 to
-		// 1.31 mrad, since it takes weight from the features that are right (WORK.md, sub-slice 9).
-		for (const auto& [low, high] : {std::pair<double, double>{4, 8}, {8, 16}, {16, 1e9}})
-		{
-			std::vector<std::string> ids;
-			double sigmas = 0;
-			for (const TrackTruth& track : tracks)
-			{
-				if (track.residual > 0.01 || track.size < low || track.size >= high)
-					continue;
-				ids.push_back(track.id);
-				sigmas += track.sigma * track.sigma;
-			}
-			CAPTURE(low);
-			REQUIRE(ids.size() > 20);
-			const double stated = std::sqrt(sigmas / double(ids.size()));
-			const double measured = rmsOver(cameras, truth, extracted->trackSet, ids) / stated;
-			CHECK(measured > 1.0);
-			CHECK(measured < 2.6);
-		}
-	}
 }
