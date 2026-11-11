@@ -719,7 +719,9 @@ namespace lain::rigplan
 		return result;
 	}
 
-	SceneResult renderScene(const RigPlan& plan, const Realisation& realisation, const SceneAssets& assets, std::size_t frame)
+	// A scene of `realisation`, a build of `plan`: its mounts and lights where the build put them, or a
+	// problem saying it is a build of another plan.
+	static SceneResult realisedScene(const RigPlan& plan, const Realisation& realisation, const SceneAssets& assets, std::size_t frame, Drawn drawn)
 	{
 		const bool mountsMatch = realisation.mounts.size() == plan.mounts.size();
 		const bool lightsMatch = realisation.lights.size() == plan.lights.size();
@@ -736,12 +738,17 @@ namespace lain::rigplan
 				return std::nullopt;
 			return realisation.lights[i].planFromLight;
 		};
-		SceneResult result = buildScene(plan, poses, assets, frame, Drawn::Everything);
+		SceneResult result = buildScene(plan, poses, assets, frame, drawn);
 		if (!mountsMatch)
 			result.problems.push_back("the realisation is not of this rig plan: its mounts differ");
 		if (!lightsMatch)
 			result.problems.push_back("the realisation is not of this rig plan: its lights differ");
 		return result;
+	}
+
+	SceneResult renderScene(const RigPlan& plan, const Realisation& realisation, const SceneAssets& assets, std::size_t frame)
+	{
+		return realisedScene(plan, realisation, assets, frame, Drawn::Everything);
 	}
 
 	// The poses a nominal layout gives, where it has them. They read `plan` and `layout`, which must
@@ -774,5 +781,10 @@ namespace lain::rigplan
 	SceneResult staticScene(const RigPlan& plan, const NominalLayout& layout, const SceneAssets& assets)
 	{
 		return buildScene(plan, nominalPoses(plan, layout), assets, 0, Drawn::Static);
+	}
+
+	SceneResult staticScene(const RigPlan& plan, const Realisation& realisation, const SceneAssets& assets)
+	{
+		return realisedScene(plan, realisation, assets, 0, Drawn::Static);
 	}
 } // namespace lain::rigplan

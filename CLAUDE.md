@@ -1400,6 +1400,31 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-11 — fixed-rig footage, step 2: `lain::rigplan::testing`, and a render scene's ray cast
+
+Step 2 of NOTES.txt follow-up 6 is built. `libs/rigplan/testing` is an INTERFACE target built with the
+tests. It holds:
+
+- `examplePlan`, moved from the flowview capture vertical;
+- `renderCapture` and `captureScene`, which give what a capture was rendered from without a device;
+- `cast` / `rayThrough`: what a camera's ray met in a rig plan's render scene.
+
+`ctest -j8` gives **1717/1717** MSVC Debug and **1725/1725** MSVC Release, with video, camera and Ceres
+on (+3 each). The build is warning-clean and format-check is clean. Full notes are in WORK.md's *Step 2
+built*. **Not run:** GCC and macOS.
+
+- **No second ray cast and no second still rule.** rigplan's picking already had the CPU ray cast. It
+  moved to `lain::render` (`raycast.h`: `Ray`, `hitTriangle`, `hitInstance`), and the editor's `pick` now
+  asks it there. The still scene is a new `staticScene(plan, realisation, assets)` over `buildScene`'s
+  existing rule: boards, path props and clip props are left out. The tests use the same rule as the
+  visibility map.
+- **Deviation:** there is no `stillPoint(..., ray)`. A scene is built once and asked many rays, so
+  `cast(scene, ...)` takes any `SceneResult`. It is the still one for "is this track a point of the room",
+  and the whole one at a frame for "did the board hide this".
+- **Three driver-free cases**: rays to a wall land on its plane and project back to their pixels within
+  1e-6 px; a pole stands at its realised mount; a ray through the board meets it, and in the still scene
+  meets the wall behind it. Two sabotages, each caught by the case aimed at it.
+
 ### Update 2026-11-10 — fixed-rig footage from committed rig plans planned; step 1, `two-methods.json`, built
 
 NOTES.txt follow-up 6 (point 4b) is planned on M15 in six steps, in WORK.md's *Fixed-rig footage from

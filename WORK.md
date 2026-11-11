@@ -19875,7 +19875,7 @@ Verified:
   the `seedOf` case), M9's rendered suites among them, since they draw the texture item 2 touched;
   warning-clean; `format-check` clean. **Not run:** GCC and macOS.
 
-## Fixed-rig footage from committed rig plans (planned 2026-11-10; step 1 built)
+## Fixed-rig footage from committed rig plans (planned 2026-11-10; steps 1 and 2 built)
 
 NOTES.txt follow-up 6, from the answer to point 4b: M9's fixed-rig end-to-end footage moves off
 `texturedscene.h`, the exact per-ray renderer, onto a committed M15 rig plan rendered by
@@ -19910,8 +19910,8 @@ Read against the code, the answer overclaimed:
 ### Build order
 
 1. **The committed plan** (built, below).
-2. **A `lain::rigplan::testing` target**: `examplePlan`, a capture-rendering helper, and `stillPoint`,
-   the ray cast, with driver-free tests of its own.
+2. **A `lain::rigplan::testing` target**: `examplePlan`, a capture-rendering helper, and a ray cast,
+   with driver-free tests of its own (built, below; the cast is `cast`, not the planned `stillPoint`).
 3. **`test_comparison` on the capture**, in a new `test-camera-comparison` executable, its truth read
    from the capture and every bound measured again on both device kinds.
 4. **`test_targetlesse2e.cpp` and `renderedrig.h` deleted.**
@@ -19986,6 +19986,59 @@ realised models and compared each result with the truth.
   where no board renderer is.
 - **Sabotage, caught:** the builder's lamp intensity changed without regenerating fails both the byte
   comparison and the read-back comparison.
+
+### Step 2 built (2026-11-11): `lain::rigplan::testing`, and a render scene's ray cast
+
+`libs/rigplan/testing` is an INTERFACE target, built with the tests. It holds:
+
+- `examplePlan(name)` (`exampleplan.h`), moved from `test_capturevertical.cpp`. `LAIN_RIGPLAN_EXAMPLES_DIR`
+  is now the target's definition.
+- `renderCapture(plan, device, options)` (`capture.h`): `writeCapture`, required whole. Beside it is
+  `captureScene(plan, options)`, which gives what a capture was rendered from: `capturedPlan`, its
+  realisation and its assets, exactly as `writeCapture` makes them. A test can then ask what a pixel
+  showed without a device.
+- `cast(scene, ray)`, `rayThrough(camera, pixel)` and `cast(scene, camera, pixel)` (`scenecast.h`): the
+  nearest instance of a `SceneResult` that a camera's ray meets, through the camera's own realised model.
+
+Two pieces are production code, so the tests ask the routines the editor and the visibility map use, not
+copies of them:
+
+- **`render::hitTriangle` / `render::hitInstance` (`lain/render/raycast.h`) were hoisted from rigplan's
+  picking**, which already had the CPU ray cast. This is Moller-Trumbore over a render scene's
+  instances, from either face, with the edge slack the editor's click on a plane's centre needed. The
+  editor's `pick` and the tests now share it. `rigplan::Ray` is `lain::render::Ray` by a
+  using-declaration, so the picking code and its tests are unchanged.
+- **`staticScene(plan, realisation, assets)`** is the still scene of one build, its poles at their
+  realised mounts. It sits beside the nominal overload the visibility map counts over, and shares
+  `buildScene`'s one rule for what never moves: a board, and a prop with a path or a clip, are left out.
+  The tests therefore carry no second statement of that rule.
+
+**Deviation: there is no `stillPoint(plan, realisation, assets, frame, ray)`.** A test asks one scene
+many rays (a track set's first members, a grid of pixels at each sampled frame), so a scene is built
+once and cast into. `staticScene` gives the still scene. `renderScene` gives the whole scene at a frame,
+which the hidden-fraction check needs, since there the board is the answer.
+
+`test_capturevertical` now reads its plan and renders its capture through the target.
+
+#### Verified
+
+- **Three driver-free cases**, each judged against geometry the plan states, never against another cast:
+  - cam0's rays through the image's corners, its centre and one more pixel meet the north wall at
+    y = 4 to 1e-9. Each point, projected back through the realised model, lands on its own pixel within
+    1e-6 px.
+  - A ray aimed along the pole's draw meets the pole at its realised axis, one radius short of it within
+    a 32-sided cylinder's sag. The room behind it is not what it meets.
+  - A ray through the centre of the board's squares meets the board at frame 0, and the wall behind it
+    (y = 5) in the still scene.
+- **Two sabotages, both caught:**
+  - A static scene keeping its boards fails the board case and the existing static-scene case.
+  - The realised overload built from nominal poses fails the pole case alone.
+- The editor's picking cases pass through the hoisted cast.
+- `ctest -j8`: **1717/1717** MSVC Debug and **1725/1725** MSVC Release, with video, camera and Ceres on
+  (+3 each). The capture vertical ran in Release on both device kinds (93 s), through `examplePlan` and
+  `renderCapture`. The build is warning-clean and format-check is clean.
+- With all three off, the configuration generates; it was not built.
+- **Not run:** GCC and macOS.
 
 ## Outstanding work — one index
 
@@ -20338,7 +20391,7 @@ The rest of the answers' follow-ups, each its own commit. *(§NOTES.txt (2026-11
   committed rig plans (below), which leaves `texturedscene.h` only the moving-camera generator.
 - **Fixed-rig end-to-end footage from committed rig plans** (M15): `test_comparison`,
   `test_targetlesse2e` and flowview's textured rig onto `two-methods.json`. Planned 2026-11-10 in six
-  steps; step 1 (the plan) built. *(§Fixed-rig footage from committed rig plans.)*
+  steps; step 1 (the plan) and step 2 (`lain::rigplan::testing`) built. *(§Fixed-rig footage from committed rig plans.)*
 - **Node sets under `plugins/flow/{image,sequence,camera}`**, always built (a node kind is vocabulary),
   with `CompareNode` moving to `libs/flow/nodes`.
 - **Measurements out of ctest**: a `camera-bench` for the Release-only and `[scale]` cases.

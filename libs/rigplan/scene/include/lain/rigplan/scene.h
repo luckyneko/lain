@@ -194,4 +194,9 @@ namespace lain::rigplan
 	// since a distance pass reads none, so it needs no picture or bake: only the meshes. A static prop
 	// whose mesh `assets` lacks is a problem, and the scene is incomplete until it has it.
 	SceneResult staticScene(const RigPlan& plan, const NominalLayout& layout, const SceneAssets& assets);
+
+	// The same, of one build of `plan` (realise()): its poles at their realised mounts. What a capture
+	// of that build shows behind its movers, for a test asking what a camera's ray met in the still
+	// scene (a feature the board or a walking figure carried is no point of it).
+	SceneResult staticScene(const RigPlan& plan, const Realisation& realisation, const SceneAssets& assets);
 } // namespace lain::rigplan

@@ -29,14 +29,13 @@
 #include <lain/camera/registration/report.h>
 #include <lain/core/factory.h>
 #include <lain/core/uri.h>
-#include <lain/data/value.h>
 #include <lain/flow/node.h>
-#include <lain/io/data/load.h>
 #include <lain/io/image/codecs.h>
 #include <lain/io/mesh/codecs.h>
 #include <lain/io/sequence/openers.h>
 #include <lain/rigplan/capture.h>
-#include <lain/rigplan/serialize/rigplan.h>
+#include <lain/rigplan/testing/capture.h>
+#include <lain/rigplan/testing/exampleplan.h>
 #include <lain/testing/scratch.h>
 #include <lain/testing/skip.h>
 #include <lain/testing/threadpool.h>
@@ -83,20 +82,6 @@ static std::optional<camera::registration::RegisteredRig> readRig(const fs::path
 	INFO("problems: " << read.problems.size() << (read.problems.empty() ? "" : ", the first " + read.problems.front()));
 	CHECK(read.problems.empty());
 	return read.value;
-}
-
-// The committed rig plan, read as `rigplan render` reads a document: its paths against its folder,
-// its shape strictly.
-static rigplan::RigPlan examplePlan(const std::string& name)
-{
-	const fs::path file = fs::path(LAIN_RIGPLAN_EXAMPLES_DIR) / (name + ".json");
-	std::optional<data::Value> document = io::data::load(core::Uri::fromPath(file));
-	REQUIRE(document.has_value());
-	rigplan::resolvePaths(*document, file.parent_path());
-	const rigplan::RigPlanRead read = rigplan::rigPlanFromValue(*document);
-	INFO("problems: " << read.problems.size() << (read.problems.empty() ? "" : ", the first " + read.problems.front()));
-	REQUIRE(read.plan.has_value());
-	return *read.plan;
 }
 
 // A committed flowview example document.
@@ -168,15 +153,11 @@ TEST_CASE("a synthetic capture registers near-exactly with its true models and w
 
 	// 1. The committed plan, rendered as it is stored: intrinsic scale 1 with installation locked to it,
 	// the sensor's own noise, its own seed.
-	const rigplan::RigPlan plan = examplePlan("three-poles");
+	const rigplan::RigPlan plan = rigplan::testing::examplePlan("three-poles");
 	rigplan::CaptureOptions options;
 	options.out = dir / "capture";
-	const rigplan::CaptureReport written = rigplan::writeCapture(plan, device, options);
-	INFO("capture problems: " << written.problems.size() << (written.problems.empty() ? "" : ", the first " + written.problems.front()));
-	REQUIRE(written.problems.empty());
-	CHECK(written.framesWritten == plan.cameras.size() * plan.timeline.frames);
+	rigplan::testing::renderCapture(plan, device, options);
 	const fs::path capture = options.out;
-	REQUIRE(fs::exists(capture / "capture.json"));
 
 	core::Factory<flow::Node> factory;
 	flowview::registerExampleNodes(factory, 8);

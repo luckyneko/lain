@@ -214,6 +214,7 @@ endif()
 # Test-support, built only when there are tests to support (see libs/testing/scratch.h).
 if(LAIN_BUILD_TESTING)
 	add_subdirectory(libs/testing)      # collision-free scratch paths for parallel ctest
+	add_subdirectory(libs/rigplan/testing) # the example rig plans, a capture, and what a camera's ray met
 endif()
 
 # ---- Plugins (swappable satellites: lain::io::image::<fmt> codecs) ----------

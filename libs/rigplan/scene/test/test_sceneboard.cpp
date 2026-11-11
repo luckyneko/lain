@@ -1,21 +1,25 @@
 // A board mover in a rig plan's render scene, drawn by a stand-in board renderer: its own executable,
 // since a renderer registry only grows and test_scene.cpp's must have none. The sheet's geometry is held
-// to the board frame on the CPU, and its plain back on the device (SKIPs where there is none). And a
-// moving board's frames share every other mesh and texture, so an update between them uploads none.
+// to the board frame on the CPU, and its plain back on the device (SKIPs where there is none). A ray
+// through the board meets it at its frame and the room behind it in the still scene. And a moving
+// board's frames share every other mesh and texture, so an update between them uploads none.
 
 #include "gpu.h"
 #include "standinboard.h"
 #include "testplan.h"
 
 #include <lain/camera/board/rendering.h>
+#include <lain/camera/projection.h>
 #include <lain/render/renderer.h>
 #include <lain/rigplan/mover.h>
 #include <lain/rigplan/scene.h>
+#include <lain/rigplan/testing/scenecast.h>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstring>
+#include <optional>
 #include <string>
 
 using namespace lain;
@@ -125,6 +129,44 @@ TEST_CASE("a board the renderer will not draw is named", "[rigplan][scene][mover
 	REQUIRE(assets.problems.size() == 1);
 	CHECK(assets.problems[0].find("board 'charuco'") != std::string::npos);
 	CHECK(assets.assets.boards.empty());
+}
+
+TEST_CASE("a ray through the board meets it at its frame, and the wall behind it in the still scene", "[rigplan][scene][mover][cast]")
+{
+	registerStandIn();
+	RigPlan plan = planWithBoard();
+	Room room;
+	room.centre = {0.0, 1.0};
+	room.size = {10.0, 8.0, 3.2}; // its north wall at y = 5, a metre behind the board's first key
+	plan.room = room;
+	const RealisationResult realised = realise(plan);
+	REQUIRE(realised.realisation);
+	const AssetsResult assets = loadSceneAssets(plan);
+	REQUIRE(assets.problems.empty());
+
+	// The pixel where cam0 sees the centre of the board's squares at frame 0, 0.875 m in front of it.
+	const RealisedCamera& cam0 = realised.realisation->cameras[0];
+	const math::Vec3d centre = plan.boards[0].path.keys[0].position;
+	const math::Vec3d inCamera = cam0.planFromCamera.inverse().apply(centre);
+	const camera::Projection<double> seen = camera::project(cam0.model, inCamera.x, inCamera.y, inCamera.z);
+	REQUIRE(seen.ok());
+	const math::Vec2d pixel{seen.u, seen.v};
+
+	const SceneResult atFrame = renderScene(plan, *realised.realisation, assets.assets, 0);
+	REQUIRE(atFrame.problems.empty());
+	const std::optional<rigplan::testing::SceneHit> board = rigplan::testing::cast(atFrame, cam0, pixel);
+	REQUIRE(board);
+	CHECK(board->owner.object == SceneObject::Board);
+	CHECK(board->owner.id == testplan::boardId);
+	CHECK(math::distance(board->point, centre) < 1e-6);
+
+	// What a feature recorded there would be if it were the room's: the wall, the board left out.
+	const SceneResult still = staticScene(plan, *realised.realisation, assets.assets);
+	REQUIRE(still.problems.empty());
+	const std::optional<rigplan::testing::SceneHit> behind = rigplan::testing::cast(still, cam0, pixel);
+	REQUIRE(behind);
+	CHECK(behind->owner.object == SceneObject::Room);
+	CHECK(behind->point.y == Catch::Approx(5.0).margin(1e-9));
 }
 
 TEST_CASE("a camera behind a board sees its plain back, not its pattern", "[rigplan][scene][mover][gpu]")

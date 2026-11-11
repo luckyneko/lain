@@ -151,11 +151,10 @@ if(TARGET lain::camera::opencv)
 	target_include_directories(test-flowview-capture PRIVATE "${lain_SOURCE_DIR}/libs/render/test")
 	target_compile_definitions(test-flowview-capture PRIVATE
 		LAIN_FLOWVIEW_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../examples"
-		LAIN_RIGPLAN_EXAMPLES_DIR="${lain_SOURCE_DIR}/apps/rigplan/examples"
 	)
 	target_link_libraries(test-flowview-capture PRIVATE
 		flowview-tested
-		lain::rigplan::capture lain::rigplan::serialize # the capture, and the rig plan document it renders
+		lain::rigplan::testing # the committed rig plan, rendered whole
 		lain::io::mesh::codecs							 # the meshes a rig plan names, as rigplan render registers them
 		lain::testing lain::warnings Catch2::Catch2WithMain
 	)
