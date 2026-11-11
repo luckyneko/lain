@@ -291,7 +291,7 @@ namespace lain::camera::synthetic
 		{
 			// Box-Muller over mt19937_64, since std::normal_distribution is implementation-defined. The one
 			// copy not on core::standardNormal, deliberately: the rendered suites' seeds pin behaviour this
-			// noise produced, so it moves with M15's rig-plan footage (WORK.md, Outstanding work).
+			// noise produced, so it moves when they are measured again anyway (WORK.md, Outstanding work).
 			const double u1 = (double(engine() >> 11) + 0.5) * 0x1.0p-53;
 			const double u2 = double(engine() >> 11) * 0x1.0p-53;
 			return std::sqrt(-2.0 * std::log(u1)) * std::cos(math::two_pi<double>() * u2);

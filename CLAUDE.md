@@ -1400,6 +1400,22 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-11 — fixed-rig footage, step 6: the docs (**COMPLETE**)
+
+The last of the six steps, docs only, so the plan is complete. Full notes are in WORK.md's *Step 6 built*.
+
+- **What it came to:** the fixed-rig end-to-end claims run on a rig plan's capture, both methods in
+  `test-camera-comparison` and the cli in `test-flowview-capture`. It did **not** come to one generator
+  of fixed-rig footage: `texturedscene.h` still draws fixed cameras where a truth at every ray is the
+  point (OpenCV's `test_features`, the tracks measured against their truth, `test_rendering`). Nor to
+  close to zero lines: 667 lines of code net, besides the 789-line plan.
+- **The noise trigger fired and the move is no cheaper**, since every suite with pinned seeds still
+  draws through `texturedscene.h`. Its row now waits for those suites to be measured again anyway, or
+  for rig plans to gain moving cameras.
+- **The `lain::camera::synthetic` trigger fired too**, and its objection went with
+  `testcameraparameters.h` at step 5. The repo owner decides it separately.
+- **CONTEXT.md is unchanged:** "still scene" stays test-support wording, apart from a *static feature*.
+
 ### Update 2026-11-11 — fixed-rig footage, step 5: flowview's targetless vertical on the capture
 
 `register-targetless.json` runs end to end on the committed `two-methods` capture, in a new

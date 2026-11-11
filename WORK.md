@@ -19729,17 +19729,21 @@ every include outside it is the angle form, in the `<lain/...>` block where clan
   apps whether or not the tests are, and it draws the camera examples' footage with the tests' own
   scenes (`camerafootage.cpp`, which `test-flowview` compiles too), so a person and a test see the same
   frames. It includes three headers that need no test framework (`syntheticfootage.h`,
-  `texturedscene.h`, `testcameraparameters.h`); the other nine assert through Catch2.
+  `texturedscene.h`, `testcameraparameters.h`); the other nine assert through Catch2. *(Amended
+  2026-11-11: two, since `testcameraparameters.h` folded back into `testcamera.h`; see the fixed-rig
+  footage's step 5.)*
 - **So Catch2 is linked only where it was built** (`if(TARGET Catch2::Catch2)`). In a build with the
   apps and not the tests, nine headers are unusable, which is exactly what was true of the directory
   before: `testcameraparameters.h` was split from `testcamera.h` for this tool. Including one of the
-  nine from the tool fails loudly, at the include, in that configuration.
+  nine from the tool fails loudly, at the include, in that configuration. *(Amended 2026-11-11: the
+  split is undone, its one Catch2-free consumer, the textured rig, having gone.)*
 - **Considered: two targets**, a framework-free `lain::camera::synthetic` for the footage and
   `lain::camera::testing` over it, so the tool could not reach a Catch2 header in any configuration.
   Not done: the review item asked for one target, and `testcameraparameters.h` is in `testing`'s
   namespace and used by 12 test sources, so the split would rename it there for one consumer. Trigger: a second
   non-test consumer, or the M15 rig-plan footage taking the fixed-rig scenes out of
-  `texturedscene.h` (Outstanding work).
+  `texturedscene.h` (Outstanding work). *(Amended 2026-11-11: the second trigger has fired and the
+  objection is gone; the decision is the repo owner's. See Outstanding work.)*
 - **The golden reports stay in `libs/camera/test/golden`.** They are the data of that directory's own
   cases, and `goldentext.h` already finds them through `LAIN_CAMERA_GOLDEN_DIR`, which the including
   test defines.
@@ -19875,7 +19879,7 @@ Verified:
   the `seedOf` case), M9's rendered suites among them, since they draw the texture item 2 touched;
   warning-clean; `format-check` clean. **Not run:** GCC and macOS.
 
-## Fixed-rig footage from committed rig plans (planned 2026-11-10; steps 1 to 5 built)
+## Fixed-rig footage from committed rig plans (planned 2026-11-10; built 2026-11-11)
 
 NOTES.txt follow-up 6, from the answer to point 4b: M9's fixed-rig end-to-end footage moves off
 `texturedscene.h`, the exact per-ray renderer, onto a committed M15 rig plan rendered by
@@ -19921,7 +19925,7 @@ Read against the code, the answer overclaimed:
    `camerasOf` stay, for the tracks measured against their truth (built, below).
 5. **flowview's textured rig onto the capture**: `test-flowview-capture` gains the targetless cli case,
    and `camerafootage`'s `writeTexturedRig` goes (built, below).
-6. **The docs**, with the triggers this fires.
+6. **The docs**, with the triggers this fires (built, below).
 
 ### Step 1 built (2026-11-10): `two-methods.json`
 
@@ -20205,6 +20209,52 @@ its footage sits". It runs in Release, on every device kind, as a user does:
   relative to cam2, 1.14 mrad and 2.73 mm from the truth.
 - **Not run:** the refusal case's branches, which only a build missing a backend reaches (CI's legs);
   GCC and macOS.
+
+### Step 6 built (2026-11-11): the docs, and what the six steps came to
+
+The plan is complete. What it came to, against what it set out to do:
+
+- **The fixed-rig end-to-end claims run on a rig plan's capture**, on every device kind, through the
+  path a user takes (lighting, the sensor model, the ray-table remap): both registration methods on one
+  rig in `test-camera-comparison`, and `register-targetless.json` through the cli in
+  `test-flowview-capture`.
+- **It did not come to one generator of fixed-rig footage.** `texturedscene.h` still draws fixed
+  cameras where a truth at every ray is the point: OpenCV's `test_features` (`truthAt`), the tracks
+  measured against their truth (kept on the per-ray footage at step 3, by the repo owner's call), and
+  `test_rendering`'s self-check. What has one generator now is the fixed-rig end-to-end footage.
+- **Nor to close to zero lines net**, as the plan predicted. Steps 1 to 5 add 667 lines of code net,
+  besides the 789-line committed plan. `test_comparison.cpp` kept its size (+8) while its second case
+  moved whole into `test_tracktruth.cpp` (257 lines), so its first case grew by most of that: it reads
+  its truth from the capture and casts into the still scene where it asked the per-ray renderer, and
+  every bound was measured again and written beside it. What is new is the plan's builder (167 lines),
+  the tested support in `lain::rigplan::testing` (166), and the ray cast (79, while rigplan's picking
+  lost 51) with its cases (133).
+
+#### The triggers it fired
+
+- **`texturedscene.h`'s pixel noise onto `core::standardNormal`.** Its trigger was this work, on the
+  premise that it would leave `texturedscene.h` only the moving-camera generator. That premise was
+  wrong (the list above), and the move is no cheaper: every suite whose seeds pin the noise's behaviour
+  still draws through it. The row now carries a trigger that would make it cheap, and
+  `texturedscene.h`'s comment beside the Box-Muller copy points at that rather than at this work.
+- **A framework-free `lain::camera::synthetic`.** Its fixed-rig trigger has fired, and the objection
+  that kept one target is gone: `testcameraparameters.h` folded back into `testcamera.h` at step 5. The
+  repo owner decides it separately; the row says what changed. The *`lain::camera::testing`* section's
+  three affected bullets are amended in place.
+- **The Outstanding row for this plan is deleted.**
+
+#### CONTEXT.md
+
+No new term. "Still scene" stays test-support wording, in `lain::rigplan::testing` and here: the
+public function is `rigplan::staticScene`, and what it holds is what CONTEXT.md's *Visibility map*
+already calls "what never moves". It is a different thing from a *static feature*, which is
+extraction's claim about a track; the still scene is the truth that claim is checked against, and
+keeping the words apart keeps the two apart.
+
+#### Verified
+
+Docs, plus one source comment: `format-check` is clean, and `texturedscene.h` changed in a comment
+only. Nothing was built or run again for this step.
 
 ## Outstanding work — one index
 
@@ -20552,23 +20602,27 @@ M12 §Not in this milestone.)*
 The rest of the answers' follow-ups, each its own commit. *(§NOTES.txt (2026-11-02).)*
 
 - **`texturedscene.h`'s pixel noise onto `core::standardNormal`**, its one Box-Muller copy left.
-  Moving it moves every rendered end-to-end suite, whose seeds pin behaviour (10e's seed-3 Ready
-  board, seed 5's principal-point case, per-platform SIFT numbers). Trigger: the fixed-rig footage from
-  committed rig plans (below), which leaves `texturedscene.h` only the moving-camera generator.
-- **Fixed-rig end-to-end footage from committed rig plans** (M15): `test_comparison`,
-  `test_targetlesse2e` and flowview's textured rig onto `two-methods.json`. Planned 2026-11-10 in six
-  steps; steps 1 to 5 built (the plan, `lain::rigplan::testing`, the comparison on the capture,
-  `test_targetlesse2e` retired, flowview's targetless vertical on the capture), the tracks measured
-  against their truth kept on the per-ray footage. Step 6, the docs, is left. *(§Fixed-rig footage
-  from committed rig plans.)*
+  Moving it moves every suite that draws noisy footage through it, whose seeds pin behaviour (10e's
+  seed-3 Ready board, seed 5's principal-point case, per-platform SIFT numbers). Its old trigger, the
+  fixed-rig footage from committed rig plans, has fired without making the move cheaper: those suites
+  all still draw through it (the calibration end-to-end suite, OpenCV's feature and sequence-feature
+  cases, the tracks measured against their truth, flowview's camera footage). Trigger: the next change
+  that measures those suites again anyway, so their seeds are pinned again in the same commit; or rig
+  plans gaining moving cameras, which would take the calibration suite off `texturedscene.h`.
+  *(§Fixed-rig footage from committed rig plans, step 6.)*
 - **Node sets under `plugins/flow/{image,sequence,camera}`**, always built (a node kind is vocabulary),
   with `CompareNode` moving to `libs/flow/nodes`.
 - **Measurements out of ctest**: a `camera-bench` for the Release-only and `[scale]` cases.
 - **`ExtractionParams`**: one place declaring and reading the five extraction settings both targetless
   nodes expose.
 - **A framework-free `lain::camera::synthetic` beside `lain::camera::testing`**, so a tool cannot reach
-  a Catch2 header in any configuration. Trigger: a second non-test consumer of the footage, or the
-  fixed-rig footage above. *(§`lain::camera::testing`.)*
+  a Catch2 header in any configuration. **Its fixed-rig trigger has fired; the repo owner decides it
+  separately.** What changed: the objection that kept it one target (`testcameraparameters.h`, in
+  `testing`'s namespace and used by 12 test sources) is gone, folded back into `testcamera.h` at the
+  fixed-rig footage's step 5, so `flowview-examples` now needs only `syntheticfootage.h` and
+  `texturedscene.h`. Three of the target's eleven headers reach no Catch2 header, counting what they
+  include: those two and `passthroughrefiner.h`. Its other trigger, a second non-test consumer, has not
+  fired. *(§`lain::camera::testing`; §Fixed-rig footage from committed rig plans, step 6.)*
 - **`lain::media::testing`** for `testsource.h`, which `libs/media/serialize/test` reaches by
   `../../test`. Trigger: a consumer outside `libs/media`. *(§`lain::camera::testing`.)*
 
