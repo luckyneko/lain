@@ -1400,6 +1400,23 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-12 — feature/M15's CI run after the fixed-rig footage: two macOS fixes
+
+[Run 43125621287](https://github.com/luckyneko/lain/actions/runs/43125621287) on `f3901a9`: seven jobs
+green, including the first GCC builds of the M9 merge and the fixed-rig plan. macOS Release failed 2 of
+1725 tests, each fixed. `ctest -j8` gives **1718/1718** MSVC Debug and **1726/1726** MSVC Release (+1
+each); warning-clean, format-check clean. Full notes in WORK.md's *feature/M15's CI run after the
+fixed-rig footage*.
+
+- **The targetless registration golden printed one digit differently on macOS** (`7.27842947` against
+  `...48`). It came from M9's `928751e`, never pushed from `feature/M9`. Snapping to 1e-9 then printing
+  nine digits cannot keep a value off a rounding boundary, so **`requireGolden` now compares line by
+  line**, each number within one unit of its last printed digit, the text exactly. No golden file
+  changed. Local `feature/M9`, pushed as it is, fails the same way.
+- **The comparison case's targetless half was Exploratory on macOS**, its one note cam3's rotation
+  variation at 1.03 mrad against 1, every other check held. It may now be Exploratory on that note
+  alone, as M9's HD lens case already allows; only the next CI run reaches that branch.
+
 ### Update 2026-11-11 — fixed-rig footage, step 6: the docs (**COMPLETE**)
 
 The last of the six steps, docs only, so the plan is complete. Full notes are in WORK.md's *Step 6 built*.
