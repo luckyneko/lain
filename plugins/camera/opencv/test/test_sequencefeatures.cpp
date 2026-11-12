@@ -2,7 +2,8 @@
 // (texturedscene.h's arcPath), so every track, match and matrix is judged against a known truth.
 // Targetless calibration's evidence, measured before a model exists (WORK.md, M9 slice 4,
 // sub-slice 8). Every bound is a measurement, written beside its check; the cases marked Release only
-// also record what sub-slice 10 decides on (the threshold, the sampled frames, the cap).
+// also record what sub-slice 10 decides on (the threshold, the sampled frames, the cap). What matching
+// costs in time is reported by bench-camera-opencv rather than checked here.
 
 #include "renderedfeatures.h"
 
@@ -13,7 +14,6 @@
 #include <lain/camera/feature/sequenceextraction.h>
 #include <lain/camera/projection.h>
 #include <lain/camera/testing/texturedscene.h>
-#include <lain/core/time.h>
 #include <lain/media/framesequence.h>
 #include <lain/task/task.h>
 #include <lain/testing/skip.h>
@@ -354,12 +354,13 @@ TEST_CASE("what a fundamental matrix keeps through four lenses", "[camera][openc
 	CHECK(share(kept[3][far][at4].outer, found[3][far].outer) < 0.95);
 }
 
-TEST_CASE("the time to match every pair of 40 frames", "[camera][opencv][feature][scale]")
+TEST_CASE("every pair of 40 frames along the path is matched and verified", "[camera][opencv][feature][scale]")
 {
-	lain::testing::skipInDebug("runs in Release builds, for its timings");
+	lain::testing::skipInDebug("runs in Release builds: it draws and searches 40 frames of 1920 x 1080");
 	ensureBackend();
 	// The 1920 x 1080 camera along the path over the fine texture, so the cap binds, every frame drawn
-	// on the pool first so nothing below times a render.
+	// on the pool first. What matching every pair costs, Exact against Approximate and with the
+	// pre-screen against without, is bench-camera-opencv's.
 	const CameraModel m = largeCamera(1920, 1080);
 	synthetic::Scene scene = synthetic::defaultScene(1, 0.01);
 	scene.noise = 1.0;
@@ -369,30 +370,6 @@ TEST_CASE("the time to match every pair of 40 frames", "[camera][opencv][feature
 		source->drawAll();
 	}
 	const capture::CameraFootage footage{capture::CameraIdentity{"fine"}, media::FrameSequence::over(source)};
-
-	// On one core: frames 0 and 1 capped at 8192 features with all their orientations, and the
-	// pre-screen on the 512 strongest of those, both directions as match() asks.
-	const auto capped = [&](std::size_t f)
-	{
-		const ExtractResult extracted = extract(footage.footage.image(f), LongestSide{1920});
-		REQUIRE(extracted.ok());
-		return strongest(extracted.features, 8192);
-	};
-	const Features a = capped(0), b = capped(1);
-	const Features screenA = strongest(a, 512), screenB = strongest(b, 512);
-	MatchRequest approximate;
-	approximate.search = MatchSearch::Approximate;
-	const auto seconds = [](const Features& x, const Features& y, const MatchRequest& request)
-	{
-		const core::Time start = core::Time::now();
-		const MatchResult result = match(x, y, request);
-		REQUIRE(result.ok());
-		return (core::Time::now() - start).seconds();
-	};
-	const double screenExact = seconds(screenA, screenB, MatchRequest{});
-	const double screenApproximate = seconds(screenA, screenB, approximate);
-	const double fullExact = seconds(a, b, MatchRequest{});
-	const double fullApproximate = seconds(a, b, approximate);
 
 	// Every pair of all 40 frames at a cap of 1024, on the pool: the pre-screen reads the 512 strongest
 	// of the capped features, so it skips the pairs the default cap would.
@@ -413,25 +390,9 @@ TEST_CASE("the time to match every pair of 40 frames", "[camera][opencv][feature
 		verified += p.outcome == PairOutcome::Verified ? 1 : 0;
 	}
 
-	// Measured on one core: 10756 and 10738 rows at the cap (1.31 a feature), 1070 and 1044 at the
-	// pre-screen. The pre-screen took 0.039 s Exact and 0.033 s Approximate; the full match 5.59 s
-	// Exact (6332 matches) and 0.41 s Approximate (6278). Brute force grows with the rows squared:
-	// slice 3's pair of 12182 rows took 7.07 s on the same machine, which scales to 5.51 s here.
-	//
-	// For all 780 pairs of 40 frames, none skipped on this path, since every frame sees the box:
-	//
-	//                  without the pre-screen      with it
-	//   Exact          1.21 core-hours (18 min)    1.22 core-hours (18 min)
-	//   Approximate    5.3 core-minutes (80 s)     5.8 core-minutes (86 s)
-	//
-	// the wall times on four cores. The pre-screen pays for itself once more than 0.7% of pairs share
-	// nothing under Exact, 8% under Approximate. The production run at a cap of 1024: 0 pairs skipped,
-	// 780 verified, 2608 tracks, in 61 s on four workers.
-	CAPTURE(screenExact, screenApproximate, fullExact, fullApproximate, skipped, verified, result.report.elapsed.seconds());
-	CHECK(a.size() > 10000);
-	CHECK(screenExact < 0.05 * fullExact);
-	CHECK(screenApproximate < 0.3 * fullApproximate);
-	CHECK(fullApproximate * 4.0 < fullExact);
+	// Every frame sees the box, so the pre-screen skips no pair on this path and every pair verifies.
+	// Measured: 0 pairs skipped, 780 verified, 2608 tracks.
+	CAPTURE(skipped, verified, result.trackSet.tracks.size());
 	CHECK(skipped == 0);
 	CHECK(verified == 780);
 }

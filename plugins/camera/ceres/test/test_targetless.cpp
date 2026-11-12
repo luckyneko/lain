@@ -8,7 +8,7 @@
 #include <lain/camera/registration/targetless.h>
 #include <lain/camera/registration/validation.h>
 #include <lain/camera/testing/syntheticscene.h>
-#include <lain/core/time.h>
+#include <lain/testing/skip.h>
 #include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -37,14 +37,6 @@ namespace
 		(void)once;
 	}
 
-	std::vector<RigCamera> rig()
-	{
-		std::vector<RigCamera> out;
-		for (std::size_t c = 0; c < scene::scene().referenceFromCamera.size(); ++c)
-			out.push_back({capture::CameraIdentity{scene::identityOf(c)}, scene::model()});
-		return out;
-	}
-
 	Report truthReport()
 	{
 		Report report;
@@ -69,7 +61,7 @@ TEST_CASE("held-out tracks of a true registration are predicted to within their 
 		ids.push_back(t.identity);
 		members += t.observations.size();
 	}
-	const auto result = validate(rig(), truthReport(), set, ids);
+	const auto result = validate(scene::rig(), truthReport(), set, ids);
 	REQUIRE(std::holds_alternative<HeldOutEvidence>(result));
 	const HeldOutEvidence& e = std::get<HeldOutEvidence>(result);
 	CHECK(e.predictions == members);
@@ -125,7 +117,7 @@ TEST_CASE("a noisy rig registers to within its noise, Ready", "[camera][ceres][t
 	registerScene();
 	scene::reset(4, 400);
 	// The noise extraction's covariance states for a stand-in feature: 3.4% of its size, 4 px.
-	const Report report = targetless::registerCameras(rig(), scene::trackSetOf(0.034 * 4, 3), Request{});
+	const Report report = targetless::registerCameras(scene::rig(), scene::trackSetOf(0.034 * 4, 3), Request{});
 	INFO(report.toString());
 	REQUIRE(report.status == RegistrationStatus::Succeeded);
 	const Errors errors = errorsOf(report);
@@ -145,7 +137,7 @@ TEST_CASE("a wrong match is named as an outlier, and the rest of its track is no
 	feature::TrackSet set = scene::trackSetOf();
 	feature::Track& wrong = set.tracks[0]; // the first track is fitted: the hold-out stride starts at the third
 	wrong.observations[2].pixel += math::Vec2d{15.0, 0.0};
-	const Report report = targetless::registerCameras(rig(), set, Request{});
+	const Report report = targetless::registerCameras(scene::rig(), set, Request{});
 	INFO(report.toString());
 	REQUIRE(report.status == RegistrationStatus::Succeeded);
 	REQUIRE(report.diagnostics.outliers.size() == 1);
@@ -175,7 +167,7 @@ TEST_CASE("a landmark behind a camera at the start is kept out of the solve, whi
 	}
 	REQUIRE(wrong != nullptr);
 	wrong->observations.push_back({3, math::Vec2d{320.0, 240.0}, 1, wrong->observations.front().covariance});
-	const Report report = targetless::registerCameras(rig(), set, Request{});
+	const Report report = targetless::registerCameras(scene::rig(), set, Request{});
 	INFO(report.toString());
 	// Left in, the landmark would project behind camera 3 at the start, which fails the whole solve.
 	REQUIRE(report.status == RegistrationStatus::Succeeded);
@@ -185,46 +177,23 @@ TEST_CASE("a landmark behind a camera at the start is kept out of the solve, whi
 
 TEST_CASE("a rig of 100 cameras and 50000 tracks registers", "[camera][ceres][targetless][scale]")
 {
-#ifndef NDEBUG
-	SKIP("the scale test runs in Release builds: a Debug refinement is some 65 times slower");
-#else
+	lain::testing::skipInDebug("the scale test runs in Release builds: a Debug refinement is some 65 times slower");
 	registerScene();
-	// A ring of 100 cameras 1 m from the origin, looking at it, and 50,000 landmarks in a cube of
-	// half-side 0.25 m, each seen by the 8 cameras from its index on: the shape of test_landmarks.cpp's
-	// refinement scale test, here through the whole method.
-	scene::reset(100, 50000, 9);
-	scene::Scene& s = scene::scene();
-	for (std::size_t c = 0; c < 100; ++c)
-	{
-		const double a = math::two_pi<double>() * double(c) / 100.0;
-		s.referenceFromCamera[c] =
-			math::lookingAt(math::Vec3d{std::sin(a), -0.05 * double(c % 3), -std::cos(a)}, math::Vec3d{0.0}, kCameraFrame).value();
-	}
-	s.renderedFrom = s.referenceFromCamera;
-	for (std::size_t l = 0; l < 50000; ++l)
-	{
-		s.landmarks[l].point *= 0.25 / 1.0;
-		s.landmarks[l].cameras.clear();
-		for (std::size_t k = 0; k < 8; ++k)
-			s.landmarks[l].cameras.insert((l + k) % 100);
-	}
+	// A ring of 100 cameras 1 m from the origin, looking at it, and 50,000 landmarks, each seen by the 8
+	// cameras from its index on: the shape of test_landmarks.cpp's refinement scale test, here through
+	// the whole method.
+	scene::resetRing(100, 50000, 8, 9);
 	const feature::TrackSet set = scene::trackSetOf(0.034 * 4, 5);
 	REQUIRE(set.tracks.size() == 50000);
 
 	const lain::testing::ThreadPool pool;
-	const core::Time start = core::Time::now();
-	const Report report = targetless::registerCameras(rig(), set, Request{});
-	const double seconds = (core::Time::now() - start).seconds();
+	const Report report = targetless::registerCameras(scene::rig(), set, Request{});
 	INFO(report.toString());
 	REQUIRE(report.status == RegistrationStatus::Succeeded);
 	const Errors errors = errorsOf(report);
-	// Timed on linux-x86_64, Release, four cores: 40 s in the method, 7.0 s of it the refinement, the
-	// rest mostly the ten bootstrap registrations; 1.26 GB at peak for the whole test, its scene
-	// included. Measured: the worst camera is 0.75 mrad out and the worst centre 0.074% of the median
-	// depth, a ring's drift; held out 0.415 mrad over 10,000 tracks; 2,186 outliers in 320,000
-	// observations.
-	CHECK(seconds < 120);
+	// Measured: the worst camera is 0.75 mrad out and the worst centre 0.074% of the median depth, a
+	// ring's drift; held out 0.415 mrad over 10,000 tracks; 2,186 outliers in 320,000 observations. How
+	// long it takes, and how much of that is the refinement, is bench-camera-ceres's.
 	CHECK(errors.rotation < 0.001);
 	CHECK(report.verdict == Verdict::Ready);
-#endif
 }

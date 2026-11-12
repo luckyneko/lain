@@ -1,8 +1,8 @@
 #pragma once
 
-// A scene for the track-extraction tests: fixed cameras on an arc looking at scattered landmarks, or one
-// camera moving (resetMoving, resetWandering, resetPanning, resetSliding), and stand-in feature
-// backends answering from its truth.
+// A scene for the track-extraction tests: fixed cameras on an arc (or a ring, resetRing) looking at
+// scattered landmarks, or one camera moving (resetMoving, resetWandering, resetPanning, resetSliding),
+// and stand-in feature backends answering from its truth.
 // The scene is process-wide, as the stand-ins' registries are; each case starts from scene::reset() or
 // scene::resetMoving() and changes only what it is about.
 //
@@ -115,6 +115,15 @@ namespace lain::camera::testing::scene
 		return *CameraModel::create(parametersWith(brownConrady())).model;
 	}
 
+	// The scene's fixed cameras as a rig, each named by identityOf and seeing through model().
+	inline std::vector<RigCamera> rig()
+	{
+		std::vector<RigCamera> out;
+		for (std::size_t c = 0; c < scene().referenceFromCamera.size(); ++c)
+			out.push_back({capture::CameraIdentity{identityOf(c)}, model()});
+		return out;
+	}
+
 	inline std::uint32_t descriptorOf(const Landmark& l, std::size_t camera, std::size_t ordinal)
 	{
 		if (const auto at = l.descriptorAt.find(ordinal); at != l.descriptorAt.end())
@@ -187,6 +196,29 @@ namespace lain::camera::testing::scene
 			landmark.point = math::Vec3d{uniform(-1.0, 1.0), uniform(-0.6, 0.6), uniform(-0.8, 0.8)};
 			landmark.descriptor = std::uint32_t(1000 * (l + 1));
 			s.landmarks.push_back(landmark);
+		}
+	}
+
+	// `cameras` on a ring 1 m from the origin, looking at it and stepping down 5 cm in threes, and
+	// reset's landmarks shrunk to a quarter, each seen by the `views` cameras from its own index on:
+	// the targetless registration's scale case, and bench-camera-ceres, which times it.
+	inline void resetRing(std::size_t cameras, std::size_t landmarks, std::size_t views, std::uint64_t seed = 1)
+	{
+		reset(cameras, landmarks, seed);
+		Scene& s = scene();
+		for (std::size_t c = 0; c < cameras; ++c)
+		{
+			const double a = math::two_pi<double>() * double(c) / double(cameras);
+			s.referenceFromCamera[c] =
+				math::lookingAt(math::Vec3d{std::sin(a), -0.05 * double(c % 3), -std::cos(a)}, math::Vec3d{0.0}, kCameraFrame).value();
+		}
+		s.renderedFrom = s.referenceFromCamera;
+		for (std::size_t l = 0; l < landmarks; ++l)
+		{
+			s.landmarks[l].point *= 0.25;
+			s.landmarks[l].cameras.clear();
+			for (std::size_t k = 0; k < views; ++k)
+				s.landmarks[l].cameras.insert((l + k) % cameras);
 		}
 	}
 

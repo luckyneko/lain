@@ -1400,6 +1400,41 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-12 — measurements out of ctest: `bench-camera-opencv` and `bench-camera-ceres`
+
+The eighth NOTES.txt follow-up, decided with the repo owner: **move the clock and memory checks, not
+the cases**. A bound on a time or a memory peak also fails when the machine is slower or busier, so it
+is no regression check. `ctest -j8` gives **1726/1726** MSVC Release and **1718/1718** MSVC Debug,
+unchanged: cases were renamed, none added or removed. Both trees are warning-clean, and format-check is
+clean. **Not run:** GCC and macOS, and the bench's glibc peak-memory branch, which only Linux compiles.
+Full notes in WORK.md's *Measurements out of ctest*.
+
+- **Only 4 of the 26 Release-only cases held a time or memory figure to a bound**, and they were why
+  `RUN_SERIAL` existed:
+  - the 100-camera targetless registration's `< 120 s`;
+  - the 8K search's peak;
+  - Approximate being 3 times faster than Exact;
+  - the 40-frame case's ratios.
+
+  Each keeps its correctness checks, and loses only the bound. `RUN_SERIAL` is gone from
+  test-camera-ceres and test-camera-opencv-features. The other 22 stay as they are: they check
+  correctness at scale, or accuracy on rendered footage, and the second kind is what found macOS's
+  principal-point blind spot.
+- **Two bench executables beside their plugins**, Catch2-based like `bench-multi` and never registered
+  with ctest. Each case skips in Debug and prints its numbers.
+  - **Why two, not one:** a facade asks a registry's `keys().front()`. In one process the Ceres case's
+    stand-in matcher `"exact"` would sort before `"opencv"` and serve the OpenCV cases' matches.
+  - **`LAIN_BUILD_BENCHMARK`** defaults to `${LAIN_NOT_SUBPROJECT}`, so CI compiles them without being
+    asked to run them. The previous plan said multi's own option was off by default; it is on top-level.
+- **Helpers moved so the bench reaches no test directory:**
+  - `largeCamera` to `testcamera.h`;
+  - the feature-cell helpers to a new framework-free `featurecells.h`;
+  - **`scene::rig()`** replaces three identical copies;
+  - **`scene::resetRing`** replaces the scale case's inline ring.
+- **Measured here:** the 100-camera registration took **16.8 s** idle and **27.1 s** beside a compiling
+  Debug tree, which is the argument for the split. Every count the benches print matches what the tests
+  recorded (rows, matches, 2608 tracks), so they measure the same scenes.
+
 ### Update 2026-11-12 — feature/M15's CI run after the fixed-rig footage: two macOS fixes
 
 [Run 43125621287](https://github.com/luckyneko/lain/actions/runs/43125621287) on `f3901a9`: seven jobs
@@ -1416,6 +1451,9 @@ fixed-rig footage*.
 - **The comparison case's targetless half was Exploratory on macOS**, its one note cam3's rotation
   variation at 1.03 mrad against 1, every other check held. It may now be Exploratory on that note
   alone, as M9's HD lens case already allows; only the next CI run reaches that branch.
+- **Green on all eight jobs** ([run 43136024980](https://github.com/luckyneko/lain/actions/runs/43136024980)
+  on `ea273a1`): macOS, Linux Release and Windows 1726/1726, Linux Debug 1718/1718. A passing case
+  prints nothing, so which verdict macOS's comparison reached is not in the log.
 
 ### Update 2026-11-11 — fixed-rig footage, step 6: the docs (**COMPLETE**)
 
@@ -8729,6 +8767,10 @@ beside this repo) before writing:
   A **TEST_CASE name is ASCII** — `catch_discover_tests` hands it back to the executable
   as an argv filter, and a non-ASCII byte does not survive that trip on Windows. Prose and
   SECTION names keep their em dashes.
+  **A time or a memory peak is a measurement, not a check.** It belongs in a bench
+  (`bench-camera-*`, behind `LAIN_BUILD_BENCHMARK`, never run by ctest), printed rather than
+  bounded. The test beside it keeps what the code guarantees. A ctest bound on one fails when
+  the machine is busier, which is how `RUN_SERIAL` came to exist and why it went.
 - **Where a body lives.** Three homes, and the split must buy something.
   1. **In the class** — the default. Anything a reader takes in at a glance: a forwarder,
      a comparison, a one-expression accessor.
@@ -8775,6 +8817,7 @@ git submodule update --init --recursive   # pull extern/ (archimedes, multi; bot
 cmake -B build                            # FetchContent pulls GLM, GLFW, CLI11, ImGui, imnodes, ...
 cmake --build build
 ctest --test-dir build --output-on-failure
+./build/plugins/camera/opencv/bench/bench-camera-opencv   # measurements, by hand, in a Release build
 ./build/apps/flowview/flowview            # gui-mode: the inspector on the live driver
 ./build/apps/flowview/flowview --help     # cli-mode: run a graph headless, dump output
 ```

@@ -15,8 +15,8 @@
 // the DIRECTORY, once per process, and a plain counter inside it is then sufficient because Catch2
 // runs the cases within one process one at a time.
 //
-// Header-only and test-only: `lain::testing` is built under LAIN_BUILD_TESTING and linked by test
-// targets alone.
+// Header-only and test-only: `lain::testing` is built under LAIN_BUILD_TESTING or LAIN_BUILD_BENCHMARK
+// and linked by test and benchmark targets alone.
 
 #include <lain/core/uuid.h>
 
