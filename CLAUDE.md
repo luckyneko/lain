@@ -1400,6 +1400,13 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-13 — measurements out of ctest (from feature/M15's `8b3ccb9`)
+
+The four Release-only cases that held a time or memory figure to a bound keep their correctness checks
+and lose the bound; `RUN_SERIAL` is gone. The timings print from `bench-camera-opencv` and
+`bench-camera-ceres` (`LAIN_BUILD_BENCHMARK`, Catch2, not registered with ctest, skipped in Debug).
+Two cases renamed, none added or removed. Full notes in WORK.md's *Measurements out of ctest*.
+
 ### Update 2026-11-13 — a golden is compared line by line (from feature/M15's `ea273a1`)
 
 `928751e` moved the targetless registration golden, and macOS prints its line 251 one digit apart

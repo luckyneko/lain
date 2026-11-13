@@ -15589,9 +15589,71 @@ fails the same way.
   unreachable code), so the old binary answered; it was redone so that it compiles.
 - The committed golden with line 251 edited to macOS's `...48` passes, and with `...50` fails, naming
   line 251.
-- `ctest -j8` **1363/1363** MSVC Debug with video, camera and Ceres on (+1, the new case);
-  warning-clean; `format-check` exit 0 over all 733 files.
+- `ctest -j8` **1363/1363** MSVC Debug and **1371/1371** MSVC Release with video, camera and Ceres on
+  (+1 each, the new case); warning-clean; `format-check` exit 0 over all 733 files.
 - **Not run:** macOS, the platform this is for, which only CI has.
+
+## Measurements out of ctest: `bench-camera-opencv` and `bench-camera-ceres` (built 2026-11-13)
+
+`8b3ccb9` on `feature/M15`, backported so `feature/M9` can land on its own. It is the eighth of the
+NOTES.txt (2026-11-02) follow-ups, decided with the repo owner there: **move the clock and memory checks,
+not the cases.** A bound on how long something takes, or on a memory peak, also fails when the machine
+is slower or busier, so it is no regression check. Each case keeps every check about what lain's code
+does; what it costs is printed by a bench that ctest does not run. M15's WORK.md section of the same
+name holds the full reasoning; this one records the backport.
+
+- **Of M9's 17 Release-only cases, four held a time or memory figure to a bound**, the four the commit
+  names, and they were why `RUN_SERIAL` existed:
+  - **"an 8K frame is searched at the default size"** (was "... in bounded memory"): the side searched
+    and the features found stay; the time and the glibc peak go.
+  - **"exact and approximate search at 8192 features a view"**: the matches and Approximate's 90% recall
+    stay; "Approximate is 3 times faster" goes.
+  - **"every pair of 40 frames along the path is matched and verified"** (was "the time to match every
+    pair of 40 frames"): the 780-pair production run stays; the per-pair timings and their ratios go.
+  - **"a rig of 100 cameras and 50000 tracks registers"**: Ready and the worst camera stay; `< 120 s`
+    goes, and it skips through `skipInDebug` rather than `SKIP` under `#ifndef NDEBUG`.
+- **`RUN_SERIAL` is gone** from `test-camera-ceres` and `test-camera-opencv-features`, each one
+  `catch_discover_tests` again.
+- **`LAIN_BUILD_BENCHMARK`** (default `${LAIN_NOT_SUBPROJECT}`, so CI compiles the benches) builds two
+  Catch2 executables beside their plugins, never registered with ctest, every case skipped in Debug:
+  `bench-camera-opencv` (the three OpenCV measurements) and `bench-camera-ceres` (the registration). Two,
+  because a feature facade asks its registry's `keys().front()`, and the Ceres case's stand-in matcher
+  `"exact"` sorts before `"opencv"`. Catch2 and `lain::testing` now build for tests or benchmarks, and
+  `lain::camera::testing` for tests, apps or benchmarks.
+- **So the benches reach no test directory:** `largeCamera` moved to `testcamera.h`, the feature-cell
+  helpers to a new framework-free `featurecells.h`, `scene::rig()` replaces three identical copies, and
+  `scene::resetRing()` the scale case's inline ring.
+
+### Adapted to M9
+
+Every file but four was identical on M9 and took M15's change as it is. The four:
+
+- **The root `CMakeLists.txt`:** M9 has neither M15's rigplan apps nor `libs/rigplan/testing`, so only
+  the option, the Catch2 gate and the `libs/testing` gate were taken.
+- **`testcamera.h`:** M9 keeps `testcameraparameters.h` apart (M15 folded it back), so only the
+  `<cstdint>` include and `largeCamera` were added.
+- **`libs/camera/testing/CMakeLists.txt`:** its comment keeps `testcameraparameters.h` among the
+  framework-free headers.
+- **M9's comparison case** (`plugins/camera/test/test_comparison.cpp`, which still renders
+  `texturedscene.h`) holds no time or memory bound, so nothing there changed.
+
+### Verified
+
+- **The same cases are discovered:** 1363 in Debug before and after, two of them renamed and none added
+  or removed; no ctest test carries `RUN_SERIAL`.
+- `ctest -j8` gives **1363/1363** MSVC Debug and **1371/1371** MSVC Release with video, camera and Ceres
+  on, the same counts as before. The Release run took 170 s, against 263 s with `RUN_SERIAL`.
+- **The benches build and print** (Release, MSVC, 32 logical cores, nothing else running):
+  - **bench-camera-ceres:** the 100-camera registration in 13.8 s, 4.3 s of it the refinement in 7
+    iterations, Ready, on 31 workers.
+  - **bench-camera-opencv:** the 8K search 1050 features in 0.25 s at 1600 px and 976 in 0.27 s at
+    1920 px; at 8192 features a view, Exact 3683 matches in 5.19 s, Approximate 3636 in 0.32 s (96.8% of
+    Exact's); the 40-frame production run 780 pairs, 0 skipped, 2608 tracks in 38.6 s on four workers.
+  - **Every count matches what the tests record** (3683 exact and 10816 consolidation matches, 10756
+    and 10738 rows at the cap, 2608 tracks), so the benches measure the cases beside them.
+- In Debug, both benches skip every case.
+- Warning-clean builds of both trees, benches included; `format-check` exit 0 over all 737 files.
+- **Not run:** GCC and macOS, and the bench's glibc peak-memory branch, which only Linux compiles.
 
 ## Outstanding work — one index
 
@@ -15863,12 +15925,12 @@ The rest of the answers' follow-ups, each its own commit. *(§NOTES.txt (2026-11
   moving-camera generator and the renderer's reference.
 - **Node sets under `plugins/flow/{image,sequence,camera}`**, always built (a node kind is vocabulary),
   with `CompareNode` moving to `libs/flow/nodes`.
-- **Measurements out of ctest**: a `camera-bench` for the Release-only and `[scale]` cases.
 - **`ExtractionParams`**: one place declaring and reading the five extraction settings both targetless
   nodes expose.
 - **A framework-free `lain::camera::synthetic` beside `lain::camera::testing`**, so a tool cannot reach
   a Catch2 header in any configuration. Trigger: a second non-test consumer of the footage, or the
-  fixed-rig footage above. *(§`lain::camera::testing`.)*
+  fixed-rig footage above. The camera benches use the target, but they run on Catch2 as the tests do,
+  so they are not that consumer. *(§`lain::camera::testing`; §Measurements out of ctest.)*
 - **`lain::media::testing`** for `testsource.h`, which `libs/media/serialize/test` reaches by
   `../../test`. Trigger: a consumer outside `libs/media`. *(§`lain::camera::testing`.)*
 

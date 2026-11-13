@@ -1,4 +1,5 @@
-# lain::testing — test-support helpers, header-only and built only under LAIN_BUILD_TESTING.
+# lain::testing — test-support helpers, header-only and built only under LAIN_BUILD_TESTING or
+# LAIN_BUILD_BENCHMARK (the benchmarks start the pool and skip in Debug through it).
 # Three things, each about what a test cannot arrange for itself: scratch paths on disk that no
 # concurrently-running test can collide with (see scratch.h for why a per-file counter cannot do
 # that job), worker threads, since the process pool is owned by lain::app and a test has no

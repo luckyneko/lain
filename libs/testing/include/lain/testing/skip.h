@@ -18,8 +18,8 @@
 //
 // Catch2 reports the skip at this header's line rather than the case's; the reason says which case.
 //
-// Header-only and test-only: `lain::testing` is built under LAIN_BUILD_TESTING and linked by test
-// targets alone.
+// Header-only and test-only: `lain::testing` is built under LAIN_BUILD_TESTING or LAIN_BUILD_BENCHMARK
+// and linked by test and benchmark targets alone.
 
 #include <catch2/catch_test_macros.hpp>
 

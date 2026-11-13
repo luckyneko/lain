@@ -41,14 +41,6 @@ namespace
 		standin::refinerScript().asked.clear();
 	}
 
-	std::vector<RigCamera> rig()
-	{
-		std::vector<RigCamera> out;
-		for (std::size_t c = 0; c < scene::scene().referenceFromCamera.size(); ++c)
-			out.push_back({capture::CameraIdentity{scene::identityOf(c)}, scene::model()});
-		return out;
-	}
-
 	// A registration report of the truth, relative to `reference`: what a perfect registration says.
 	Report truthReport(std::size_t reference = 0)
 	{
@@ -129,7 +121,7 @@ TEST_CASE("held-out tracks of a true registration are predicted exactly", "[came
 	setUp();
 	const feature::TrackSet set = scene::trackSetOf();
 	REQUIRE(set.tracks.size() > 40);
-	const HeldOutEvidence e = evidenceOf(validate(rig(), truthReport(), set, idsOf(set)));
+	const HeldOutEvidence e = evidenceOf(validate(scene::rig(), truthReport(), set, idsOf(set)));
 	std::size_t members = 0;
 	for (const feature::Track& t : set.tracks)
 		members += t.observations.size();
@@ -148,7 +140,7 @@ TEST_CASE("a camera registered 5 mrad out is seen in its own held-out members", 
 	const feature::TrackSet set = scene::trackSetOf();
 	Report report = truthReport();
 	turn(report, 2, 0.005, math::Vec3d{0, 1, 0});
-	const HeldOutEvidence e = evidenceOf(validate(rig(), report, set, idsOf(set)));
+	const HeldOutEvidence e = evidenceOf(validate(scene::rig(), report, set, idsOf(set)));
 	// Each of camera 2's members is predicted from the three true cameras, so the point is exact and its
 	// residual is the turn's effect on its ray: up to 5 mrad, less for a ray off perpendicular to the
 	// axis. Measured 4.96 mrad. Had a member taken part in its own prediction, its wrong ray would have
@@ -183,7 +175,7 @@ TEST_CASE("each held-out track is refined on its own, every camera held, under o
 		}
 	}
 	REQUIRE(transfers > 10);
-	const HeldOutEvidence e = evidenceOf(validate(rig(), report, set, ids));
+	const HeldOutEvidence e = evidenceOf(validate(scene::rig(), report, set, ids));
 	CHECK(e.epipolar == 0);
 	const std::vector<standin::RefinerScript::Asked> calls = asked();
 	REQUIRE(calls.size() == transfers);
@@ -200,7 +192,7 @@ TEST_CASE("each held-out track is refined on its own, every camera held, under o
 	// What the report asked of its own refinement changes nothing here.
 	Report plain = truthReport();
 	turn(plain, 2, 0.005, math::Vec3d{0, 1, 0});
-	requireSame(e, evidenceOf(validate(rig(), plain, set, ids)));
+	requireSame(e, evidenceOf(validate(scene::rig(), plain, set, ids)));
 }
 
 TEST_CASE("a two-member track is scored against the epipolar plane, counted twice", "[camera][registration][targetless]")
@@ -211,7 +203,7 @@ TEST_CASE("a two-member track is scored against the epipolar plane, counted twic
 
 	SECTION("exactly, when the registration is true")
 	{
-		const HeldOutEvidence e = evidenceOf(validate(rig(), truthReport(), set, idsOf(set)));
+		const HeldOutEvidence e = evidenceOf(validate(scene::rig(), truthReport(), set, idsOf(set)));
 		CHECK(e.epipolar == e.predictions);
 		CHECK(e.predictions == 2 * set.tracks.size());
 		CHECK(e.rmsAngle < 1e-9);
@@ -224,7 +216,7 @@ TEST_CASE("a two-member track is scored against the epipolar plane, counted twic
 		const math::Vec3d baseline =
 			report.cameras[1].referenceFromCamera.translation() - report.cameras[0].referenceFromCamera.translation();
 		turn(report, 1, 0.005, baseline);
-		const HeldOutEvidence e = evidenceOf(validate(rig(), report, set, idsOf(set)));
+		const HeldOutEvidence e = evidenceOf(validate(scene::rig(), report, set, idsOf(set)));
 		// A turn by t about the baseline turns each epipolar plane by t about it, and a ray at an angle f
 		// to the baseline then lies asin(sin t sin f) off its old plane: each member, of either camera,
 		// at its own f. One degree of freedom each, so each counts twice. Worked from the truth, not from
@@ -253,7 +245,7 @@ TEST_CASE("a two-member track is scored against the epipolar plane, counted twic
 	{
 		Report report = truthReport();
 		turn(report, 1, 3.141592653589793, math::Vec3d{0, 1, 0});
-		const auto result = validate(rig(), report, set, idsOf(set));
+		const auto result = validate(scene::rig(), report, set, idsOf(set));
 		REQUIRE(std::holds_alternative<Unavailable>(result));
 		CHECK_THAT(std::get<Unavailable>(result).reason, ContainsSubstring("could be predicted"));
 	}
@@ -262,7 +254,7 @@ TEST_CASE("a two-member track is scored against the epipolar plane, counted twic
 		Report report = truthReport();
 		report.cameras[1].referenceFromCamera = math::RigidTransformd{
 			report.cameras[1].referenceFromCamera.rotation(), report.cameras[0].referenceFromCamera.translation()};
-		CHECK(std::holds_alternative<Unavailable>(validate(rig(), report, set, idsOf(set))));
+		CHECK(std::holds_alternative<Unavailable>(validate(scene::rig(), report, set, idsOf(set))));
 	}
 }
 
@@ -273,19 +265,19 @@ TEST_CASE("held-out evidence is unavailable when there is nothing to predict", "
 	SECTION("a failed registration")
 	{
 		Report failed;
-		const auto result = validate(rig(), failed, set, idsOf(set));
+		const auto result = validate(scene::rig(), failed, set, idsOf(set));
 		REQUIRE(std::holds_alternative<Unavailable>(result));
 		CHECK_THAT(std::get<Unavailable>(result).reason, ContainsSubstring("failed"));
 	}
 	SECTION("no track held out")
 	{
-		CHECK(std::holds_alternative<Unavailable>(validate(rig(), truthReport(), set, {})));
+		CHECK(std::holds_alternative<Unavailable>(validate(scene::rig(), truthReport(), set, {})));
 	}
 	SECTION("a track the set does not hold, which is named")
 	{
 		std::vector<std::string> ids = idsOf(set);
 		ids.push_back("track99999");
-		const auto result = validate(rig(), truthReport(), set, ids);
+		const auto result = validate(scene::rig(), truthReport(), set, ids);
 		REQUIRE(std::holds_alternative<Unavailable>(result));
 		CHECK_THAT(std::get<Unavailable>(result).reason, ContainsSubstring("track99999"));
 	}
@@ -293,7 +285,7 @@ TEST_CASE("held-out evidence is unavailable when there is nothing to predict", "
 	{
 		Report report = truthReport();
 		report.cameras.erase(report.cameras.begin() + 3);
-		const HeldOutEvidence e = evidenceOf(validate(rig(), report, set, idsOf(set)));
+		const HeldOutEvidence e = evidenceOf(validate(scene::rig(), report, set, idsOf(set)));
 		CHECK(perCamera(e, 3) < 0);
 		CHECK(e.rmsAngle < 1e-9);
 	}
@@ -307,12 +299,12 @@ TEST_CASE("held-out evidence is the same in parallel, serially, and for ids in a
 	turn(report, 2, 0.005, math::Vec3d{0, 1, 0});
 	std::vector<std::string> ids = idsOf(set);
 
-	const HeldOutEvidence serial = evidenceOf(validate(rig(), report, set, ids, ExecutionPolicy::DeterministicDebug));
+	const HeldOutEvidence serial = evidenceOf(validate(scene::rig(), report, set, ids, ExecutionPolicy::DeterministicDebug));
 	const lain::testing::ThreadPool pool{4};
-	requireSame(serial, evidenceOf(validate(rig(), report, set, ids, ExecutionPolicy::Normal)));
+	requireSame(serial, evidenceOf(validate(scene::rig(), report, set, ids, ExecutionPolicy::Normal)));
 	std::reverse(ids.begin(), ids.end());
 	ids.push_back(ids.front()); // a track named twice counts once
-	requireSame(serial, evidenceOf(validate(rig(), report, set, ids, ExecutionPolicy::Normal)));
+	requireSame(serial, evidenceOf(validate(scene::rig(), report, set, ids, ExecutionPolicy::Normal)));
 	CHECK(serial.rmsAngle > 0.001);
 }
 
@@ -322,7 +314,7 @@ namespace
 {
 	Report run(const feature::TrackSet& set, const Request& request = {})
 	{
-		return registration::targetless::registerCameras(rig(), set, request);
+		return registration::targetless::registerCameras(scene::rig(), set, request);
 	}
 
 	bool failedWith(const Report& report, Failure failure)
@@ -694,7 +686,7 @@ TEST_CASE("targetless registration is the same in parallel, serially, and listed
 	requireSameReport(a, run(set));
 	feature::TrackSet reversed = set;
 	std::reverse(reversed.tracks.begin(), reversed.tracks.end());
-	std::vector<RigCamera> cameras = rig();
+	std::vector<RigCamera> cameras = scene::rig();
 	std::reverse(cameras.begin(), cameras.end());
 	requireSameReport(a, registration::targetless::registerCameras(cameras, reversed, Request{}));
 }
@@ -754,19 +746,19 @@ TEST_CASE("a dataset or request that cannot register is refused before any work"
 	}
 	SECTION("two cameras with one identity")
 	{
-		std::vector<RigCamera> cameras = rig();
+		std::vector<RigCamera> cameras = scene::rig();
 		cameras[1].camera = cameras[0].camera;
 		CHECK(failedWith(registration::targetless::registerCameras(cameras, set, Request{}), Failure::InvalidDataset));
 	}
 	SECTION("one camera")
 	{
-		std::vector<RigCamera> cameras = rig();
+		std::vector<RigCamera> cameras = scene::rig();
 		cameras.erase(cameras.begin() + 1, cameras.end());
 		CHECK(failedWith(registration::targetless::registerCameras(cameras, set, Request{}), Failure::TooFewCameras));
 	}
 	SECTION("a view of a camera the dataset lacks")
 	{
-		std::vector<RigCamera> cameras = rig();
+		std::vector<RigCamera> cameras = scene::rig();
 		cameras.pop_back();
 		const Report report = registration::targetless::registerCameras(cameras, set, Request{});
 		REQUIRE(failedWith(report, Failure::InvalidDataset));

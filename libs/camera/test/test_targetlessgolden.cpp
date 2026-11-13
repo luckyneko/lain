@@ -149,14 +149,6 @@ namespace
 		scene::reset(cameras, landmarks);
 	}
 
-	std::vector<RigCamera> rig()
-	{
-		std::vector<RigCamera> out;
-		for (std::size_t c = 0; c < scene::scene().referenceFromCamera.size(); ++c)
-			out.push_back({capture::CameraIdentity{scene::identityOf(c)}, scene::model()});
-		return out;
-	}
-
 	// Every landmark from `from` to `to` seen only by `cameras`.
 	void seenOnlyBy(std::size_t from, std::size_t to, const std::set<std::size_t>& cameras)
 	{
@@ -166,7 +158,7 @@ namespace
 
 	std::string run(const char* title, const feature::TrackSet& set, const Request& request = {})
 	{
-		return "== " + std::string(title) + "\n" + describe(registration::targetless::registerCameras(rig(), set, request));
+		return "== " + std::string(title) + "\n" + describe(registration::targetless::registerCameras(scene::rig(), set, request));
 	}
 
 	std::string produce()

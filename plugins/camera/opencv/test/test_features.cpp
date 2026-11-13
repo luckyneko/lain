@@ -1,7 +1,8 @@
 // The OpenCV feature producer (SIFT, the matcher, the geometry solver) through lain's production
 // facades, on textured scenes drawn in plain C++ (texturedscene.h), so every correspondence and pose
-// is judged against a known truth. Every bound is a measurement, written beside its check; the cases
-// marked Release only also record what slice 3 left provisional (WORK.md, M9 slice 3, sub-slice 7).
+// is judged against a known truth. Every bound is a measurement, written beside its check. What the
+// Release-only cases cost in time and memory, which slice 3 left provisional (WORK.md, M9 slice 3,
+// sub-slice 7), is reported by bench-camera-opencv rather than checked here.
 
 #include "renderedfeatures.h"
 
@@ -12,7 +13,6 @@
 #include <lain/camera/feature/matching.h>
 #include <lain/camera/projection.h>
 #include <lain/camera/testing/texturedscene.h>
-#include <lain/core/time.h>
 #include <lain/math/angles.h>
 #include <lain/media/framesequence.h>
 #include <lain/testing/skip.h>
@@ -24,7 +24,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <fstream>
 #include <map>
 #include <memory>
 #include <optional>
@@ -33,10 +32,6 @@
 #include <tuple>
 #include <utility>
 #include <vector>
-
-#if defined(__GLIBC__)
-#	include <malloc.h>
-#endif
 
 using namespace lain;
 using namespace lain::camera;
@@ -148,29 +143,6 @@ namespace
 		}
 		return out;
 	}
-
-#if defined(__GLIBC__)
-	// This process's resident set, and its peak since the last resetPeak(), in bytes.
-	double statusBytes(const std::string& field)
-	{
-		std::ifstream in("/proc/self/status");
-		std::string line;
-		while (std::getline(in, line))
-			if (line.rfind(field + ":", 0) == 0)
-				return std::stod(line.substr(field.size() + 1)) * 1024.0;
-		return 0;
-	}
-
-	// Hands freed heap memory back first, or what the allocator kept resident would be reused
-	// without raising the peak.
-	bool resetPeak()
-	{
-		malloc_trim(0);
-		std::ofstream out("/proc/self/clear_refs");
-		out << "5";
-		return bool(out);
-	}
-#endif
 } // namespace
 
 TEST_CASE("a feature searched at half scale lands where the native search finds it", "[camera][opencv][feature]")
@@ -693,46 +665,30 @@ TEST_CASE("approximate search is refused under deterministic debugging, with the
 	CHECK_THAT(refused.detail, ContainsSubstring("reproducible only within a tolerance"));
 }
 
-TEST_CASE("an 8K frame is searched at the default size in bounded memory", "[camera][opencv][feature][scale]")
+TEST_CASE("an 8K frame is searched at the default size", "[camera][opencv][feature][scale]")
 {
-	lain::testing::skipInDebug("runs in Release builds: it renders an 8K frame and measures the search");
+	lain::testing::skipInDebug("runs in Release builds: it renders an 8K frame");
 	ensureBackend();
-	// Measured on four cores: the render takes 11 s; searching it at a longest side of 1600 px took
-	// 0.54 s and found 1050 features, at 1920 px 0.60 s and 976. SIFT's first octave doubles the
-	// searched image and keeps a float pyramid of it, so the search, not the frame, sets the memory:
-	// peak growth 340 MB at 1600 px and 489 MB at 1920 px, per frame searched at once (glibc only,
-	// from VmHWM), on top of the decoded frame (33 MB of 8K grey here, 100 MB of 8K RGB8).
+	// SIFT's first octave doubles the searched image and keeps a float pyramid of it, so the search,
+	// not the frame, sets the memory, which is what a default longest side is for. What this checks is
+	// lain's half: an 8K frame is searched at the side asked for, and finds enough there (measured 1050
+	// features at 1600 px, 976 at 1920 px). What the search costs in time and memory at each side is
+	// OpenCV's, and bench-camera-opencv reports it.
 	const CameraModel m = largeCamera(7680, 4320);
 	const image::Image frame = synthetic::render(synthetic::defaultScene(), m, synthetic::arcCamera(0.0), 0, 1, 1);
-	double previous = 0;
 	for (const std::uint32_t side : {1600u, 1920u})
 	{
 		CAPTURE(side);
-#if defined(__GLIBC__)
-		const bool peaks = resetPeak();
-		const double before = statusBytes("VmRSS");
-#endif
 		const ExtractResult found = extract(frame, LongestSide{side});
 		REQUIRE(found.ok());
 		CHECK(found.features.scale == double(side) / 7680.0);
 		CHECK(found.features.size() > 500);
-#if defined(__GLIBC__)
-		if (peaks)
-		{
-			const double peak = statusBytes("VmHWM") - before;
-			CAPTURE(peak);
-			CHECK(peak < 1e9);
-			CHECK(peak > previous);
-			previous = peak;
-		}
-#endif
 	}
-	(void)previous;
 }
 
 TEST_CASE("exact and approximate search at 8192 features a view", "[camera][opencv][feature][scale]")
 {
-	lain::testing::skipInDebug("runs in Release builds, for its timings");
+	lain::testing::skipInDebug("runs in Release builds: it renders three HD frames and matches 8192 features");
 	ensureBackend();
 	// Two 1920 x 1080 views 0.3 rad apart of a finely textured scene: 13238 and 12745 SIFT keypoints,
 	// capped at the 8192 strongest features each with all their orientations, as extractTracks caps
@@ -752,20 +708,13 @@ TEST_CASE("exact and approximate search at 8192 features a view", "[camera][open
 	REQUIRE(cells(fa).size() == 8192);
 	REQUIRE(cells(fb).size() == 8192);
 
-	// Measured on one core, both directions as match() asks: Exact 3683 matches in 10.2 s, Approximate
-	// 3637 in 0.78 s with 96.8% of Exact's; consolidation (Exact) 10816 in 10.5 s. Brute force grows
-	// with the rows, so keeping every orientation costs 2.8 times the 3.68 s of 8192 rows. For 100
-	// cameras whose every pair overlaps, 4950 pair matches and 1000 consolidation matches: 16.9
-	// core-hours Exact, 4.0 with Approximate for the pairs, 1.5 with Approximate throughout. Brute
-	// force costs the same whatever the content, so the consolidation match costs a pair match.
+	// Measured, both directions as match() asks: Exact 3683 matches, Approximate 3637 with 96.8% of
+	// Exact's; consolidation (Exact) 10816. How much faster Approximate is, and what each costs a rig of
+	// 100 cameras, is bench-camera-opencv's.
 	MatchRequest approximateRequest;
 	approximateRequest.search = MatchSearch::Approximate;
-	core::Time start = core::Time::now();
 	const MatchResult exact = match(fa, fb);
-	const double exactSeconds = (core::Time::now() - start).seconds();
-	start = core::Time::now();
 	const MatchResult approximate = match(fa, fb, approximateRequest);
-	const double approximateSeconds = (core::Time::now() - start).seconds();
 	const MatchResult consolidation = match(fa, again);
 	REQUIRE(exact.ok());
 	REQUIRE(approximate.ok());
@@ -779,7 +728,6 @@ TEST_CASE("exact and approximate search at 8192 features a view", "[camera][open
 	std::size_t recalled = 0;
 	for (const Match& mt : approximate.matches)
 		recalled += found.count({mt.a, mt.b});
-	CAPTURE(exactSeconds, approximateSeconds, recalled, exact.matches.size());
+	CAPTURE(recalled, exact.matches.size());
 	CHECK(double(recalled) / double(exact.matches.size()) > 0.9);
-	CHECK(approximateSeconds * 3.0 < exactSeconds);
 }

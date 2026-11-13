@@ -37,8 +37,8 @@ catch_discover_tests(test-camera-opencv TEST_PREFIX "(camera::opencv) ")
 
 # The feature producer (SIFT, the matcher, the geometry solver) through lain's facades, on textured
 # scenes drawn in plain C++ (lain::camera::testing's texturedscene.h), every correspondence and pose judged
-# against the truth. Its own executable: it renders, and its Release-only cases measure time and
-# memory at 8K, so it is far heavier than the board tests beside it.
+# against the truth. Its own executable: it renders, and its Release-only cases search 8K and HD frames,
+# so it is far heavier than the board tests beside it.
 add_executable(test-camera-opencv-features test_features.cpp test_sequencefeatures.cpp)
 target_compile_features(test-camera-opencv-features PRIVATE cxx_std_17)
 target_link_libraries(test-camera-opencv-features
@@ -46,9 +46,8 @@ target_link_libraries(test-camera-opencv-features
 	PRIVATE lain::warnings Catch2::Catch2WithMain
 )
 lain_opencv_stage_runtime(test-camera-opencv-features)
-catch_discover_tests(test-camera-opencv-features TEST_PREFIX "(camera::opencv) " TEST_SPEC "~[scale]")
-# The scale cases time what they measure, and a time means something only while the case has the
-# cores: on macOS CI under `ctest --parallel 4`, approximate search came out 2.67 times faster than
-# exact, against the 3 its case requires and the 13 measured on one core alone. So ctest runs them
-# with nothing beside them, as test-camera-ceres runs its own.
-catch_discover_tests(test-camera-opencv-features TEST_PREFIX "(camera::opencv) " TEST_SPEC "[scale]" PROPERTIES RUN_SERIAL TRUE)
+# No case here times what it checks, so every one runs beside the rest under `ctest -j`. Timings and
+# memory are bench-camera-opencv's (../bench): a time means something only while the case has the
+# cores, and on macOS CI under `ctest --parallel 4` approximate search came out 2.67 times faster than
+# exact, against the 3 a case here once required and the 13 measured on one core alone.
+catch_discover_tests(test-camera-opencv-features TEST_PREFIX "(camera::opencv) ")
