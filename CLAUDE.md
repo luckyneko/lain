@@ -1400,6 +1400,14 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-13 — a golden is compared line by line (from feature/M15's `ea273a1`)
+
+`928751e` moved the targetless registration golden, and macOS prints its line 251 one digit apart
+(`7.27842948` against Windows' `...47`; feature/M15's CI). `requireGolden` now compares line by line
+(`sameLine`): the text exactly, each number within one unit of its last printed digit. No golden
+changed; a new case and two sabotages hold it. Not taken: `ea273a1`'s M15-only comparison half. Full
+notes in WORK.md's *A golden is compared line by line*.
+
 ### Update 2026-11-09 — `lain::camera::testing`: the camera tests' shared code is a target
 
 The fifth NOTES.txt follow-up. The twelve headers the camera tests share (test camera and board,

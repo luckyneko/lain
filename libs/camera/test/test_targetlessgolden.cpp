@@ -262,3 +262,25 @@ TEST_CASE("a targetless registration report is exactly the committed golden", "[
 {
 	requireGolden("targetlessregistration.txt", produce());
 }
+
+// The comparison every golden goes through. This golden is where it was needed: line 251 printed
+// 7.27842947 on Windows and 7.27842948 on macOS arm64 (CI, 2026-11-12), a residual on a rounding
+// boundary. One unit in the last printed digit is the same; two are not, and neither is a count, a
+// name or the words.
+TEST_CASE("a golden line may differ in a number's last printed digit and in nothing else", "[camera][golden]")
+{
+	CHECK(sameLine("outlier track00109 cam02 7.27842947", "outlier track00109 cam02 7.27842947"));
+	CHECK(sameLine("outlier track00109 cam02 7.27842947", "outlier track00109 cam02 7.27842948"));
+	CHECK(sameLine("q(0.999998 -0.00123456789) t(-1.5 0 1e-09)", "q(0.999998 -0.00123456788) t(-1.5 0 0)"));
+	CHECK(sameLine("rmsAngle 0.000727001", "rmsAngle 0.000727002")); // below 1, the snap's 1e-9 step is the digit
+
+	CHECK_FALSE(sameLine("outlier track00109 cam02 7.27842947", "outlier track00109 cam02 7.27842949"));
+	CHECK_FALSE(sameLine("rmsAngle 0.000727001", "rmsAngle 0.000727004"));
+	CHECK_FALSE(sameLine("predictions 16 residuals 32", "predictions 17 residuals 32"));
+	CHECK_FALSE(sameLine("outlier track00109 cam02 7.27842947", "outlier track00110 cam02 7.27842947"));
+	CHECK_FALSE(sameLine("outlier track00109 cam02 7.27842947", "outlier track00109 cam03 7.27842947"));
+	CHECK_FALSE(sameLine("t(0 0 0)", "t(0 0 3e-09)"));
+	CHECK_FALSE(sameLine("verdict Ready", "verdict Exploratory"));
+	CHECK_FALSE(sameLine("q(1 0 0 0)", "q(1 0 0 0) t(0 0 0)"));
+	CHECK_FALSE(sameLine("count 4", "count -4"));
+}

@@ -5,9 +5,11 @@
 // thresholds and graph edges, and how what a test produced is compared with its committed golden. One
 // spelling, so a field printed by two goldens means the same thing in both.
 //
-// Numbers are snapped to a 1e-9 grid, then printed to nine significant digits. That hides the last
-// bits in which two platforms' maths libraries differ, while any change of computation moves them
-// visibly.
+// Numbers are snapped to a 1e-9 grid, then printed to nine significant digits. Printing alone cannot
+// hide the last bits in which two platforms' maths libraries differ: a value on a rounding boundary
+// prints one way on one platform and the other way on another. So a golden is compared number by
+// number (sameLine): each may differ by one unit in its last printed digit, and the text around it
+// not at all. Any change of computation still moves a number by more.
 //
 // A test that includes this is compiled with LAIN_CAMERA_GOLDEN_DIR (where the goldens are
 // committed) and LAIN_CAMERA_GOLDEN_OUT (where a differing result is written).
@@ -21,7 +23,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <fstream>
 #include <iomanip>
 #include <locale>
@@ -152,6 +156,99 @@ namespace lain::camera::testing::golden
 		return e.a.value + "-" + e.b.value + " shared " + std::to_string(e.shared) + " bridge " + std::to_string(e.bridge);
 	}
 
+	namespace detail
+	{
+		inline bool isDigit(char c)
+		{
+			return c >= '0' && c <= '9';
+		}
+
+		// Where the number starting at `at` ends, or `at` when none starts there: an optional minus,
+		// digits, an optional fraction and an optional exponent, as number() and std::to_string print
+		// them. Digits inside a name ("track00109", "cam02") are a number too, so a name that differs
+		// in them still differs.
+		inline std::size_t numberEnd(const std::string& text, std::size_t at)
+		{
+			std::size_t k = at;
+			if (k < text.size() && text[k] == '-')
+				++k;
+			if (k >= text.size() || !isDigit(text[k]))
+				return at;
+			while (k < text.size() && isDigit(text[k]))
+				++k;
+			if (k + 1 < text.size() && text[k] == '.' && isDigit(text[k + 1]))
+			{
+				++k;
+				while (k < text.size() && isDigit(text[k]))
+					++k;
+			}
+			if (k < text.size() && (text[k] == 'e' || text[k] == 'E'))
+			{
+				std::size_t e = k + 1;
+				if (e < text.size() && (text[e] == '+' || text[e] == '-'))
+					++e;
+				if (e < text.size() && isDigit(text[e]))
+				{
+					k = e;
+					while (k < text.size() && isDigit(text[k]))
+						++k;
+				}
+			}
+			return k;
+		}
+
+		inline double parsed(const std::string& text)
+		{
+			std::istringstream in(text);
+			in.imbue(std::locale::classic());
+			double value = 0;
+			in >> value;
+			return value;
+		}
+
+		// Two printed numbers are the same when they differ by at most one unit in the ninth
+		// significant digit, number()'s last, or by one step of its 1e-9 snap near zero. Half a unit of
+		// slack again covers the decimal parse. A count below 1e8 has no such digit to give, so it is
+		// compared exactly.
+		inline bool close(double a, double b)
+		{
+			if (a == b)
+				return true;
+			const double difference = std::abs(a - b);
+			if (difference <= 1.5e-9)
+				return true;
+			const double largest = std::max(std::abs(a), std::abs(b));
+			return difference <= 1.5 * std::pow(10.0, std::floor(std::log10(largest)) - 8);
+		}
+	} // namespace detail
+
+	// Whether a produced golden line is the committed one: the same text, every number in it within one
+	// unit of its last printed digit (detail::close). A value on a rounding boundary prints either way
+	// depending on bits two platforms disagree about: one outlier's residual printed 7.27842947 on
+	// Windows and 7.27842948 on macOS arm64 (CI, 2026-11-12).
+	inline bool sameLine(const std::string& expected, const std::string& produced)
+	{
+		std::size_t i = 0, j = 0;
+		while (i < expected.size() && j < produced.size())
+		{
+			const std::size_t ei = detail::numberEnd(expected, i), ej = detail::numberEnd(produced, j);
+			if (ei != i && ej != j)
+			{
+				if (!detail::close(detail::parsed(expected.substr(i, ei - i)), detail::parsed(produced.substr(j, ej - j))))
+					return false;
+				i = ei;
+				j = ej;
+				continue;
+			}
+			if (expected[i] != produced[j])
+				return false;
+			++i;
+			++j;
+		}
+		return i == expected.size() && j == produced.size();
+	}
+
+	// The first line of `actual` that is not the same as `expected`'s (sameLine), or "none".
 	inline std::string firstDifference(const std::string& expected, const std::string& actual)
 	{
 		std::istringstream a(expected), b(actual);
@@ -162,14 +259,14 @@ namespace lain::camera::testing::golden
 			const bool hb = static_cast<bool>(std::getline(b, lb));
 			if (!ha && !hb)
 				return "none";
-			if (!ha || !hb || la != lb)
+			if (!ha || !hb || !sameLine(la, lb))
 				return "line " + std::to_string(line) + ":\n  golden:   " + (ha ? la : "<end>") + "\n  produced: " + (hb ? lb : "<end>");
 		}
 	}
 
-	// `produced` must be exactly the committed golden `file`. When it differs, what was produced is
-	// written beside the build and the test fails saying where: to accept a deliberate change, copy
-	// that file over the golden and commit it with the change.
+	// `produced` must be the committed golden `file`, line by line (sameLine). When it differs, what
+	// was produced is written beside the build and the test fails saying where: to accept a
+	// deliberate change, copy that file over the golden and commit it with the change.
 	inline void requireGolden(const std::string& file, const std::string& produced)
 	{
 		const std::string golden = std::string(LAIN_CAMERA_GOLDEN_DIR) + "/" + file;
@@ -178,10 +275,13 @@ namespace lain::camera::testing::golden
 		expected << in.rdbuf();
 		if (expected.str() == produced)
 			return;
+		const std::string difference = firstDifference(expected.str(), produced);
+		if (difference == "none")
+			return;
 
 		const std::string written = std::string(LAIN_CAMERA_GOLDEN_OUT) + "/" + file;
 		std::ofstream(written, std::ios::binary) << produced;
-		FAIL("the report differs from " << golden << " at " << firstDifference(expected.str(), produced)
+		FAIL("the report differs from " << golden << " at " << difference
 										<< "\nwhat was produced is in " << written
 										<< "; copy it over the golden only for a deliberate change");
 	}

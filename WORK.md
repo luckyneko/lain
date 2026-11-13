@@ -15485,7 +15485,9 @@ A survey of every random draw in the tree followed, asking what else belongs in 
 - The four pins were recomputed in Python from the stated rule before core's code existed, and
   match M15's `test_sensor.cpp`.
 - **Not run:** GCC and macOS, which only CI has, and the builds with video, OpenCV or Ceres off,
-  whose suites contain none of the moved cases except core's.
+  whose suites contain none of the moved cases except core's. *(feature/M15's CI first built it, on
+  2026-11-12: macOS printed one digit of the targetless golden's moved scene differently. See *A golden
+  is compared line by line*, below.)*
 
 ## `lain::camera::testing`: the camera tests' shared code is a target (built 2026-11-09)
 
@@ -15560,6 +15562,36 @@ every include outside it is the angle form, in the `<lain/...>` block where clan
 - `format-check` exit 0 over the whole tree, through the real target.
 - **Not run:** the Release build and its Release-only cases, whose bodies this Debug build compiles
   (`skipInDebug` keeps them reachable) but does not run; GCC and macOS, which only CI has.
+
+## A golden is compared line by line, a number within its last digit (built 2026-11-13)
+
+The golden half of `ea273a1` on `feature/M15`, backported so `feature/M9` can be pushed on its own.
+feature/M15's CI ([run 43125621287](https://github.com/luckyneko/lain/actions/runs/43125621287), its
+first build of `928751e`) found that macOS prints line 251 of the targetless registration golden as
+`outlier track00109 cam02 7.27842948`, where Windows prints `...47`. Pushed without this, `feature/M9`
+fails the same way.
+
+- **The cause is how a golden prints.** `golden::number` snaps a value to a 1e-9 grid and prints nine
+  significant digits, which for a value near 7 rounds again at 1e-8. So the snap cannot keep a value off
+  a rounding boundary, and this residual, out of an iterative solve, crossed one.
+- **Fixed in the comparison, not the printing.** `requireGolden` now compares line by line
+  (`goldentext.h`'s `sameLine`): the text exactly, and each number within one unit of its last printed
+  digit, or one step of the snap near zero. A count below 1e8 is compared exactly, and so are the digits
+  in a name like `track00109`. All three goldens go through it, and no golden file changed.
+- **Not taken:** `ea273a1`'s other half, `plugins/camera/test/test_comparison.cpp`, which is about M15's
+  capture comparison and has no counterpart here.
+
+### Verified
+
+- A new case, *a golden line may differ in a number's last printed digit and in nothing else*, holds the
+  comparison both ways. Two sabotages, each caught by it: any two numbers close (7 of its 13 checks
+  fail), and numbers compared as text (3 fail). The first cut of the first one did not build (C4702,
+  unreachable code), so the old binary answered; it was redone so that it compiles.
+- The committed golden with line 251 edited to macOS's `...48` passes, and with `...50` fails, naming
+  line 251.
+- `ctest -j8` **1363/1363** MSVC Debug with video, camera and Ceres on (+1, the new case);
+  warning-clean; `format-check` exit 0 over all 733 files.
+- **Not run:** macOS, the platform this is for, which only CI has.
 
 ## Outstanding work — one index
 
