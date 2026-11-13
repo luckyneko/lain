@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath>
+
 namespace lain::rigplan
 {
 	// How a camera or light is aimed on its mount, degrees, in the mount's frame (which is the plan
@@ -13,5 +15,8 @@ namespace lain::rigplan
 		double panDegrees = 0;
 		double tiltDegrees = 0;
 		double rollDegrees = 0;
+
+		// Whether every angle is a finite number, as a placement or a key must have.
+		bool isFinite() const { return std::isfinite(panDegrees) && std::isfinite(tiltDegrees) && std::isfinite(rollDegrees); }
 	};
 } // namespace lain::rigplan

@@ -2,6 +2,7 @@
 
 #include "lain/rigplan/realisation.h" // mountFromPlacement
 
+#include <lain/math/finite.h>
 #include <lain/string/format.h>
 
 #include <algorithm>
@@ -15,29 +16,14 @@
 
 namespace lain::rigplan
 {
-	static bool finite(const math::Vec2d& v)
-	{
-		return std::isfinite(v.x) && std::isfinite(v.y);
-	}
-
-	static bool finite(const math::Vec3d& v)
-	{
-		return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
-	}
-
-	static bool finite(const Aim& aim)
-	{
-		return std::isfinite(aim.panDegrees) && std::isfinite(aim.tiltDegrees) && std::isfinite(aim.rollDegrees);
-	}
-
 	static bool positive(const math::Vec2d& v)
 	{
-		return finite(v) && v.x > 0 && v.y > 0;
+		return math::isFinite(v) && v.x > 0 && v.y > 0;
 	}
 
 	static bool positive(const math::Vec3d& v)
 	{
-		return finite(v) && v.x > 0 && v.y > 0 && v.z > 0;
+		return math::isFinite(v) && v.x > 0 && v.y > 0 && v.z > 0;
 	}
 
 	// Whether `centre`, a point in a pole mount's frame, could be inside the pole once tolerances move it
@@ -149,7 +135,7 @@ namespace lain::rigplan
 		if (plan.room)
 		{
 			const Room& room = *plan.room;
-			if (!finite(room.centre) || !positive(room.size))
+			if (!math::isFinite(room.centre) || !positive(room.size))
 				environment("the room needs a finite centre and a positive size", std::nullopt); // a room has no identity
 			for (const auto& [surface, name] : {std::pair<const RoomSurface*, const char*>{&room.floor, "floor"},
 												{&room.ceiling, "ceiling"},
@@ -165,21 +151,21 @@ namespace lain::rigplan
 		for (const Plane& p : plan.planes)
 		{
 			identify(p.id, "plane", p.name);
-			if (!finite(p.centre) || !finite(p.aim) || !positive(p.size))
+			if (!math::isFinite(p.centre) || !p.aim.isFinite() || !positive(p.size))
 				environment(string::format("plane '{}' needs a finite centre and aim and a positive size", p.name), p.id);
 			checkMaterial(p.material, string::format("plane '{}'", p.name), p.id);
 		}
 		for (const Box& b : plan.boxes)
 		{
 			identify(b.id, "box", b.name);
-			if (!finite(b.centre) || !std::isfinite(b.yawDegrees) || !positive(b.size))
+			if (!math::isFinite(b.centre) || !std::isfinite(b.yawDegrees) || !positive(b.size))
 				environment(string::format("box '{}' needs a finite centre and yaw and a positive size", b.name), b.id);
 			checkMaterial(b.material, string::format("box '{}'", b.name), b.id);
 		}
 		for (const Prop& p : plan.props)
 		{
 			identify(p.id, "prop", p.name);
-			if (p.mesh.empty() || !std::isfinite(p.unitMetres) || p.unitMetres <= 0 || !finite(p.position) ||
+			if (p.mesh.empty() || !std::isfinite(p.unitMetres) || p.unitMetres <= 0 || !math::isFinite(p.position) ||
 				!std::isfinite(p.yawDegrees))
 				environment(string::format("prop '{}' needs a mesh, a positive unit and a finite position and yaw", p.name), p.id);
 			if (p.path)
@@ -206,12 +192,12 @@ namespace lain::rigplan
 			bool valid = std::isfinite(m.yawDegrees);
 			if (const auto* pole = std::get_if<Pole>(&m.kind))
 			{
-				valid = valid && finite(pole->floor) && std::isfinite(pole->height) && pole->height > 0 &&
+				valid = valid && math::isFinite(pole->floor) && std::isfinite(pole->height) && pole->height > 0 &&
 						std::isfinite(pole->diameter) && pole->diameter > 0;
 			}
 			else
 			{
-				valid = valid && finite(std::get<FixedPoint>(m.kind).position);
+				valid = valid && math::isFinite(std::get<FixedPoint>(m.kind).position);
 			}
 			if (!valid)
 			{
@@ -244,7 +230,7 @@ namespace lain::rigplan
 			}
 			if (!mounts.count(c.mount))
 				report(PlanProblem::UnknownMount, string::format("camera '{}' is on a mount the rig plan does not have", c.name), c.id);
-			if (!finite(c.offset) || !finite(c.aim))
+			if (!math::isFinite(c.offset) || !c.aim.isFinite())
 				report(PlanProblem::InvalidPlacement, string::format("camera '{}' has an offset or aim that is not finite", c.name), c.id);
 			const PlacementTolerance& t = c.tolerance;
 			if (t.offset.nanometres() < 0 || !validBound(t.panDegrees) || !validBound(t.tiltDegrees) || !validBound(t.rollDegrees))
@@ -289,7 +275,7 @@ namespace lain::rigplan
 			}
 			if (!mounts.count(l.mount))
 				report(PlanProblem::UnknownMount, string::format("light '{}' is on a mount the rig plan does not have", l.name), l.id);
-			if (!finite(l.offset) || !finite(l.aim))
+			if (!math::isFinite(l.offset) || !l.aim.isFinite())
 				report(PlanProblem::InvalidPlacement, string::format("light '{}' has an offset or aim that is not finite", l.name), l.id);
 			const auto mount = mounts.find(l.mount);
 			if (const Pole* pole = mount != mounts.end() ? usablePole(*mount->second) : nullptr; pole && insidePole(*pole, l.offset, 0))

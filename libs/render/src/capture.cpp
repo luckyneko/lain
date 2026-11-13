@@ -1,6 +1,7 @@
 #include "lain/render/capture.h"
 
 #include <lain/camera/projection.h>
+#include <lain/math/finite.h>
 #include <lain/string/format.h>
 #include <lain/task/task.h>
 
@@ -115,10 +116,7 @@ namespace lain::render
 	std::vector<std::string> validate(const CaptureView& view)
 	{
 		std::vector<std::string> problems;
-		const math::Quatd& q = view.worldFromCamera.rotation();
-		const math::Vec3d& t = view.worldFromCamera.translation();
-		if (!(std::isfinite(q.w) && std::isfinite(q.x) && std::isfinite(q.y) && std::isfinite(q.z) && std::isfinite(t.x) &&
-			  std::isfinite(t.y) && std::isfinite(t.z)))
+		if (!math::isFinite(view.worldFromCamera))
 			problems.push_back("the capture's pose is not finite");
 		if (!(std::isfinite(view.nearPlane) && std::isfinite(view.farPlane) && view.nearPlane > 0 && view.nearPlane < view.farPlane))
 			problems.push_back("the capture's depth range is not 0 < near < far");

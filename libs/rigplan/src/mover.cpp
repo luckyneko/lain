@@ -2,6 +2,7 @@
 
 #include "lain/rigplan/realisation.h" // mountFromPlacement, the aim convention
 
+#include <lain/math/finite.h>
 #include <lain/string/format.h>
 
 #include <algorithm>
@@ -9,16 +10,6 @@
 
 namespace lain::rigplan
 {
-	static bool finite(const math::Vec3d& v)
-	{
-		return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
-	}
-
-	static bool finite(const Aim& aim)
-	{
-		return std::isfinite(aim.panDegrees) && std::isfinite(aim.tiltDegrees) && std::isfinite(aim.rollDegrees);
-	}
-
 	std::vector<std::string> pathProblems(const Path& path)
 	{
 		std::vector<std::string> out;
@@ -32,7 +23,7 @@ namespace lain::rigplan
 				out.push_back(string::format("key {} is at frame {}, not after key {}'s frame {}", i, key.frame, i - 1,
 											 path.keys[i - 1].frame));
 			}
-			if (!finite(key.position) || !finite(key.aim))
+			if (!math::isFinite(key.position) || !key.aim.isFinite())
 				out.push_back(string::format("key {} has a position or aim that is not finite", i));
 		}
 		return out;

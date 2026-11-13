@@ -1,6 +1,7 @@
 #include "lain/rigplan/realisation.h"
 
 #include <lain/core/random.h>
+#include <lain/math/finite.h>
 #include <lain/string/format.h>
 
 #include <algorithm>
@@ -206,18 +207,13 @@ namespace lain::rigplan
 
 	NominalLayout nominalLayout(const RigPlan& plan)
 	{
-		const auto finite = [](const math::Vec3d& v)
-		{ return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z); };
-		const auto finiteAim = [](const Aim& a)
-		{ return std::isfinite(a.panDegrees) && std::isfinite(a.tiltDegrees) && std::isfinite(a.rollDegrees); };
-
 		NominalLayout layout;
 		std::unordered_map<core::Uuid, std::optional<math::RigidTransformd>> mounts;
 		for (const Mount& mount : plan.mounts)
 		{
 			const bool pole = std::holds_alternative<Pole>(mount.kind);
-			const bool placed = pole ? std::isfinite(std::get<Pole>(mount.kind).floor.x) && std::isfinite(std::get<Pole>(mount.kind).floor.y)
-									 : finite(std::get<FixedPoint>(mount.kind).position);
+			const bool placed = pole ? math::isFinite(std::get<Pole>(mount.kind).floor)
+									 : math::isFinite(std::get<FixedPoint>(mount.kind).position);
 			std::optional<math::RigidTransformd> pose;
 			if (placed && std::isfinite(mount.yawDegrees))
 				pose = mountPose(mount, math::Vec3d{0.0}, 0.0);
@@ -237,7 +233,7 @@ namespace lain::rigplan
 			const SensorSpecification* sensor = specification ? findSensor(plan.specifications, specification->sensor) : nullptr;
 			const LensSpecification* lens = specification ? findLens(plan.specifications, specification->lens) : nullptr;
 			const std::optional<math::RigidTransformd> planFromMount = mountOf(placed.mount);
-			if (planFromMount && finite(placed.offset) && finiteAim(placed.aim))
+			if (planFromMount && math::isFinite(placed.offset) && placed.aim.isFinite())
 			{
 				const math::Vec3d opticalCentre = sensor ? sensor->body.opticalCentre : math::Vec3d{0.0};
 				camera.planFromCamera = cameraPose(*planFromMount, placed.offset, placed.aim, opticalCentre);
@@ -251,7 +247,7 @@ namespace lain::rigplan
 		{
 			std::optional<math::RigidTransformd> pose;
 			const std::optional<math::RigidTransformd> planFromMount = mountOf(placed.mount);
-			if (planFromMount && finite(placed.offset) && finiteAim(placed.aim))
+			if (planFromMount && math::isFinite(placed.offset) && placed.aim.isFinite())
 				pose = *planFromMount * mountFromPlacement(placed.offset, placed.aim);
 			layout.lights.push_back({placed.id, pose});
 		}

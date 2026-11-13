@@ -1,5 +1,6 @@
 #include "lain/render/scene.h"
 
+#include <lain/math/finite.h>
 #include <lain/string/format.h>
 
 #include <cmath>
@@ -14,24 +15,6 @@ namespace lain::render
 	static bool usableColour(const image::ColorRGBf& c)
 	{
 		return finite(c) && c.r >= 0 && c.g >= 0 && c.b >= 0;
-	}
-
-	static bool finite(const math::Vec3d& v)
-	{
-		return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
-	}
-
-	static bool finite(const math::Mat4d& m)
-	{
-		for (math::length_t c = 0; c < 4; ++c)
-		{
-			for (math::length_t r = 0; r < 4; ++r)
-			{
-				if (!std::isfinite(m[c][r]))
-					return false;
-			}
-		}
-		return true;
 	}
 
 	std::vector<std::string> validate(const Scene& scene)
@@ -90,20 +73,20 @@ namespace lain::render
 					break;
 				}
 			}
-			if (!finite(instance.worldFromMesh))
+			if (!math::isFinite(instance.worldFromMesh))
 				problems.push_back(string::format("instance {} has a transform that is not finite", i));
 		}
 
 		for (std::size_t l = 0; l < scene.lights.size(); ++l)
 		{
 			const Light& light = scene.lights[l];
-			if (!finite(light.position))
+			if (!math::isFinite(light.position))
 				problems.push_back(string::format("light {} has a position that is not finite", l));
 			if (!usableColour(light.colour) || !std::isfinite(light.intensity) || light.intensity < 0)
 				problems.push_back(string::format("light {} has a colour or intensity that is negative or not finite", l));
 			if (light.kind == LightKind::Spot)
 			{
-				if (!finite(light.direction) || math::length(light.direction) <= 0)
+				if (!math::isFinite(light.direction) || math::length(light.direction) <= 0)
 					problems.push_back(string::format("spot {} has no direction", l));
 				if (!(light.innerConeDegrees >= 0 && light.innerConeDegrees < light.outerConeDegrees && light.outerConeDegrees <= 180))
 					problems.push_back(string::format("spot {} has a cone of {} to {} degrees, not 0 <= inner < outer <= 180", l,

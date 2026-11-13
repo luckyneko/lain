@@ -1,5 +1,6 @@
 #include "lain/mesh/mesh.h"
 
+#include <lain/math/finite.h>
 #include <lain/string/format.h>
 
 #include <cassert>
@@ -29,8 +30,7 @@ namespace lain::mesh
 		}
 		for (std::size_t v = 0; v < vertices; ++v)
 		{
-			const math::Vec3f& p = mesh.positions[v];
-			if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z))
+			if (!math::isFinite(mesh.positions[v]))
 			{
 				problems.push_back(string::format("vertex {} has a position that is not finite", v));
 				break;

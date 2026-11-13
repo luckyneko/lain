@@ -19837,7 +19837,8 @@ M9's mechanism, M15's content:
   `lain::testing`. It now reads `camera::testing::`, as M9's tests do.
 - **Found, not done:** `lain::render` (`scene.cpp`, `capture.cpp`, `view.cpp`, `viewport.cpp`) and
   `rigplan/mover.cpp` keep hand-written finiteness checks that `math::isFinite` now covers. M9's pass
-  covered camera's only, so these are left for a commit of their own.
+  covered camera's only, so these are left for a commit of their own. *(Done 2026-11-13, and
+  wider than this said: see Tidy-ups on feature/M15, item 6.)*
 
 ### Verified
 
@@ -20425,6 +20426,39 @@ Windows, MSVC Release, 32 logical cores, nothing else running:
   - GCC and macOS;
   - the bench's glibc peak-memory branch, which compiles only on Linux, so CI's Linux legs are its
     first build.
+
+## Tidy-ups on feature/M15 (2026-11-13)
+
+A survey of `feature/M15` after the bench split found six tidy-ups, one commit each. Nothing here
+changes what lain does.
+
+### 6. `math::isFinite` stated once
+
+The sweep *feature/M9 merged into feature/M15* recorded as found and not done. It was wider than
+recorded: besides `lain::render`'s four files and `mover.cpp`, `rigplan.cpp`, `realisation.cpp` and
+`lain::mesh`'s `validate` wrote checks by hand too: twelve of a vector, a matrix or a pose, and three
+of an aim.
+
+- **Every one now calls `math::isFinite`.** A pole's floor, written as `floor.x` and `floor.y` in
+  `nominalLayout`, and the grid's extent in `render::validate(Grid)`, are vectors too.
+- **`math::isFinite` gains a matrix overload**, a column at a time through the vector one, since
+  `render::validate(Scene)`'s instance transform (a `Mat4d`, not rigid) was the one check it could not
+  take. A matrix is a value like the others the header names, and with the overload `scene.cpp` keeps
+  no copy of its own. Its test walks every element of a 4 x 4 and of a 3 x 2.
+- **The three copies of `finite(const Aim&)` are `Aim::isFinite()`**, beside the three angles it
+  reads. `Aim` is rigplan's own type, so the check sits on it rather than in a private header.
+- **`image::ColorRGBf` checks stay** (`scene.cpp`'s `finite`, the grid's colours): `image::Color` is not
+  a GLM type, and `isFinite` does not cover it.
+
+**Verified:**
+
+- `ctest -j8` **1719/1719** MSVC Debug and **1727/1727** MSVC Release with video, camera and Ceres on
+  (+1 each, the matrix case). Both trees warning-clean; `format-check` clean.
+- **Two sabotages, both caught.**
+  - The matrix overload looking only at one element a column: the matrix case fails, and so does
+    `render`'s existing "a transform that is not finite", whose NaN sits off the diagonal.
+  - `Aim::isFinite` ignoring the tilt: `test_mover`'s path key and `test_rigplan`'s placement fail.
+- **Not run:** GCC and macOS.
 
 ## Outstanding work — one index
 

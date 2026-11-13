@@ -1,5 +1,7 @@
 #include "lain/render/view.h"
 
+#include <lain/math/finite.h>
+
 #include <cmath>
 
 namespace lain::render
@@ -14,10 +16,7 @@ namespace lain::render
 			problems.push_back("the view's focal length is not positive and finite");
 		if (!(std::isfinite(k.cx) && std::isfinite(k.cy)))
 			problems.push_back("the view's principal point is not finite");
-		const math::Quatd& q = view.worldFromCamera.rotation();
-		const math::Vec3d& t = view.worldFromCamera.translation();
-		if (!(std::isfinite(q.w) && std::isfinite(q.x) && std::isfinite(q.y) && std::isfinite(q.z) && std::isfinite(t.x) &&
-			  std::isfinite(t.y) && std::isfinite(t.z)))
+		if (!math::isFinite(view.worldFromCamera))
 			problems.push_back("the view's pose is not finite");
 		if (!(std::isfinite(view.nearPlane) && std::isfinite(view.farPlane) && view.nearPlane > 0 && view.nearPlane < view.farPlane))
 			problems.push_back("the view's depth range is not 0 < near < far");

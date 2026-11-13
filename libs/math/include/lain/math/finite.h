@@ -21,6 +21,18 @@ namespace lain::math
 		return true;
 	}
 
+	// A column at a time, each a vector.
+	template <length_t C, length_t R, typename T>
+	bool isFinite(const Mat<C, R, T>& m)
+	{
+		for (length_t c = 0; c < C; ++c)
+		{
+			if (!isFinite(m[c]))
+				return false;
+		}
+		return true;
+	}
+
 	template <typename T>
 	bool isFinite(const Quat<T>& q)
 	{

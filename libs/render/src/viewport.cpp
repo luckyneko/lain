@@ -3,6 +3,7 @@
 #include "state.h"
 
 #include <lain/image/transfercurve.h>
+#include <lain/math/finite.h>
 #include <lain/string/format.h>
 
 #include <algorithm>
@@ -118,17 +119,15 @@ namespace lain::render
 	std::vector<std::string> validate(const Grid& grid)
 	{
 		std::vector<std::string> problems;
-		const auto finite = [](const math::Vec3d& v)
-		{ return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z); };
-		if (!finite(grid.origin))
+		if (!math::isFinite(grid.origin))
 			problems.push_back("the grid's origin is not finite");
-		const auto unit = [&](const math::Vec3d& v)
-		{ return finite(v) && std::abs(math::length(v) - 1.0) <= 1e-9; };
+		const auto unit = [](const math::Vec3d& v)
+		{ return math::isFinite(v) && std::abs(math::length(v) - 1.0) <= 1e-9; };
 		if (!unit(grid.u) || !unit(grid.v) || std::abs(math::dot(grid.u, grid.v)) > 1e-9)
 			problems.push_back("the grid's axes are not unit length and at right angles");
 		if (!(std::isfinite(grid.spacing) && grid.spacing > 0))
 			problems.push_back("the grid's spacing is not positive and finite");
-		if (!(std::isfinite(grid.extent.x) && std::isfinite(grid.extent.y) && grid.extent.x > 0 && grid.extent.y > 0))
+		if (!(math::isFinite(grid.extent) && grid.extent.x > 0 && grid.extent.y > 0))
 			problems.push_back("the grid's extent is not positive and finite");
 		for (const image::ColorRGBf& colour : {grid.minor, grid.major})
 		{
