@@ -1,8 +1,7 @@
 // A rig plan's checks: what must hold before it can be realised.
 
-#include "testplan.h"
-
 #include <lain/rigplan/rigplan.h>
+#include <lain/rigplan/testing/testplan.h>
 
 #include <catch2/catch_test_macros.hpp>
 

@@ -115,9 +115,9 @@ endif()
 if(TARGET lain::render AND TARGET lain::camera::opencv)
 	add_executable(test-camera-capture test_capture.cpp)
 	target_compile_features(test-camera-capture PRIVATE cxx_std_17)
-	target_include_directories(test-camera-capture PRIVATE "${lain_SOURCE_DIR}/libs/render/test")
 	target_link_libraries(test-camera-capture PRIVATE
 		lain::render
+		lain::render::testing # the devices, the distorted cameras and the scene it draws
 		lain::rigplan::scene # its bake density, which 4d measures
 		lain::camera::backends
 		lain::camera::testing
@@ -140,9 +140,9 @@ endif()
 if(TARGET lain::render AND TARGET lain::camera::opencv AND TARGET lain::camera::ceres)
 	add_executable(test-camera-comparison test_comparison.cpp)
 	target_compile_features(test-camera-comparison PRIVATE cxx_std_17)
-	target_include_directories(test-camera-comparison PRIVATE "${lain_SOURCE_DIR}/libs/render/test")
 	target_link_libraries(test-camera-comparison PRIVATE
 		lain::rigplan::testing # the committed rig plan, its capture, and what a camera's ray met
+		lain::render::testing  # the devices it renders the capture on
 		lain::camera::backends
 		lain::camera::serialize # the capture's models and rig as camera documents
 		lain::io::image::codecs

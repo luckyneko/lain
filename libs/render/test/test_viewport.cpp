@@ -1,10 +1,9 @@
 // Integration: a viewport recorded into a command buffer as a window's pre-pass would be, then read
 // back as a pane would show it. SKIPs where the machine has no device.
 
-#include "gpu.h"
-#include "testscene.h"
-
 #include <lain/image/transfercurve.h>
+#include <lain/render/testing/gpu.h>
+#include <lain/render/testing/testscene.h>
 #include <lain/render/viewport.h>
 
 #include <catch2/catch_test_macros.hpp>

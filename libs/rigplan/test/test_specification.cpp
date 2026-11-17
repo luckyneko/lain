@@ -1,8 +1,7 @@
 // Specifications, and the nominal camera model a sensor and a lens derive.
 
-#include "testplan.h"
-
 #include <lain/rigplan/specification.h>
+#include <lain/rigplan/testing/testplan.h>
 
 #include <catch2/catch_test_macros.hpp>
 

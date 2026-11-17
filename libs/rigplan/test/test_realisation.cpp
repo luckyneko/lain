@@ -1,8 +1,7 @@
 // Realisation: one physical build of a rig plan, drawn from its seed.
 
-#include "testplan.h"
-
 #include <lain/rigplan/realisation.h>
+#include <lain/rigplan/testing/testplan.h>
 
 #include <catch2/catch_test_macros.hpp>
 

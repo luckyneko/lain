@@ -1,9 +1,8 @@
 // Integration: a rig plan's render scene drawn through a camera placed as a rig plan places one, so the
 // plan frame, the camera frame and the renderer are held to one another. SKIPs where there is no device.
 
-#include "gpu.h"
-
 #include <lain/render/renderer.h>
+#include <lain/render/testing/gpu.h>
 #include <lain/rigplan/scene.h>
 
 #include <catch2/catch_approx.hpp>

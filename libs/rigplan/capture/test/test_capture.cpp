@@ -6,10 +6,6 @@
 // The [gpu] cases run on every kind of device the machine offers (gpu.h). The refusal cases never reach
 // a device, so they hand writeCapture an invalid one.
 
-#include "gpu.h"
-#include "standinboard.h"
-#include "testplan.h"
-
 #include <lain/camera/serialize/cameramodel.h>
 #include <lain/camera/serialize/registeredrig.h>
 #include <lain/core/sha256.h>
@@ -20,10 +16,13 @@
 #include <lain/io/image/save.h>
 #include <lain/io/sequence/open.h>
 #include <lain/io/sequence/openers.h>
+#include <lain/render/testing/gpu.h>
 #include <lain/rigplan/capture.h>
 #include <lain/rigplan/sensor.h>
 #include <lain/rigplan/serialize/capture.h>
 #include <lain/rigplan/serialize/truth.h>
+#include <lain/rigplan/testing/standinboard.h>
+#include <lain/rigplan/testing/testplan.h>
 #include <lain/rigplan/truth.h>
 #include <lain/string/format.h>
 #include <lain/testing/scratch.h>

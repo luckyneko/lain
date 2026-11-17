@@ -1,12 +1,11 @@
 // Movers (mover.h; CONTEXT.md, "Mover"): a path's poses between and beyond its keys, a board placed by
 // its path, a prop on a path, and what check() refuses of them.
 
-#include "testplan.h"
-
 #include <lain/math/angles.h>
 #include <lain/rigplan/mover.h>
 #include <lain/rigplan/realisation.h>
 #include <lain/rigplan/rigplan.h>
+#include <lain/rigplan/testing/testplan.h>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>

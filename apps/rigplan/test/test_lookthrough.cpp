@@ -4,7 +4,6 @@
 #include "editorplan.h"
 #include "lookthrough.h"
 #include "selection.h"
-#include "testcameras.h" // libs/render/test: one strongly distorted camera per distortion model
 
 #include <lain/core/length.h>
 #include <lain/core/uri.h>
@@ -12,6 +11,7 @@
 #include <lain/image/image.h>
 #include <lain/image/imageview.h>
 #include <lain/render/capture.h>
+#include <lain/render/testing/testcameras.h> // one strongly distorted camera per distortion model
 #include <lain/rigplan/realisation.h>
 #include <lain/rigplan/sensor.h>
 

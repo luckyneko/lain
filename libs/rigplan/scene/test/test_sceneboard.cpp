@@ -4,16 +4,15 @@
 // through the board meets it at its frame and the room behind it in the still scene. And a moving
 // board's frames share every other mesh and texture, so an update between them uploads none.
 
-#include "gpu.h"
-#include "standinboard.h"
-#include "testplan.h"
-
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/projection.h>
 #include <lain/render/renderer.h>
+#include <lain/render/testing/gpu.h>
 #include <lain/rigplan/mover.h>
 #include <lain/rigplan/scene.h>
 #include <lain/rigplan/testing/scenecast.h>
+#include <lain/rigplan/testing/standinboard.h>
+#include <lain/rigplan/testing/testplan.h>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>

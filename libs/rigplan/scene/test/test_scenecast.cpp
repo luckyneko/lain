@@ -4,12 +4,11 @@
 // realised pole's, never against another cast. The board's case is test_sceneboard.cpp's, which has a
 // board renderer.
 
-#include "testplan.h"
-
 #include <lain/camera/projection.h>
 #include <lain/rigplan/realisation.h>
 #include <lain/rigplan/scene.h>
 #include <lain/rigplan/testing/scenecast.h>
+#include <lain/rigplan/testing/testplan.h>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>

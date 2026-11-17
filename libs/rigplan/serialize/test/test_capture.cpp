@@ -1,10 +1,9 @@
 // A synthetic capture's manifest as a document: capture.json read back as it was written, its rig plan
 // embedded whole with its paths relative to the capture folder, and a hand edit refused.
 
-#include "testplan.h"
-
 #include <lain/rigplan/serialize/capture.h>
 #include <lain/rigplan/serialize/rigplan.h>
+#include <lain/rigplan/testing/testplan.h>
 #include <lain/testing/rootedpath.h>
 
 #include <catch2/catch_test_macros.hpp>

@@ -2,12 +2,11 @@
 // what lain's own camera geometry and the shading model say the picture must be: the ray table's
 // own sub-sample rays cast on the CPU, never stored pixels. SKIPs where the machine has no device.
 
-#include "gpu.h"
-#include "testcameras.h"
-#include "testscene.h"
-
 #include <lain/render/capture.h>
 #include <lain/render/renderer.h>
+#include <lain/render/testing/gpu.h>
+#include <lain/render/testing/testcameras.h>
+#include <lain/render/testing/testscene.h>
 
 #include <catch2/catch_message.hpp>
 #include <catch2/catch_test_macros.hpp>

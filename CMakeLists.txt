@@ -224,7 +224,7 @@ if(LAIN_BUILD_TESTING OR LAIN_BUILD_BENCHMARK)
 	add_subdirectory(libs/testing)      # collision-free scratch paths for parallel ctest
 endif()
 if(LAIN_BUILD_TESTING)
-	add_subdirectory(libs/rigplan/testing) # the example rig plans, a capture, and what a camera's ray met
+	add_subdirectory(libs/rigplan/testing) # a test rig plan, the example rig plans, a capture, and what a camera's ray met
 endif()
 
 # ---- Plugins (swappable satellites: lain::io::image::<fmt> codecs) ----------

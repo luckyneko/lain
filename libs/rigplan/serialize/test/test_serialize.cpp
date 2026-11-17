@@ -1,9 +1,8 @@
 // Rig plans and specification catalogues as documents: what they write, and what a strict read refuses.
 
-#include "testplan.h"
-
 #include <lain/rigplan/realisation.h>
 #include <lain/rigplan/serialize/rigplan.h>
+#include <lain/rigplan/testing/testplan.h>
 #include <lain/testing/rootedpath.h>
 
 #include <catch2/catch_test_macros.hpp>

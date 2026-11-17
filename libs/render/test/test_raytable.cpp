@@ -2,10 +2,9 @@
 // well a blend of four of them stands for the model, and the faces and tiles of an intermediate image
 // every sub-sample can be remapped from. Each case is judged against lain's own camera geometry.
 
-#include "testcameras.h"
-
 #include <lain/camera/projection.h>
 #include <lain/render/capture.h>
+#include <lain/render/testing/testcameras.h>
 #include <lain/render/view.h>
 #include <lain/testing/threadpool.h>
 

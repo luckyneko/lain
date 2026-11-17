@@ -1,12 +1,11 @@
 // Integration: scenes drawn on a real device and read back, each judged against what lain's own
 // geometry and the shading model say the picture must be. SKIPs where the machine has no device.
 
-#include "gpu.h"
-#include "testscene.h"
-
 #include <lain/image/convert.h>
 #include <lain/image/pixelformat.h>
 #include <lain/render/renderer.h>
+#include <lain/render/testing/gpu.h>
+#include <lain/render/testing/testscene.h>
 
 #include <catch2/catch_test_macros.hpp>
 

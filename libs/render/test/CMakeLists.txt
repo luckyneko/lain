@@ -14,7 +14,7 @@ add_executable(test-render
 )
 
 target_compile_features(test-render PRIVATE cxx_std_17)
-target_link_libraries(test-render PRIVATE lain::render lain::camera lain::testing lain::warnings Catch2::Catch2WithMain)
+target_link_libraries(test-render PRIVATE lain::render lain::camera lain::render::testing lain::testing lain::warnings Catch2::Catch2WithMain)
 
 # On macOS the loader finds no driver unless the vendored MoltenVK ICD sits beside the executable.
 acm_stage_vulkan_runtime(test-render)

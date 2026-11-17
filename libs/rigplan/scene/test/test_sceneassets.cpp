@@ -3,14 +3,13 @@
 // for the same thing; a scene says which object of the plan each instance draws, and draws a surface
 // waiting on its asset grey.
 
-#include "testplan.h"
-
 #include <lain/io/image/codecs.h>
 #include <lain/io/image/load.h>
 #include <lain/io/image/save.h>
 #include <lain/io/mesh/codecs.h>
 #include <lain/io/mesh/load.h>
 #include <lain/rigplan/scene.h>
+#include <lain/rigplan/testing/testplan.h>
 #include <lain/testing/scratch.h>
 
 #include <catch2/catch_test_macros.hpp>

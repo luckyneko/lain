@@ -21,7 +21,6 @@
 // target through the real backends; and its scene was test_features.cpp's footage case exactly, so its
 // tracks read beside that case's.
 
-#include "gpu.h"
 #include "registration.h"
 
 #include <lain/camera/board/specification.h>
@@ -40,6 +39,7 @@
 #include <lain/io/data/load.h>
 #include <lain/io/sequence/open.h>
 #include <lain/math/angles.h>
+#include <lain/render/testing/gpu.h>
 #include <lain/rigplan/capture.h>
 #include <lain/rigplan/realisation.h>
 #include <lain/rigplan/scene.h>

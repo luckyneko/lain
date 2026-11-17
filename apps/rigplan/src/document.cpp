@@ -19,7 +19,7 @@ namespace rigplan
 
 	rp::RigPlan newPlan()
 	{
-		// The specifications the rig plan tests place their cameras with (libs/rigplan/test/testplan.h), so
+		// The specifications the rig plan tests place their cameras with (lain/rigplan/testing/testplan.h), so
 		// a new plan's first camera is one whose behaviour is already known.
 		rp::RigPlan plan;
 		rp::SensorSpecification sensor;

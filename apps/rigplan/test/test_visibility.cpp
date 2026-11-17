@@ -3,11 +3,11 @@
 // and the picture, its legend and the cell under the pointer. Faces are "drawn" here as distances
 // filled by hand: kNoSurface (nothing in the way, so every cell in an image is seen) or 0 (nothing seen).
 
-#include "testcameras.h"
 #include "visibilityschedule.h"
 #include "visibilityview.h"
 
 #include <lain/render/renderer.h>
+#include <lain/render/testing/testcameras.h>
 #include <lain/rigplan/visibility.h>
 #include <lain/testing/threadpool.h>
 

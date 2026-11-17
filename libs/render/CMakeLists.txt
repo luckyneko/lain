@@ -41,5 +41,6 @@ target_link_libraries(render
 )
 
 if(LAIN_BUILD_TESTING)
+	add_subdirectory(testing) # what tests drawing through the renderer share (testing/CMakeLists.txt)
 	add_subdirectory(test)
 endif()

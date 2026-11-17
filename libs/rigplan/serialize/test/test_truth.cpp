@@ -1,11 +1,10 @@
 // A synthetic capture's ground truth as documents: truth/poses.json and truth/board.json read back as
 // they were written, and refuse what a hand edit got wrong. And a rig plan's reference camera.
 
-#include "testplan.h"
-
 #include <lain/rigplan/realisation.h>
 #include <lain/rigplan/serialize/rigplan.h>
 #include <lain/rigplan/serialize/truth.h>
+#include <lain/rigplan/testing/testplan.h>
 #include <lain/rigplan/truth.h>
 
 #include <catch2/catch_test_macros.hpp>

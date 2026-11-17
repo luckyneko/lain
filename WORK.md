@@ -20460,6 +20460,43 @@ of an aim.
   - `Aim::isFinite` ignoring the tilt: `test_mover`'s path key and `test_rigplan`'s placement fail.
 - **Not run:** GCC and macOS.
 
+### 7. The render and rig plan tests' shared headers are targets
+
+The shape `lain::camera::testing` retired on M9 (*`lain::camera::testing`*), still alive in M15's
+code: seven executables in five directories put `libs/render/test` on their include path to find
+`gpu.h`, `testcameras.h` or `testscene.h`, and the rig plan tests reached `libs/rigplan/test/testplan.h`
+and `libs/rigplan/scene/test/standinboard.h` by `../../test` and by the scene test directory.
+
+- **`lain::render::testing`** (`libs/render/testing`, INTERFACE, built with the tests) holds the three
+  render headers, already in `lain::render::testing`'s namespace. It links what they name:
+  `lain::render`, `lain::camera`, `lain::image`, `lain::mesh`, `archimedes` and Catch2.
+  `LAIN_EXPECT_CPU_DEVICE` stays each executable's own, since it is true only of one that stages the
+  CPU driver beside itself.
+- **`lain::rigplan::testing` takes `testplan.h` and `standinboard.h`**, adding `lain::rigplan`,
+  `lain::core`, `lain::testing` and `lain::image` to its link line. Decided with the repo owner over a
+  second, lighter target: `test-rigplan` and `test-rigplan-serialize` now link the capture and render
+  stack through it for `testplan.h` alone, though they call none of it.
+- **The headers moved unchanged** (`git mv`), so `testplan.h` keeps its `testplan` namespace and
+  `standinboard.h` its global `StandInBoard`; only `testcameras.h`'s "here" now names
+  `libs/render/test`. Every include is the angle form, in the `<lain/...>` block.
+- **Two lines outside rigplan and render** change with it: `plugins/camera/test`'s two capture tests
+  include `<lain/render/testing/gpu.h>` (and `test_capture.cpp` the other two), since a quoted
+  `"gpu.h"` no longer resolves.
+- **Left as it is:** `libs/media/serialize/test`'s `../../test`, the exception *`lain::camera::testing`*
+  recorded, whose trigger (a consumer outside `libs/media`) has not fired; and `plugins/camera/test`'s
+  own `camera-fixture`, which puts its own directory on its consumers' path.
+
+**Verified:**
+
+- **The same tests are discovered:** `ctest -N` lists 1719 in Debug and 1727 in Release, identical
+  to item 6's.
+- **The build files agree:** no compile gets `libs/render/test`, `libs/rigplan/test` or
+  `libs/rigplan/scene/test` as an include directory. 33 get `libs/render/testing/include` and 20
+  `libs/rigplan/testing/include`.
+- `ctest -j8` **1719/1719** MSVC Debug and **1727/1727** MSVC Release with video, camera and Ceres on;
+  both trees warning-clean; `format-check` clean.
+- **Not run:** GCC and macOS.
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because

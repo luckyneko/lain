@@ -1,7 +1,8 @@
 #pragma once
 
 // Strongly distorted cameras, one per distortion model, for the capture pass's tests: the ray table's
-// here, the device pass's, and the board claim's in plugins/camera/test. Free of any test framework.
+// and the device pass's in libs/render/test, and the board claim's in plugins/camera/test. Free of any
+// test framework.
 //
 // At scale 1 each is 640x480 with every intrinsic distinct (fx != fy, the principal point off the
 // centre), so a transposed parameter moves the answer. The coefficients are strong where

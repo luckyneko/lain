@@ -7,13 +7,11 @@ add_executable(test-rigplan-capture
 )
 
 target_compile_features(test-rigplan-capture PRIVATE cxx_std_17)
-# The rig plan the rigplan tests share, the stand-in board renderer, and the device the cases draw on.
-target_include_directories(test-rigplan-capture PRIVATE
-	"${PROJECT_SOURCE_DIR}/libs/rigplan/test" "${PROJECT_SOURCE_DIR}/libs/rigplan/scene/test" "${PROJECT_SOURCE_DIR}/libs/render/test"
-)
 target_link_libraries(test-rigplan-capture PRIVATE
 	lain::rigplan::capture lain::rigplan::serialize lain::camera::serialize
 	lain::io::image lain::io::image::codecs lain::io::data lain::io::data::codecs lain::io::sequence
+	lain::rigplan::testing # the rig plan the rigplan tests share, and the stand-in board renderer
+	lain::render::testing  # the devices the cases draw on
 	lain::string lain::testing lain::warnings Catch2::Catch2WithMain
 )
 

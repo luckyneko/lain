@@ -3,13 +3,12 @@
 // segment from the camera to the cell meets a box. The last case draws the distances on a device
 // through renderDistance, and SKIPs where the machine has none.
 
-#include "gpu.h"
-#include "testcameras.h"
-#include "testplan.h"
-
 #include <lain/camera/projection.h>
 #include <lain/render/renderer.h>
+#include <lain/render/testing/gpu.h>
+#include <lain/render/testing/testcameras.h>
 #include <lain/rigplan/scene.h>
+#include <lain/rigplan/testing/testplan.h>
 #include <lain/rigplan/visibility.h>
 
 #include <catch2/catch_test_macros.hpp>

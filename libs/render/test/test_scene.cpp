@@ -1,8 +1,7 @@
 // Unit: what makes a render scene undrawable, one problem per fault. No device.
 
-#include "testscene.h"
-
 #include <lain/render/scene.h>
+#include <lain/render/testing/testscene.h>
 
 #include <catch2/catch_test_macros.hpp>
 

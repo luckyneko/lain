@@ -1,9 +1,8 @@
 // The room, planes, boxes and props, their checks, and the matrix that puts a prop's mesh in the plan.
 
-#include "testplan.h"
-
 #include <lain/rigplan/environment.h>
 #include <lain/rigplan/rigplan.h>
+#include <lain/rigplan/testing/testplan.h>
 
 #include <catch2/catch_test_macros.hpp>
 

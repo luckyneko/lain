@@ -22,7 +22,6 @@
 
 #include "camerafiles.h"
 #include "clibinders.h"
-#include "gpu.h"
 #include "graphio.h"
 #include "runmode.h"
 #include "scene.h"
@@ -38,6 +37,7 @@
 #include <lain/io/image/codecs.h>
 #include <lain/io/mesh/codecs.h>
 #include <lain/io/sequence/openers.h>
+#include <lain/render/testing/gpu.h>
 #include <lain/rigplan/capture.h>
 #include <lain/rigplan/testing/capture.h>
 #include <lain/rigplan/testing/exampleplan.h>

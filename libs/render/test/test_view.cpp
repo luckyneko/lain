@@ -1,8 +1,7 @@
 // Unit: a view's clip space against lain's own projection, and what makes a view undrawable. No
 // device.
 
-#include "testscene.h"
-
+#include <lain/render/testing/testscene.h>
 #include <lain/render/view.h>
 
 #include <catch2/catch_approx.hpp>

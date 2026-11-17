@@ -2,9 +2,8 @@
 // check() thinks of it (nominalLayout), the aim a rotation makes (aimOf), and what each problem is
 // about (PlanDiagnostic::owner).
 
-#include "testplan.h"
-
 #include <lain/rigplan/realisation.h>
+#include <lain/rigplan/testing/testplan.h>
 
 #include <catch2/catch_test_macros.hpp>
 

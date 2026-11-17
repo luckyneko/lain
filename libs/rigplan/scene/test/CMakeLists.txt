@@ -13,12 +13,11 @@ add_executable(test-rigplan-scene
 )
 
 target_compile_features(test-rigplan-scene PRIVATE cxx_std_17)
-# The rig plan the rigplan tests share, and the device the render tests draw on.
-target_include_directories(test-rigplan-scene PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../test" "${PROJECT_SOURCE_DIR}/libs/render/test")
 target_link_libraries(test-rigplan-scene PRIVATE
 	lain::rigplan::scene
 	lain::io::image lain::io::image::codecs lain::io::mesh lain::io::mesh::codecs
-	lain::rigplan::testing # what a camera's ray met (test_scenecast.cpp)
+	lain::rigplan::testing # the rig plan the rigplan tests share, and what a camera's ray met (test_scenecast.cpp)
+	lain::render::testing  # the devices the render cases draw on
 	lain::testing lain::warnings Catch2::Catch2WithMain
 )
 
@@ -37,8 +36,9 @@ add_executable(test-rigplan-scene-board
 	test_sceneboard.cpp
 )
 target_compile_features(test-rigplan-scene-board PRIVATE cxx_std_17)
-target_include_directories(test-rigplan-scene-board PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../test" "${PROJECT_SOURCE_DIR}/libs/render/test")
-target_link_libraries(test-rigplan-scene-board PRIVATE lain::rigplan::scene lain::rigplan::testing lain::testing lain::warnings Catch2::Catch2WithMain)
+target_link_libraries(test-rigplan-scene-board PRIVATE
+	lain::rigplan::scene lain::rigplan::testing lain::render::testing lain::testing lain::warnings Catch2::Catch2WithMain
+)
 acm_stage_vulkan_runtime(test-rigplan-scene-board)
 if(ACM_SWIFTSHADER_ICD)
 	target_compile_definitions(test-rigplan-scene-board PRIVATE LAIN_EXPECT_CPU_DEVICE)

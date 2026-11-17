@@ -7,10 +7,6 @@
 // realised cameras and recorded by their sensors, is detected where its ground truth says (M15 slice
 // 5c). Release only, since the CPU draws 11 million rays a picture.
 
-#include "gpu.h"		 // libs/render/test
-#include "testcameras.h" // libs/render/test
-#include "testscene.h"	 // libs/render/test
-
 #include <lain/camera/backends.h>
 #include <lain/camera/board/detection.h>
 #include <lain/camera/board/rendering.h>
@@ -23,6 +19,9 @@
 #include <lain/image/transfercurve.h>
 #include <lain/render/capture.h>
 #include <lain/render/renderer.h>
+#include <lain/render/testing/gpu.h>
+#include <lain/render/testing/testcameras.h>
+#include <lain/render/testing/testscene.h>
 #include <lain/rigplan/mover.h>
 #include <lain/rigplan/realisation.h>
 #include <lain/rigplan/scene.h>

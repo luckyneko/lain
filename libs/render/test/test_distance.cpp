@@ -2,10 +2,9 @@
 // each texel judged against the distance along its centre's ray to the squares the scene is made of,
 // worked out here by intersecting that ray with each. SKIPs where the machine has no device.
 
-#include "gpu.h"
-#include "testscene.h"
-
 #include <lain/render/renderer.h>
+#include <lain/render/testing/gpu.h>
+#include <lain/render/testing/testscene.h>
 
 #include <catch2/catch_test_macros.hpp>
 

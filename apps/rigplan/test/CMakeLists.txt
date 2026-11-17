@@ -23,15 +23,15 @@ add_executable(test-rigplan-app
 )
 
 target_compile_features(test-rigplan-app PRIVATE cxx_std_17)
-# The examples' builder, and libs/render/test's strongly distorted cameras, which the look-through's steps
-# are held to.
-target_include_directories(test-rigplan-app PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../examples/src" "${lain_SOURCE_DIR}/libs/render/test")
+# The examples' builder.
+target_include_directories(test-rigplan-app PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../examples/src")
 # The committed examples, which the test reads and compares with what the builder writes.
 target_compile_definitions(test-rigplan-app PRIVATE LAIN_RIGPLAN_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../examples")
 # No camera backend is registered here, deliberately: it is how the test sees a capture refused for
 # want of a board renderer in every build, since a registry only grows.
 target_link_libraries(test-rigplan-app PRIVATE
 	rigplan-tested
+	lain::render::testing # the strongly distorted cameras the look-through's steps are held to
 	lain::rigplan lain::rigplan::serialize lain::rigplan::capture lain::camera lain::image
 	lain::io lain::io::data lain::io::data::codecs lain::io::image::codecs lain::io::mesh::codecs
 	lain::testing lain::warnings Catch2::Catch2WithMain

@@ -147,14 +147,13 @@ if(TARGET lain::camera::opencv)
 		test_capturevertical.cpp
 	)
 	target_compile_features(test-flowview-capture PRIVATE cxx_std_17)
-	# The device a [gpu] case draws on (libs/render/test/gpu.h).
-	target_include_directories(test-flowview-capture PRIVATE "${lain_SOURCE_DIR}/libs/render/test")
 	target_compile_definitions(test-flowview-capture PRIVATE
 		LAIN_FLOWVIEW_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../examples"
 	)
 	target_link_libraries(test-flowview-capture PRIVATE
 		flowview-tested
 		lain::rigplan::testing # the committed rig plan, rendered whole
+		lain::render::testing # the devices a [gpu] case draws on
 		lain::io::mesh::codecs							 # the meshes a rig plan names, as rigplan render registers them
 		lain::testing lain::warnings Catch2::Catch2WithMain
 	)

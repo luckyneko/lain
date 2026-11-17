@@ -1,8 +1,6 @@
 // Unit: a rig plan's render scene, judged on the CPU: which surfaces, facing which way, their
 // pictures laid out, props placed and played, lights posed. Files only where an asset must load.
 
-#include "testplan.h"
-
 #include <lain/image/procedural.h>
 #include <lain/io/image/codecs.h>
 #include <lain/io/image/load.h>
@@ -11,6 +9,7 @@
 #include <lain/io/mesh/load.h>
 #include <lain/render/renderer.h>
 #include <lain/rigplan/scene.h>
+#include <lain/rigplan/testing/testplan.h>
 #include <lain/testing/scratch.h>
 
 #include <catch2/catch_approx.hpp>

@@ -1,12 +1,11 @@
 // A synthetic capture's ground truth (truth.h; CONTEXT.md, "Ground truth"): poses, the board corners in
 // view of each camera through its REALISED model, and the rig relative to a reference camera.
 
-#include "testplan.h"
-
 #include <lain/camera/projection.h>
 #include <lain/math/angles.h>
 #include <lain/rigplan/mover.h>
 #include <lain/rigplan/realisation.h>
+#include <lain/rigplan/testing/testplan.h>
 #include <lain/rigplan/truth.h>
 
 #include <catch2/catch_test_macros.hpp>
