@@ -20514,6 +20514,15 @@ no call site changes.
 through both files (`test_rigplan`, `test_environment`, `test_nominal` through the plan's check;
 `test_specification` and `test_sensor` through the specifications'). **Not run:** GCC and macOS.
 
+### 10. Three recorded items gain index rows
+
+*Outstanding work — one index* says every deferred item and known issue gets a row pointing at its
+owning section, and three recorded in M15 had none: fmt 10.2.1 against libc++'s `char_traits`
+deprecation and the macOS linker's duplicate-libraries warning (under *Deferred — build and
+dependencies*), and a rig plan's uris changing spelling on Windows (under *Deferred — serialization,
+params, graphics*). Pointer rows only. The `isFinite` sweep needed none: its owning section says it
+is done (item 6).
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because
@@ -20831,6 +20840,9 @@ M12 §Not in this milestone.)*
   feature such as a board is not affected. Per-format multisample support needs checking first, since
   archimedes clamps the sample count per device. **Trigger:** a measurement that needs silhouettes
   placed better than 4b records. *(M15 §Slice 4 planned.)*
+- **A rig plan's uris change spelling across a save and a load on Windows**, predicted from the code and
+  not observed. **Trigger:** the first comparison of a rig plan's uris across a load. *(M15 §feature/M15's
+  first CI runs.)*
 - **A finer ray-table lattice near a fold**, at a half or quarter pixel, for a camera whose pixel-corner
   lattice interpolates it worse than the tolerance. **Trigger:** the first realised camera refused for
   it. *(M15 §Sub-slice 4a built.)*
@@ -20921,11 +20933,16 @@ The rest of the answers' follow-ups, each its own commit. *(§NOTES.txt (2026-11
   licence, so there is no SPIRV-Cross text for a notice to read. *(Same.)*
 - **CI's first run of the notices**, on Linux and on Windows, where MSVC's literal limit applies.
   *(§Every built dependency's notice in `--licenses`.)*
+
 ### Deferred — build and dependencies
 
 - **Catch2 3.14.0 → 3.16.1.** Intended, and decided by the repo owner on 2026-11-01 to land on its own
   branch rather than in feature/M9's PR, because it renames every ctest test. *(§Catch2's `FAIL` and
   `SKIP` do not return.)*
+- **fmt 10.2.1 against a newer libc++**, which deprecates `char_traits<fmt::detail::char8_type>`: a
+  libc++ that removes it breaks the build until fmt is bumped. *(M15 §Sub-slice 7a built.)*
+- **The macOS linker's "ignoring duplicate libraries" warning**, recorded rather than chased.
+  *(M15 §Sub-slice 7b built.)*
 
 ### Backlog tiers — speculative and foundational
 
