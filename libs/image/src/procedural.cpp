@@ -9,7 +9,7 @@
 #include <cmath>
 #include <cstdint>
 
-// Moved from libs/camera/test/texturedscene.h, where M9's synthetic scene still samples it per ray:
+// Moved from lain/camera/testing/texturedscene.h, where M9's synthetic scene still samples it per ray:
 // every expression is the one it was, so that scene draws the same footage byte for byte. The scramble
 // was SplitMix64's one-step mix written out, and is core::splitMix64(x, 1), bit for bit.
 namespace lain::image

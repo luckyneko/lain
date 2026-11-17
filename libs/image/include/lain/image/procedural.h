@@ -10,7 +10,7 @@ namespace lain::image
 	// blobs on top, so a feature detector finds stable extrema at several scales. It is a function of
 	// position on a surface, in metres, defined everywhere and the same on every platform, so a test
 	// renderer can sample it per ray and a GPU renderer can bake it once; there is one implementation
-	// either way. Lifted from M9's synthetic scene (libs/camera/test/texturedscene.h), which still
+	// either way. Lifted from M9's synthetic scene (lain/camera/testing/texturedscene.h), which still
 	// samples it per ray and draws the same footage it always drew.
 	struct ProceduralTexture
 	{

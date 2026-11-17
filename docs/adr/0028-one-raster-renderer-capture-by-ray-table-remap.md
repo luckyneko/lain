@@ -54,7 +54,7 @@ own `unproject` builds on the CPU. The camera model is never ported to a shader.
      tolerance (0.01 px by default). Measured on strongly distorted cameras of all six models at
      640×480: 2.5e-4 to 2.4e-3 px.)*
   3. A compute pass samples the intermediate image along each ray and averages s × s rays per pixel,
-     which integrates the pixel's footprint as `libs/camera/test/texturedscene.h` does on the CPU.
+     which integrates the pixel's footprint as `lain/camera/testing/texturedscene.h` does on the CPU.
 - **The remap does not bias the ground truth.** A scene point still lands at `project(X)` under
   the realised model. What the remap costs is a small low-pass on pixel values, kept below the
   sensor's resolution by making the intermediate image finer than the camera's angular resolution.

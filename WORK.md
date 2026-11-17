@@ -20497,6 +20497,11 @@ and `libs/rigplan/scene/test/standinboard.h` by `../../test` and by the scene te
   both trees warning-clean; `format-check` clean.
 - **Not run:** GCC and macOS.
 
+### 8. `texturedscene.h`'s path in three comments
+
+`image/procedural.h`, `procedural.cpp` and ADR-0028 named `libs/camera/test/texturedscene.h`, which
+M9 moved to `lain/camera/testing/` (*`lain::camera::testing`*). They name the new path. Comments only.
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because
