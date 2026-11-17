@@ -73,6 +73,9 @@ namespace lain::camera::testing::rig
 		double pixelNoiseX = 0;
 		double pixelNoiseY = 0;
 		bool reportCovariance = false;
+		// (camera, group) whose detector reports this covariance (xx, xy, yy) on every corner, whatever
+		// the noise: a detector that reports one which is not positive definite.
+		std::map<std::pair<std::size_t, std::size_t>, std::array<double, 3>> reportedCovariance;
 	};
 	inline Scene& scene()
 	{
@@ -165,6 +168,8 @@ namespace lain::camera::testing::rig
 			std::optional<std::array<double, 3>> covariance;
 			if (s.reportCovariance)
 				covariance = std::array<double, 3>{s.pixelNoiseX * s.pixelNoiseX, 0.0, s.pixelNoiseY * s.pixelNoiseY};
+			if (const auto reported = s.reportedCovariance.find({camera, group}); reported != s.reportedCovariance.end())
+				covariance = reported->second;
 			observation.features.push_back({id, {pixel.u + nx, pixel.v + ny}, covariance});
 		}
 		if (observation.features.size() < 4)

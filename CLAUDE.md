@@ -1400,6 +1400,14 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-13 — board registration refuses a covariance that is not positive definite
+
+The last open known defect. A usable detection's corner whose covariance is not `positiveDefinite`
+now fails board registration as `InvalidDataset`, naming group, camera and corner, before any pose:
+the targetless methods' rule. Unchecked, the stand-in path came back Ready with that view an outlier at
+infinity. A new case and a sabotage hold it; *Known defects* has none open. Full notes in WORK.md's
+*Board registration refuses a covariance that is not positive definite*.
+
 ### Update 2026-11-13 — measurements out of ctest (from feature/M15's `8b3ccb9`)
 
 The four Release-only cases that held a time or memory figure to a bound keep their correctness checks
@@ -1649,7 +1657,7 @@ follow-ups, in WORK.md's *NOTES.txt (2026-11-02)*.
   `lookingAt` orientation cases. **Keeping `UnionFind`'s higher root passes all 518 camera and flowview
   tests**: nothing observes which root is kept, so the rule is unpinned determinism insurance.
 - **Found, recorded as a known defect:** board registration whitens a detector's covariance without
-  checking it is positive definite.
+  checking it is positive definite. *(**Fixed 2026-11-13**: it refuses one, as targetless does.)*
 - **CI's first run (41597659039 on `f7b2c69`) found two things, each fixed in its own commit:** a check of
   mine too strict for macOS arm64 (`rotationBetween(a, -a)` reads 1e-17, not 0), and GCC 13's false
   `-Wmaybe-uninitialized` on `calibrateScene`'s empty optional, which stopped all three Linux Release

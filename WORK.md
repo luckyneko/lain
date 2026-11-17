@@ -15655,6 +15655,42 @@ Every file but four was identical on M9 and took M15's change as it is. The four
 - Warning-clean builds of both trees, benches included; `format-check` exit 0 over all 737 files.
 - **Not run:** GCC and macOS, and the bench's glibc peak-memory branch, which only Linux compiles.
 
+## Board registration refuses a covariance that is not positive definite (built 2026-11-13)
+
+The last open known defect, from §NOTES.txt (2026-11-02). Board registration whitened a detector's
+corner covariance (`whitenedSquared`, in the outlier test, and in the refiner through each corner's
+observation) without asking `positiveDefinite`, which both targetless methods ask of a track before
+anything else. Decided with the repo owner: **refuse, as the targetless methods do.**
+
+- **The check:** after the record is written and before any pose is solved, the first usable
+  detection's corner (in canonical group order) whose covariance is not positive definite fails the
+  registration as **`InvalidDataset`**, naming the capture group, the camera and the corner:
+  *capture group 1a2b3c4d5e6f has a covariance that is not positive definite: camera "cam01", corner 7*.
+  It is the targetless methods' refusal, spelled for a board. One place, `analyse()`, so both overloads
+  reach it: the detections given, and the detections made from footage. The report still records
+  every detection.
+- **What the defect did, measured and read:** through the stand-in refiner, which does not whiten, the
+  registration came back **Ready** with cam01's view named an outlier at an infinite residual, so the
+  degenerate covariance passed silently. The Ceres refiner refuses such a corner itself
+  (`ceresrefiner.cpp`, read, not run), so through it the registration would have failed as
+  `RefinementFailed`, naming no group or camera.
+- **Only usable detections are asked.** A failed detection's corners never reach the solve.
+- **The stand-in rig's detector** (`syntheticrig.h`) gains `Scene::reportedCovariance`: a (camera,
+  group) whose detector reports a given covariance on every corner.
+
+### Verified
+
+- A new case, *a detection whose covariance is not positive definite is refused, naming it*: three
+  degenerate forms over given detections (indefinite, all zero, a NaN), the same over footage, and a
+  positive-definite one that still registers exactly. Each refusal names the group, camera and words,
+  poses nothing, asks the refiner nothing, and keeps all 24 detections on the record.
+- **Sabotage, caught:** the check removed fails both refusal sections, and the positive-definite one
+  still passes.
+- `ctest -j8` **1364/1364** MSVC Debug and **1372/1372** MSVC Release with video, camera and Ceres on
+  (+1 each, the new case); warning-clean; `format-check` exit 0 over all 737 files. Both registration
+  goldens pass unchanged, so no existing report moved.
+- **Not run:** GCC and macOS, and the Ceres path's own refusal, which was read.
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because
@@ -15986,14 +16022,12 @@ review of 2026-10-20 moved after it), with clock-domain identity and timestamp g
 
 ### Known defects, each owed its own commit
 
-Not deferred features — acknowledged bugs, listed here so they stop being rediscovered.
+Not deferred features — acknowledged bugs, listed here so they stop being rediscovered. **None is
+open.**
 
-- **Board registration whitens a detector's covariance without checking it**
-  (`registration/board.cpp`, `whitenedSquared`). Only the targetless methods refuse an observation
-  whose covariance is not `positiveDefinite`; a detector reporting a degenerate one would whiten to
-  infinity or NaN there. *(§NOTES.txt (2026-11-02).)*
-
-**Seven earlier ones are fixed** — `gui::Texture` freeing a descriptor set a running frame
+**Eight earlier ones are fixed** — board registration whitening a detector's covariance without
+checking it (2026-11-13; see *Board registration refuses a covariance that is not positive definite*),
+`gui::Texture` freeing a descriptor set a running frame
 could still read (2026-09-29; see Milestone 14 › *A texture's descriptor outlives the frames that
 drew it*), a group replaced at its own NodeId looking clean and delivering
 nothing (found by M14 slice 1, fixed 2026-09-28 by making versions process-unique; see

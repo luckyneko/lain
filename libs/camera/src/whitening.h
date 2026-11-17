@@ -24,8 +24,8 @@ namespace lain::camera::detail
 
 	// The squared length of the pixel residual `r` whitened: by the Cholesky factor of `covariance`
 	// (xx, xy, yy) when there is one, L^-1 r, else by the noise model's sigma. A covariance that is not
-	// positiveDefinite whitens to infinity or NaN: the targetless methods refuse such an observation
-	// before they whiten one.
+	// positiveDefinite whitens to infinity or NaN: every method that whitens refuses such an observation
+	// before it whitens one (board registration since 2026-11-13).
 	inline double whitenedSquared(const math::Vec2d& r, const std::optional<std::array<double, 3>>& covariance,
 								  const refinement::NoiseModel& noise)
 	{

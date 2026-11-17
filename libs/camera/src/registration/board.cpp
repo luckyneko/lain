@@ -322,6 +322,30 @@ namespace lain::camera::registration::board
 		return report.status != cb::DetectionStatus::Failed && report.observation.has_value();
 	}
 
+	// The first corner of a usable detection whose covariance is not positiveDefinite, named, in
+	// canonical order; unset when there is none. Such a covariance would whiten its residual to
+	// infinity or NaN, in the outlier test here and in the refiner, so the registration is refused as
+	// the targetless methods refuse a track with one.
+	static std::optional<std::string> degenerateCovariance(const std::vector<const GroupObservations*>& groups)
+	{
+		for (const GroupObservations* group : groups)
+		{
+			for (std::size_t m = 0; m < group->detections.size(); ++m)
+			{
+				if (!usable(group->detections[m]))
+					continue;
+				for (const cb::FeatureObservation& f : group->detections[m].observation->features)
+				{
+					if (f.covariance && !detail::positiveDefinite(*f.covariance))
+						return lain::string::format(
+							"capture group {} has a covariance that is not positive definite: camera \"{}\", corner {}",
+							group->group.identity().substr(0, 12), group->group.members()[m].camera.value, f.id);
+				}
+			}
+		}
+		return std::nullopt;
+	}
+
 	// A registration dataset in canonical order, with each member's camera resolved to an index.
 	struct Dataset
 	{
@@ -451,6 +475,10 @@ namespace lain::camera::registration::board
 			boardDiagnostics.detections.push_back(std::move(record));
 		}
 		reproducibility.sources.assign(sources.begin(), sources.end());
+
+		// Before any work: what a detection reported must be whitenable.
+		if (const std::optional<std::string> problem = degenerateCovariance(data.groups))
+			return failed(std::move(report), start, Failure::InvalidDataset, *problem);
 
 		// 1. A pose for every usable detection, one per task.
 		struct Slot

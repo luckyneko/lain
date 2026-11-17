@@ -39,7 +39,8 @@ namespace lain::camera::registration
 		NoRefiner,					// this build has no global refinement
 		UnknownFitnessProfile,		// the request names a profile this build does not know
 		IncompatibleFitnessProfile, // the profile counts another method's evidence unit
-		InvalidDataset,				// two cameras with one identity, a member of no camera, a frame its footage lacks
+		InvalidDataset,				// two cameras with one identity, a member of no camera, a frame its footage lacks,
+									// a covariance that is not positive definite
 		IncompatibleModel,			// a camera model's geometry is not its footage's
 		UnknownApplicability,		// a model's applicability is Unknown and the request refuses that
 		UnknownReference,			// the requested reference camera is not in the dataset

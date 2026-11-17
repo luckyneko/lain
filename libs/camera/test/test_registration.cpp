@@ -12,6 +12,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <limits>
@@ -634,6 +635,58 @@ TEST_CASE("a registration over given detections records the search they report",
 		CHECK(empty.status == RegistrationStatus::Failed);
 		CHECK_FALSE(boardRecord(empty).detection.has_value());
 		CHECK(boardRecord(empty).detector.backend.empty());
+	}
+}
+
+TEST_CASE("a detection whose covariance is not positive definite is refused, naming it", "[camera][registration]")
+{
+	rig::reset();
+	// cam01's view in group 5 reports the covariance on every corner; `group` is that group's identity.
+	const auto requireRefused = [](const Report& report, const std::string& group)
+	{
+		REQUIRE(failedWith(report, Failure::InvalidDataset));
+		const std::string& detail = report.failures.front().detail;
+		CHECK(detail.find("capture group " + group.substr(0, 12)) != std::string::npos);
+		CHECK(detail.find("camera \"cam01\"") != std::string::npos);
+		CHECK(detail.find("not positive definite") != std::string::npos);
+		// Refused before any pose is solved or refinement asked, with every detection on the record.
+		CHECK(boardDiagnostics(report).observations == 0);
+		CHECK(boardDiagnostics(report).detections.size() == 24);
+		CHECK(rig::refinerScript().asked.empty());
+	};
+
+	SECTION("given detections, each degenerate form")
+	{
+		const double nan = std::numeric_limits<double>::quiet_NaN();
+		for (const std::array<double, 3>& c : {std::array<double, 3>{1.0, 2.0, 1.0}, // indefinite: xx yy < xy^2
+											   std::array<double, 3>{0.0, 0.0, 0.0}, // no variance at all
+											   std::array<double, 3>{0.04, 0.0, nan}})
+		{
+			CAPTURE(c[0], c[1], c[2]);
+			rig::scene().reportedCovariance[{1, 5}] = c;
+			requireRefused(run(), groupIdentity(5));
+		}
+	}
+	SECTION("detected in footage")
+	{
+		rig::scene().reportedCovariance[{1, 5}] = {1.0, 2.0, 1.0};
+		const std::vector<method::RigFootage> footage = rig::footage();
+		std::vector<capture::CameraFootage> byPosition;
+		for (const method::RigFootage& c : footage)
+			byPosition.push_back({c.camera, c.footage});
+		const capture::GroupingResult grouping = capture::groupsByPosition(byPosition);
+		// Grouped from footage, a member's source is spelled relative to the footage's root, so the
+		// group's identity is not rig::group's.
+		const auto fifth = std::find_if(grouping.groups.begin(), grouping.groups.end(), [](const capture::CaptureGroup& g)
+										{ return g.members().front().frame.ordinal == 5; });
+		REQUIRE(fifth != grouping.groups.end());
+		requireRefused(method::registerCameras(footage, grouping.groups, specification(), cb::DetectionRequest{}, Request{}),
+					   fifth->identity());
+	}
+	SECTION("a positive definite one registers, weighted by it")
+	{
+		rig::scene().reportedCovariance[{1, 5}] = {0.04, 0.01, 0.09};
+		requireTruth(run(), 1e-9, 1e-9);
 	}
 }
 
