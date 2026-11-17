@@ -20629,8 +20629,8 @@ Windows, MSVC Release, 32 logical cores, nothing else running:
 
 ## Tidy-ups on feature/M15 (2026-11-13)
 
-A survey of `feature/M15` after the bench split found six tidy-ups, one commit each. Nothing here
-changes what lain does.
+A survey of `feature/M15` after the bench split found six tidy-ups, each its own commit (item 11
+two). Nothing here changes what lain does.
 
 ### 6. `math::isFinite` stated once
 
@@ -20722,6 +20722,29 @@ deprecation and the macOS linker's duplicate-libraries warning (under *Deferred 
 dependencies*), and a rig plan's uris changing spelling on Windows (under *Deferred — serialization,
 params, graphics*). Pointer rows only. The `isFinite` sweep needed none: its owning section says it
 is done (item 6).
+
+### 11. CLAUDE.md cut down
+
+CLAUDE.md loads into every session and was 8,829 lines, 8,530 of them its *Handoff status*: a dated
+update for each piece of work, mostly repeating the section here it named. It is now 364 lines: a
+current status and a table of the libraries, then the reference sections it always had (what lain and
+flow are, locked decisions, intended architecture, conventions, where to start, build and verify).
+
+- **The log moved here whole** (the *Handoff log* at the end of this file), and the M1 per-library list
+  to Milestone 1's *What each piece is*, in their own commit. Decided with the repo owner over moving
+  only the entries an audit flagged: a check of each entry's code spans, hashes and test counts against
+  this file, CONTEXT.md and the ADRs found about ten carrying content nowhere else, but entries it
+  passed still held lessons found only in their summary (a `--frames 1` smoke made hollow by zsh
+  passing its arguments as one, a sabotage restored in the same second staying compiled).
+- **Verified lossless line by line:** every line removed from CLAUDE.md is in this file but the old
+  heading, now one level down, and the two-line "keep this section current" instruction, which the
+  status section's *Recording work* replaces. The passages here that pointed into the log point at the
+  appendix or at Milestone 1.
+- **Two rules the log held are now conventions** (*Tests*): `skipInDebug` for a Release-only case, which
+  a passage here already said CLAUDE.md asks; and how a sabotage proves a test. *Build & verify* states
+  the cached-option trap, which another passage said CLAUDE.md records.
+- **Merging M9 into M15 next time:** M9 adds its entries to CLAUDE.md's log, which M15 no longer has.
+  Keep M15's CLAUDE.md, and take each M9 entry's content from the WORK.md section it names.
 
 ## Outstanding work — one index
 

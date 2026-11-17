@@ -4,6 +4,61 @@ Guidance for Claude Code working in this repository. [AGENTS.md](AGENTS.md) hold
 the general working discipline and applies in full; this file is more specific
 and overrides it where they differ.
 
+## Current status (2026-11-13)
+
+- **Milestones.** M1 to M8 and M10 to M15 are complete. **M9** (camera calibration and fixed
+  registration) is built to its slice plans and to its 2026-10-20 review, and awaits acceptance through
+  its PR #1 to `develop`. What is left of it is owed by the repo owner (the real-camera capture, the
+  targetless calibration judgements), gui-mode checks on a Metal session, and work waiting on real
+  footage.
+- **Branches.** `feature/M9` carries M9. `feature/M15` (rig design) was cut from it and had M9 merged
+  in on 2026-11-10, so it holds both.
+- **Last verified** on `feature/M15`, 2026-11-13: `ctest -j8` **1719/1719** MSVC Debug and
+  **1727/1727** MSVC Release, with video, OpenCV and Ceres on. CI was last green on all eight jobs at
+  `ea273a1` ([run 43136024980](https://github.com/luckyneko/lain/actions/runs/43136024980)); GCC and
+  macOS are built only there. gui-mode is verified by the repo owner's eyeball on a Metal machine,
+  never by CI.
+- **What is owed** is WORK.md's *Outstanding work — one index*: every unfinished milestone item,
+  deferred feature, known defect and standing refusal, each pointing at the section that owns it.
+- **Where history lives:** WORK.md's milestone and dated sections hold every change's landing notes,
+  and at the end, the handoff log this file carried until 2026-11-13. CONTEXT.md holds the vocabulary,
+  `docs/adr/` the decisions, and git log the rest.
+- **Recording work:** a change's notes go in the WORK.md section that owns it, and in CONTEXT.md or an
+  ADR when it changes a term or a decision. This file changes when one of the sections below does, and
+  its status lines when they stop being true.
+
+## Libraries at a glance
+
+One row per library, plugin family and app. Each library's CMakeLists says what it links and why.
+
+| Path | Targets | What it is |
+|---|---|---|
+| `libs/core` | `lain::core` | std-only foundations: `Time`, `Length`, `Version`, `Uuid`, `Uri`, `Sha256`, `Factory`, `parse`, seeded random draws |
+| `libs/memory` | `lain::memory` | `Buffer` and aligned allocation |
+| `libs/log` | `lain::log` | logging over spdlog; renders any type with a `toString()` |
+| `libs/string` | `lain::string` | `format` over fmt, and the `<key>` name pattern |
+| `libs/meta` | `lain::meta` | enum reflection (magic_enum), `typeName`, type traits |
+| `libs/math` | `lain::math` | typed GLM, `RigidTransform`, `AxisConvention`, angles, `isFinite` |
+| `libs/image` | `lain::image` | CPU rasters, pixel formats, colour spaces and conversion, the procedural texture |
+| `libs/mesh` | `lain::mesh` | CPU triangle meshes and mesh clips |
+| `libs/media` | `lain::media`, `::serialize` | frame sequences: finite, lazy footage |
+| `libs/io` | `lain::io`, `::image`, `::data`, `::sequence`, `::video`, `::mesh` | the transport, and a codec seam per medium |
+| `libs/data` | `lain::data` | the format-neutral `Value` DOM and reflection |
+| `libs/task` | `lain::task` | a namespace alias for `multi`, the process task pool |
+| `libs/flow` | `lain::flow`, `::serialize`, `lain::flow-example` | the node-graph engine, its documents, example nodes |
+| `libs/editor` | `lain::editor` | undo, recent documents, session files, the unsaved-changes guard, the playback clock |
+| `libs/camera` | `lain::camera`, `::flow`, `::serialize`, `::testing` | camera models, boards, features, calibration, registration, comparison |
+| `libs/rigplan` | `lain::rigplan`, `::serialize`, `::scene`, `::capture`, `::testing` | rig design: specifications, rig plans, realisations, synthetic captures |
+| `libs/render` | `lain::render`, `::testing` | the raster renderer over archimedes: offscreen, viewport, capture pass, distance |
+| `libs/app` | `lain::app` | the GLFW + CLI11 harness; owns the Vulkan instance, device and task pool |
+| `libs/gui` | `lain::gui` | Dear ImGui, imnodes and ImGuizmo over archimedes |
+| `libs/testing` | `lain::testing` | test support: scratch paths, a thread pool, `skipInDebug`, rooted paths |
+| `plugins/io/*` | `lain::io::<medium>::<format>`, `::codecs` | png, jpeg, tiff, json, obj and FFmpeg codecs |
+| `plugins/camera` | `lain::camera::opencv`, `::ceres`, `::backends` | OpenCV detection, features and estimation; Ceres refinement |
+| `apps/flowview` | `flowview` | the graph editor, and the headless `run` / `list` |
+| `apps/rigplan` | `rigplan` | the rig plan editor, and `rigplan render` |
+| `extern/` | `archimedes`, `multi` | owned submodules: the Vulkan renderer, the work-stealing pool |
+
 ## What `lain` and `flow` are
 
 `lain` is a **cumulative set** — an umbrella of small libraries under `libs/`,
@@ -241,6 +296,11 @@ beside this repo) before writing:
   (`bench-camera-*`, behind `LAIN_BUILD_BENCHMARK`, never run by ctest), printed rather than
   bounded. The test beside it keeps what the code guarantees. A ctest bound on one fails when
   the machine is busier, which is how `RUN_SERIAL` came to exist and why it went.
+  **A Release-only case calls `lain::testing::skipInDebug(reason)`**, never `SKIP` under
+  `#ifndef NDEBUG`, so its body still compiles in Debug (Catch2's `FAIL` and `SKIP` do not return).
+  **A sabotage proves a test only once it builds**: a sabotage that fails to compile leaves the old
+  binary answering, and a source restored in the same second as its object stays compiled, so touch
+  it again and check the object is newer. Check a smoke's exit code, not only its log.
 - **Where a body lives.** Three homes, and the split must buy something.
   1. **In the class** — the default. Anything a reader takes in at a glance: a forwarder,
      a comparison, a one-expression accessor.
@@ -272,11 +332,9 @@ beside this repo) before writing:
 
 ## Where to start
 
-The engine core (skeleton, `PortValue`, `Port`/`Node`/`Graph`, `Scheduler`,
-example node + tests) is already built. Follow WORK.md's "Remaining work" in order:
-(1) decouple `flow` from archimedes (`PortValue` → `std::any`), (2) `libs/math`
-(typed GLM), (3) `libs/app` (GLFW + CLI11 harness), (4) `libs/gui` (ImGui + imnodes
-wrapper), (5) `apps/flowview`. Don't build the backlog (Tier A/B) speculatively.
+Read WORK.md's *Outstanding work — one index* for what is open, then the section that owns whatever
+you pick up: a milestone's build order, or a built piece's landing notes. Use CONTEXT.md's terms.
+Don't build the backlog (Tier A/B/C) speculatively.
 
 ## Build & verify
 
@@ -290,10 +348,17 @@ ctest --test-dir build --output-on-failure
 ./build/plugins/camera/opencv/bench/bench-camera-opencv   # measurements, by hand, in a Release build
 ./build/apps/flowview/flowview            # gui-mode: the inspector on the live driver
 ./build/apps/flowview/flowview --help     # cli-mode: run a graph headless, dump output
+cmake --build build --target format-check # the pinned clang-format, as CI runs it
 ```
 
-**M1 is done** when: every lib compiles warning-clean under strict flags; `ctest`
-passes; a `flowview` cli-mode run evaluates the example graph headless and dumps
-its output; and `flowview` gui-mode launches against the live driver and renders
-the example graph with a GPU node's texture visible in the inspector. Per AGENTS.md
-rule 9 — do not claim the viewer works without having run it.
+- **Optional plugins** (FFmpeg, OpenCV, Ceres: `LAIN_IO_VIDEO_FFMPEG`, `LAIN_CAMERA_OPENCV`,
+  `LAIN_CAMERA_CERES`) default ON in a top-level build wherever the platform has them, and OFF as a
+  subproject. An existing build directory keeps a cached option or pin (`IMGUI_REF` too) after its
+  default changes, so reconfigure with `-D<option>=…` rather than trusting the new default.
+- **On Windows with the Ninja generator**, `cmake --build` needs the MSVC environment
+  (`vcvars64.bat`); configure, `ctest` and the format targets do not. The Visual Studio generator needs
+  nothing.
+
+A change is done when every target builds warning-clean under the strict flags, `ctest` passes, the
+real binary was run where the change reaches one, and gui-mode was eyeballed where it reaches the gui.
+Per AGENTS.md rule 9, do not claim the viewer works without having run it.
