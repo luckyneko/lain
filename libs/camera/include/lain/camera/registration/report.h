@@ -244,7 +244,7 @@ namespace lain::camera::registration
 		std::vector<GraphEdgeReport> weakBridges; // against the Ready tier's minimumBridgeShared
 		std::vector<ComponentEstimate> componentEstimates;
 		std::vector<Outlier> outliers;
-		std::optional<RefinementSummary> refinement;
+		std::optional<refinement::Summary> refinement;
 		std::vector<CameraEvidence> cameras;   // ascending by identity
 		std::vector<std::string> heldOutUnits; // their identities, in canonical order
 		double medianDepth = 0;				   // in the registration's units: what translation variation is relative to

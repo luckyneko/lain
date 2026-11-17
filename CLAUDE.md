@@ -1400,6 +1400,13 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-13 — the registration refinement aliases are retired
+
+`RefinementSummary`, `RefinementStatus` and `RefinementObservation` leave `registration/refiner.h`; the
+ten uses spell `refinement::Summary` and `refinement::Status`. They existed only so the seam's move to
+`lain::camera::refinement` touched no caller. No behaviour or golden changed. Full notes in WORK.md's
+*The registration refinement aliases are retired*.
+
 ### Update 2026-11-13 — board registration refuses a covariance that is not positive definite
 
 The last open known defect. A usable detection's corner whose covariance is not `positiveDefinite`
@@ -2811,7 +2818,7 @@ under M9 slice 4.
 
 - **Two names lose their stutter**: `refinement::Status` and `refinement::BodyObservation`.
   Registration keeps `RefinementStatus` and `RefinementObservation` as aliases, and its old headers
-  keep exporting every name they did, so no registration caller changed.
+  keep exporting every name they did, so no registration caller changed. *(Retired 2026-11-13.)*
 - **Code that implements the seam, or asks whether a backend exists, spells `refinement::`**: the
   Ceres plugin, the stand-in refiners, the kinds table and the tests that register a refiner. The
   facade's missing-backend text drops "registration", since calibration will read it too.

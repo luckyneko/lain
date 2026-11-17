@@ -298,7 +298,7 @@ TEST_CASE("the refinement converges to the truth from a noisy start, whatever th
 	CHECK(rotation < 1e-8);
 	CHECK(translation < 1e-8);
 	REQUIRE(report.diagnostics.refinement.has_value());
-	CHECK(report.diagnostics.refinement->status == RefinementStatus::Converged);
+	CHECK(report.diagnostics.refinement->status == refinement::Status::Converged);
 }
 
 TEST_CASE("a noisy rig registers to within its noise, and its evidence says so", "[camera][ceres]")
@@ -361,7 +361,7 @@ TEST_CASE("corners with a measured covariance are weighted by it", "[camera][cer
 	request.loss.family = LossFamily::None; // a robust loss would shrink the cost this compares
 	const Report weighted = run(request);
 	REQUIRE(weighted.diagnostics.refinement.has_value());
-	const RefinementSummary& summary = *weighted.diagnostics.refinement;
+	const refinement::Summary& summary = *weighted.diagnostics.refinement;
 	// 0.5 r^T C^-1 r summed is about half the residual dimensions less the unknowns: measured 0.977 of it.
 	const double dimensions = 2.0 * double(summary.residuals) - 6.0 * double(3 + summary.bodies);
 	CHECK_THAT(summary.finalCost, WithinRel(0.5 * dimensions, 0.15));
@@ -424,7 +424,7 @@ TEST_CASE("a rig of 100 cameras and 4000 capture groups registers", "[camera][ce
 	// worst camera 1.14 mrad and 1.7 mm out, and a held-out transfer of 0.81 mrad over 800 groups.
 	CHECK(std::get<BoardDiagnostics>(report.diagnostics.method).groupsUsable == kGroups);
 	REQUIRE(report.diagnostics.refinement.has_value());
-	CHECK(report.diagnostics.refinement->status == RefinementStatus::Converged);
+	CHECK(report.diagnostics.refinement->status == refinement::Status::Converged);
 	const auto [rotation, translation] = worstError(report);
 	CHECK(rotation < 0.002);
 	CHECK(translation < 0.003);

@@ -5848,6 +5848,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      Registration keeps both old names as aliases, so its code, its report's `RefinementSummary` and
      the golden read as before. No field is renamed, since a field cannot be aliased:
      `Problem::observations` keeps its name, and sub-slice 5 is where the problem's shape changes.
+     *(The aliases were retired on 2026-11-13; see *The registration refinement aliases are
+     retired*.)*
    - **The dependency direction is stated, not guarded.** The refinement header says it includes
      nothing from registration or calibration, and why. Nothing in the tree enforces ADR-0016's
      separation today. A guard should cover the whole rule (calibration and the shared seams include
@@ -7556,7 +7558,7 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      before.
    - **`refinement::Summary`** is in `refinement/refiner.h`, after `Solution`. Registration keeps
      `RefinementSummary` as an alias in `registration/refiner.h`, beside `RefinementStatus`, so both
-     goldens and the Ceres refiner test read it unchanged.
+     goldens and the Ceres refiner test read it unchanged. *(Retired 2026-11-13, with the other two.)*
    - **`src/calibration/coverage.{h,cpp}`**, in `camera::detail`: `CoverageCells`, `coverageCell`,
      `cover` and `coveredFraction`, over pixels. Board calibration's `cellsOf` and `coverage` go
      through them.
@@ -15690,6 +15692,31 @@ anything else. Decided with the repo owner: **refuse, as the targetless methods 
   (+1 each, the new case); warning-clean; `format-check` exit 0 over all 737 files. Both registration
   goldens pass unchanged, so no existing report moved.
 - **Not run:** GCC and macOS, and the Ceres path's own refusal, which was read.
+
+## The registration refinement aliases are retired (built 2026-11-13)
+
+`registration/refiner.h` kept three aliases for names the refiner seam's move to
+`lain::camera::refinement` changed (M9 slice 4, sub-slices 3 and 9a): `RefinementObservation`
+(`refinement::BodyObservation`), `RefinementStatus` (`refinement::Status`) and `RefinementSummary`
+(`refinement::Summary`). They were kept only so that move touched no caller. Each use now spells the
+seam's name, so one thing has one name; the using-declarations of names that did not change
+(`refinement::Problem`, `refine`, ...) stay, since they are the seam named where registration's callers
+look for it.
+
+- **Ten uses in seven files:** `registration/report.h`, `src/registration/board.cpp` and
+  `targetless.cpp`, the two golden tests, and `plugins/camera/ceres/test/test_refiner.cpp`.
+  `RefinementObservation` had no use left.
+- **`report.h` now declares `std::optional<refinement::Summary> refinement;`**, a member named as the
+  namespace that types it. GCC's `-Wchanges-meaning` was the risk; calibration's report has declared
+  exactly that shape since sub-slice 9a, and CI's GCC legs build it, so it is not new.
+
+### Verified
+
+- `ctest -j8` **1364/1364** MSVC Debug and **1372/1372** MSVC Release with video, camera and Ceres on,
+  unchanged; both registration goldens pass with their files untouched. Warning-clean builds of both
+  trees; `format-check` exit 0 over all 737 files. No name `RefinementSummary`, `RefinementStatus` or
+  `RefinementObservation` is left in code.
+- **Not run:** GCC and macOS.
 
 ## Outstanding work — one index
 

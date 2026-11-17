@@ -465,7 +465,7 @@ namespace lain::camera::registration::targetless
 		const Problem problem = problemOf(evidence, fitting, begin, reference, request, entryOf);
 		const Solution solution = refine(problem);
 		report.reproducibility.refiner = solution.provenance;
-		RefinementSummary summary;
+		refinement::Summary summary;
 		summary.status = solution.status;
 		summary.detail = solution.detail;
 		summary.iterations = solution.iterations;
@@ -478,7 +478,7 @@ namespace lain::camera::registration::targetless
 		summary.noise = request.noise;
 		summary.loss = request.loss;
 		diagnostics.refinement = summary;
-		if (solution.status == RefinementStatus::ResourceExhausted)
+		if (solution.status == refinement::Status::ResourceExhausted)
 			return failed(std::move(report), start, Failure::ResourceExhausted, solution.detail);
 		if (!solution.usable())
 			return failed(std::move(report), start, Failure::RefinementFailed,
