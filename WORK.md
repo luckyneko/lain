@@ -20502,6 +20502,18 @@ and `libs/rigplan/scene/test/standinboard.h` by `../../test` and by the scene te
 `image/procedural.h`, `procedural.cpp` and ADR-0028 named `libs/camera/test/texturedscene.h`, which
 M9 moved to `lain/camera/testing/` (*`lain::camera::testing`*). They name the new path. Comments only.
 
+### 9. `validBound` stated once
+
+`rigplan.cpp` and `specification.cpp` each defined the same file-local `validBound` (finite and not
+negative). It is now `detail::validBound` in a private `libs/rigplan/src/validbound.h`, as `lain::camera`
+keeps `median` and `UnionFind`, and each file names it with a using-declaration where its copy was, so
+no call site changes.
+
+**Verified:** `ctest -j8` **1719/1719** MSVC Debug and **1727/1727** MSVC Release; warning-clean;
+`format-check` clean. **Sabotage, caught:** a `validBound` that ignores the sign fails six cases,
+through both files (`test_rigplan`, `test_environment`, `test_nominal` through the plan's check;
+`test_specification` and `test_sensor` through the specifications'). **Not run:** GCC and macOS.
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because

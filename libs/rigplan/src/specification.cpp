@@ -1,5 +1,7 @@
 #include "lain/rigplan/specification.h"
 
+#include "validbound.h"
+
 #include <lain/string/format.h>
 
 #include <algorithm>
@@ -50,10 +52,7 @@ namespace lain::rigplan
 		return camera::CameraModel::create(parameters);
 	}
 
-	static bool validBound(double tolerance)
-	{
-		return std::isfinite(tolerance) && tolerance >= 0;
-	}
+	using detail::validBound;
 
 	std::vector<std::string> sensorModelProblems(const SensorModel& model)
 	{

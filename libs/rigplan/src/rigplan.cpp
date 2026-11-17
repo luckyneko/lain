@@ -1,6 +1,7 @@
 #include "lain/rigplan/rigplan.h"
 
 #include "lain/rigplan/realisation.h" // mountFromPlacement
+#include "validbound.h"
 
 #include <lain/math/finite.h>
 #include <lain/string/format.h>
@@ -42,10 +43,7 @@ namespace lain::rigplan
 																															  : nullptr;
 	}
 
-	static bool validBound(double tolerance)
-	{
-		return std::isfinite(tolerance) && tolerance >= 0;
-	}
+	using detail::validBound;
 
 	static bool validScale(double scale)
 	{
