@@ -175,7 +175,7 @@ TEST_CASE("a landmark behind a camera at the start is kept out of the solve, whi
 	CHECK(errorsOf(report).rotation < 1e-6);
 }
 
-TEST_CASE("a rig of 100 cameras and 50000 tracks registers", "[camera][ceres][targetless][scale]")
+TEST_CASE("a rig of 100 cameras and 50000 tracks registers", "[camera][ceres][targetless][scale][comprehensive]")
 {
 	lain::testing::skipInDebug("the scale test runs in Release builds: a Debug refinement is some 65 times slower");
 	registerScene();

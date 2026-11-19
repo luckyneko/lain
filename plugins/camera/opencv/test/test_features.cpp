@@ -525,7 +525,7 @@ TEST_CASE("collapsing orientations before matching loses a fifth of the correct 
 }
 
 TEST_CASE("rendered footage through extractTracks is the same on the pool and agrees with the truth",
-		  "[camera][opencv][feature]")
+		  "[camera][opencv][feature][comprehensive]")
 {
 	ensureBackend();
 	synthetic::Scene scene = synthetic::defaultScene();
@@ -665,7 +665,7 @@ TEST_CASE("approximate search is refused under deterministic debugging, with the
 	CHECK_THAT(refused.detail, ContainsSubstring("reproducible only within a tolerance"));
 }
 
-TEST_CASE("an 8K frame is searched at the default size", "[camera][opencv][feature][scale]")
+TEST_CASE("an 8K frame is searched at the default size", "[camera][opencv][feature][scale][comprehensive]")
 {
 	lain::testing::skipInDebug("runs in Release builds: it renders an 8K frame");
 	ensureBackend();
@@ -686,7 +686,7 @@ TEST_CASE("an 8K frame is searched at the default size", "[camera][opencv][featu
 	}
 }
 
-TEST_CASE("exact and approximate search at 8192 features a view", "[camera][opencv][feature][scale]")
+TEST_CASE("exact and approximate search at 8192 features a view", "[camera][opencv][feature][scale][comprehensive]")
 {
 	lain::testing::skipInDebug("runs in Release builds: it renders three HD frames and matches 8192 features");
 	ensureBackend();

@@ -11062,7 +11062,8 @@ fetched only when it is ON.
 
 No compiler cache yet, deliberately: a stale one producing baffling errors is the last thing wanted
 while diagnosing genuine MSVC breakage. Read the real timings off the discovery run and add `ccache`
-via plain `actions/cache` in a follow-up if a leg is painfully slow.
+via plain `actions/cache` in a follow-up if a leg is painfully slow. *(The repo owner declined one on
+2026-11-19, when the slow legs were cut another way: *Two test tiers, and Ninja on every leg*.)*
 
 ### Found while building this: `flowview` staged no FFmpeg DLLs
 
@@ -11488,6 +11489,84 @@ caught it (*Catch2's `FAIL` and `SKIP` do not return*, under Outstanding work). 
   `catch_discover_tests` call with `RUN_SERIAL`, as `test-camera-ceres`' are (*After sub-slice 10e*,
   item 8). Each times or measures what it runs, which means something only while it has the cores.
   Discovery still registers 13 cases and ctest 1334 in all, and exactly those four carry the property.
+
+### Two test tiers, and Ninja on every leg (2026-11-19)
+
+A run took 24–48 minutes, and Windows Release was always the slowest leg. Two changes, decided with the
+repo owner, cut the Windows leg from 24.4 to 10.6 minutes.
+
+- **Where the test time went.** On M15's PR run, about 1,600 of 1,728 cases took under a second each,
+  1–2 minutes in all. The 27 cases that take 20 s or more on some runner were 90 to 95 percent of each
+  leg's test time.
+- **The tier.** A case taking 20 s or more on any CI runner is tagged `[comprehensive]` (the repo owner's
+  rule): 18 on develop, all 8 `[scale]` cases among them. Its executable registers through
+  `lain_discover_tests` (`cmake/addcatch2.cmake`), which discovers once per tier so the tag becomes one
+  ctest label, `comprehensive`. `ADD_TAGS_AS_LABELS` was not used: it would make every tag a label,
+  about 160, and ctest prints a line per label after every run. Plain `ctest` runs every case and
+  `ctest -LE comprehensive` the CI tier. A tagged case in an executable still on `catch_discover_tests`
+  is unlabelled and runs in the CI tier, which costs time but not correctness.
+- **Where it runs.** macOS Release runs every case, and the other legs run the CI tier. macOS because
+  the slow cases are mostly release-only, and that leg is the only one running those with the standard
+  library checking anything (*The standard library checks its preconditions*). It is also where SIFT
+  turned out to differ. A `workflow_dispatch` input, `tests: comprehensive`, runs every case on every
+  leg.
+- **Ninja on every leg**, the `add_subdirectory` smoke included, so every leg is single-config:
+  `--config` and `-C` are gone, and Windows' flowview is `build/apps/flowview/flowview.exe`. Windows
+  gets cl's environment from `ilammy/msvc-dev-cmd`, which also brings Visual Studio's Ninja, and sets
+  `CC`/`CXX` to `cl`, since CMake's own search tries `c++` and `g++` first.
+- **What did not help: compiling a project's sources in parallel under MSBuild** (scratch run
+  44485222875, `-p:UseMultiToolTask=true -p:EnforceProcessCountAcrossBuilds=true`). Ceres and Catch2
+  finished at the same minute with it as without, about 4 and 5. With about 150 projects, `/m:4` already
+  keeps four cores busy. The diagnosis had come from M15's PR run, a slow runner with more projects
+  queued ahead of Catch2.
+- **Measured, one run each.** Two runs of one commit can differ by 25–35 percent, so a comparison
+  normalises by the summed time of tests both runs ran.
+
+  | leg (minutes) | develop, 44437752651 | Ninja, CI tier, 44493095641 | Ninja, every case, 44493100657 |
+  |---|---|---|---|
+  | Windows Release | 24.4 (build 12.0, test 10.3) | 10.6 (8.0, 1.3) | 21.8 (10.2, 10.3) |
+  | Linux Release | 19.5 (apt 4.1, build 6.7, test 7.9) | 9.8 (0.3, 7.2, 1.6) | 29.4 (14.0, 6.5, 7.9) |
+  | macOS Release | 18.4 (8.7, 8.4) | 17.9 (8.4, 8.3) | 16.3 (7.0, 8.0) |
+  | whole run | 24.5 | 22.3 | 29.5 |
+
+  Ninja's own effect is on Windows only: its build took 10.2 minutes against 12.0 on a runner of the
+  same speed (every test, 26.6 against 26.8 summed minutes), and 8.0 on the CI-tier run. Linux and macOS
+  moved within run-to-run noise.
+- **What sets the run now.** The CI-tier run's 22.3 minutes was Linux Debug, 12.5 of them installing
+  packages: three Linux legs spent 12–14 minutes there, against under a minute on a good day, all
+  downloading from a slow mirror. Without it the run is macOS Release's, about 18 minutes. *(The
+  package list was trimmed the same day: the next section.)*
+- **Owed when M15 merges:** its 9 cases over 20 s (`flowview::capture`'s two among them) need the tag,
+  and their executables `lain_discover_tests`. They add about 4 minutes to macOS Release's Test step.
+- **Not taken: a compiler cache**, at the repo owner's call (2026-11-19).
+
+### The Linux legs install only what they use (2026-11-19)
+
+The Linux legs installed `xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols libva-dev` with
+their recommended packages: 82 packages and 24.7 MB, downloaded from a mirror that ran anywhere from 87
+down to 17 kB/s. Now both install steps take `LINUX_WINDOWING_PACKAGES` (the top of `ci.yml`, with what
+each package is for) and `--no-install-recommends`: 22 packages and 2.3 MB.
+
+- **What the build needs.** GLFW 3.4's X11 backend wants X11 with Xkb, Xrandr, Xinerama, Xcursor, Xi and
+  Xshape. Its Wayland backend wants wayland-client, -cursor and -egl, wayland-scanner and xkbcommon; it
+  carries its own protocol XML, so `wayland-protocols` was never used. The Vulkan loader wants xcb, x11
+  and xrandr. FFmpeg's prebuilt wants `libva.so.2` and `libva-drm.so.2` by soname, which
+  `addFFmpeg.cmake` already checks for, so the runtime packages `libva2` and `libva-drm2` replace
+  `libva-dev` and the four VA drivers its recommends pulled in.
+- **Found by the first scratch run (44503910733): lain needed OpenGL's headers for nothing.** Every Linux
+  leg failed in ImGui's GLFW backend, `GL/gl.h: No such file or directory`. `glfw3.h` includes the
+  system's OpenGL header unless `GLFW_INCLUDE_NONE` is defined, and the `GLFW_INCLUDE_VULKAN` that
+  lain's three GLFW files define does not stop it, so they would have failed next. `xorg-dev` had been
+  supplying the header. `cmake/addGLFW.cmake` now gives the `glfw` target `GLFW_INCLUDE_NONE` as an
+  interface definition, so everything compiled against GLFW, ImGui's backend included, leaves OpenGL
+  out. That also means a Linux user no longer needs OpenGL's development package to build lain.
+- **What the configure stopped finding**, diffed against run 44493095641: OpenGL, which only libtiff's
+  `tiffgt` viewer looks for (never built: it also needs GLUT, which was never found), and CMake's
+  optional X11 ICE probe, which nothing uses. Every other lookup is unchanged.
+- **Measured (run 44508705221, green on every leg):** each Linux install took 0.8–1.2 minutes, against
+  0.3–14 the day before, and the run 18.5 minutes, set by macOS Release (18.3) and Windows Release
+  (17.7). Windows' Ninja build has now taken 8.0, 10.2, 14.2 and 13.7 minutes on four runs, so a single
+  run says little about it.
 
 ### Not covered, and deliberately
 
@@ -16028,7 +16107,22 @@ The rest of the answers' follow-ups, each its own commit. *(§NOTES.txt (2026-11
 
 - **Catch2 3.14.0 → 3.16.1.** Intended, and decided by the repo owner on 2026-11-01 to land on its own
   branch rather than in feature/M9's PR, because it renames every ctest test. *(§Catch2's `FAIL` and
-  `SKIP` do not return.)*
+  `SKIP` do not return.)* **Checked 2026-11-19 for CI speed, and it saves seconds, not minutes**, so it
+  is routine upkeep for a convenient moment (after M15 merges, say), not a CI improvement.
+  - **Discovery** is the speedup the release notes lead with (about 4–5× in 3.15.3, then about 3× in
+    3.16.0). Under 3.14 every discovery in a full build took about 2.5 s on the repo owner's machine
+    (1,216 tests; `test-flowview`'s 177 add under a second): 0.6 s listing the binaries and 1.9 s in
+    the CMake script. 3.16.1's script could not be timed against binaries built with 3.14, which it
+    cannot list.
+  - **Test start-up** (`--order decl`, faster registration and filtering) is measured on Catch2's own
+    self-test binary, which holds thousands of cases; lain's largest holds 177, and its ~1,600
+    sub-second cases take 1–2 test-minutes in all. **Compile time** gains are a few percent of test
+    sources at most; the GCC one needs unity builds or template-product tests, which lain has neither
+    of.
+  - **No fix in 3.15–3.16.1 touches lain.** The MSVC benchmark one (Catch2's guard against the
+    benchmarked code being optimised away was never used under MSVC) applies only to Catch2's
+    `BENCHMARK`, and `bench-camera-*` time themselves in plain `TEST_CASE`s. The rest concern C++26,
+    the `<target>_TESTS` variable lain never reads, or reporter edge cases.
 
 ### Backlog tiers — speculative and foundational
 

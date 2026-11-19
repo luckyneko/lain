@@ -366,7 +366,7 @@ TEST_CASE("one rig registered with a board and without one agrees with itself an
 	CHECK(board.verdict == Verdict::Ready);
 }
 
-TEST_CASE("the rig's feature tracks measured against their truth", "[camera][registration][comparison]")
+TEST_CASE("the rig's feature tracks measured against their truth", "[camera][registration][comparison][comprehensive]")
 {
 	lain::testing::skipInDebug("the comparison runs in Release builds: a Debug build takes seconds to draw each HD frame");
 	const lain::testing::ThreadPool pool;

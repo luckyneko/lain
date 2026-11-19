@@ -12,10 +12,34 @@ on:
   push:
     branches: [main, master, develop]
   pull_request:
+  # A dispatched run can ask for every leg to run the comprehensive tests (the Test step, below), for
+  # a check before a merge or of a platform question. A push or a pull request runs the default tier.
   workflow_dispatch:
+    inputs:
+      tests:
+        description: Which tests every build leg runs
+        type: choice
+        options: [ci, comprehensive]
+        default: ci
 
 permissions:
   contents: read
+
+env:
+  # The headers the Linux builds need from apt, for GLFW 3.4's two backends and the Vulkan loader
+  # archimedes builds from source. Both install steps take this list.
+  # - GLFW's X11 backend: X11 and its Xkb (libx11-dev), Xrandr, Xinerama, Xcursor, Xi, and Xshape
+  #   (libxext-dev).
+  # - GLFW's Wayland backend: wayland-client, -cursor, -egl and wayland-scanner (libwayland-dev, which
+  #   brings libwayland-bin), and xkbcommon. GLFW carries its own protocol XML, so wayland-protocols
+  #   is not needed.
+  # - The Vulkan loader: xcb (libx11-dev brings libxcb1-dev), x11 and xrandr.
+  # They are named one by one, with --no-install-recommends. The list used to be xorg-dev and the
+  # recommended packages, 82 packages and 24.7 MB, most of which nothing here uses. From a slow mirror
+  # that download took 5 minutes, and 12 to 14 on three legs of run 44493095641 (2026-11-19).
+  LINUX_WINDOWING_PACKAGES: >-
+    libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev
+    libwayland-dev libxkbcommon-dev
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -100,6 +124,13 @@ jobs:
           # calibrate by board and extract features but refine nothing. The camera tests have a branch
           # for it (targetless methods report NoRefiner, and only after a board attempt that needs no
           # refiner), which until 2026-10-21 only a local build ever ran (M9's 2026-10-20 review, P4).
+          #
+          # Every leg builds with Ninja, so every leg is single-config: the build type is
+          # CMAKE_BUILD_TYPE alone, and an executable sits in its target's own directory.
+          #
+          # One leg, `comprehensive`, runs every test case. The others run the CI tier, which leaves
+          # out the cases tagged [comprehensive], those taking 20 s or more on some runner (the Test
+          # step, and lain_discover_tests in cmake/addcatch2.cmake).
           - name: Linux Release
             os: ubuntu-24.04
             build_type: Release
@@ -154,6 +185,10 @@ jobs:
           # (`lain::testing::skipInDebug`) run with the standard library checking anything, since both
           # Debug builds that check, MSVC's and the Linux leg, skip them. It defines no NDEBUG and
           # changes no layout, so this is still the build a fresh clone gets, with traps added.
+          #
+          # That is also why this is the comprehensive leg: the [comprehensive] cases are mostly
+          # release-only ones, so on any other leg they would run with nothing checking. They are
+          # also where macOS has turned out to differ, its SIFT features among them (2026-10-19).
           - name: macOS Release
             os: macos-15
             build_type: Release
@@ -161,13 +196,13 @@ jobs:
             camera: 'ON'
             ceres: 'ON'
             linux_deps: false
+            comprehensive: true
             jobs: 3
             flowview: build/apps/flowview/flowview
             cxxflags: -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
 
-          # Visual Studio's generator is multi-config, so --config / -C carry the build type here
-          # and CMAKE_BUILD_TYPE is ignored; both are passed so one command shape serves every leg.
-          # That also puts the executables under a per-config subdirectory.
+          # MSVC through Ninja, as the repo owner builds, not through Visual Studio's generator.
+          # `msvc` sets up the compiler's environment, which MSBuild used to set up itself.
           - name: Windows Release
             os: windows-2022
             build_type: Release
@@ -175,8 +210,9 @@ jobs:
             camera: 'ON'
             ceres: 'ON'
             linux_deps: false
+            msvc: true
             jobs: 4
-            flowview: build/apps/flowview/Release/flowview.exe
+            flowview: build/apps/flowview/flowview.exe
 
     steps:
       # submodules: recursive is the one thing this workflow needs that archimedes' does not —
@@ -200,17 +236,33 @@ jobs:
             ${{ runner.os }}-deps-video${{ matrix.video }}-camera${{ matrix.camera }}-
             ${{ runner.os }}-deps-
 
-      # xorg/wayland: GLFW's backends and the from-source Vulkan loader need these headers.
-      # libva: the Linux FFmpeg prebuilt is configured --enable-vaapi (its MANIFEST.txt says so),
-      # so libavcodec.so carries an unresolved dependency on libva that the linker has to satisfy
-      # in every consumer — without it, anything linking the video plugin fails with a page of
-      # undefined `va*` references (CI, 2026-09-04). It is the only flag in that build needing an
-      # external shared library: v4l2-m2m is kernel headers, and nvenc/ffnvcodec are dlopen'd.
+      # The windowing headers are LINUX_WINDOWING_PACKAGES, at the top of this file.
+      # libva2, libva-drm2: the Linux FFmpeg prebuilt is configured --enable-vaapi (its MANIFEST.txt
+      # says so), so libavcodec.so names libva.so.2 and libva-drm.so.2 in DT_NEEDED and the linker has
+      # to find them for every executable that links the video plugin (CI, 2026-09-04). It resolves
+      # those by soname, so the runtime packages are enough, and addFFmpeg.cmake checks for exactly
+      # those files. It is the only flag in that build needing an external shared library: v4l2-m2m
+      # is kernel headers, and nvenc/ffnvcodec are dlopen'd.
+      # ninja-build: the generator every leg builds with.
       - name: Install Linux windowing dependencies
         if: ${{ matrix.linux_deps }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols libva-dev
+          sudo apt-get install -y --no-install-recommends $LINUX_WINDOWING_PACKAGES libva2 libva-drm2 ninja-build
+
+      - name: Install Ninja
+        if: ${{ runner.os == 'macOS' }}
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+        run: command -v ninja || brew install ninja
+
+      # cl's INCLUDE, LIB and PATH, which Visual Studio's generator had MSBuild set up and Ninja does
+      # not. The environment also brings the Ninja that ships with Visual Studio.
+      - name: Set up the MSVC environment
+        if: ${{ matrix.msvc }}
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
       # LAIN_BUILD_TESTING and LAIN_BUILD_APPS default ON for a top-level build, so the full
       # graph — libraries, plugins, the app stack and flowview — is what gets configured.
@@ -220,15 +272,22 @@ jobs:
       # replaces them: an empty one would drop MSVC's /EHsc on the Windows leg. It reaches every C++
       # target this configure creates, third-party ones included. The prebuilt FFmpeg and OpenCV were
       # built without it and still link, since neither library's checks change a type's layout.
+      #
+      # CC and CXX name cl on the MSVC leg: CMake's own search tries c++ and g++ before cl, and a
+      # Windows runner can have a MinGW g++ on its PATH. Empty on the other legs, where CMake ignores
+      # them.
       - name: Configure
         env:
           CXXFLAGS: ${{ matrix.cxxflags }}
-        run: >
-          cmake -S . -B build
-          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-          -DLAIN_IO_VIDEO_FFMPEG=${{ matrix.video }}
-          -DLAIN_CAMERA_OPENCV=${{ matrix.camera }}
-          -DLAIN_CAMERA_CERES=${{ matrix.ceres }}
+          CC: ${{ matrix.msvc && 'cl' || '' }}
+          CXX: ${{ matrix.msvc && 'cl' || '' }}
+        run: |
+          echo "$(cmake --version | head -1), ninja $(ninja --version)"
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DLAIN_IO_VIDEO_FFMPEG=${{ matrix.video }} \
+            -DLAIN_CAMERA_OPENCV=${{ matrix.camera }} \
+            -DLAIN_CAMERA_CERES=${{ matrix.ceres }}
 
       # A check that is off passes exactly as one that found nothing, and a standard library that does
       # not know a macro ignores it without a word. So before a build is spent on them, the flags this
@@ -244,13 +303,14 @@ jobs:
             exit 1
           fi
 
-      # A job count, never a bare --parallel: under the Makefile generator a bare one is `make -j`
-      # with no limit, and on macOS's runner (3 cores, 7 GB) as many compilers as the graph allows
-      # thrash its memory. Its Build step took 62 minutes on 2026-10-05 against 6 on Linux, and once
-      # Ceres' Eigen-heavy sources joined the build it passed the 90-minute timeout (2026-10-19). Each
-      # leg's `jobs` is its runner's core count.
+      # A job count, never a bare --parallel. Under the Makefile generator a bare one was `make -j`
+      # with no limit, and on macOS's runner (3 cores, 7 GB) as many compilers as the graph allowed
+      # thrashed its memory: its Build step took 62 minutes on 2026-10-05 against 6 on Linux, and
+      # once Ceres' Eigen-heavy sources joined the build it passed the 90-minute timeout (2026-10-19).
+      # Ninja's own default is the core count plus two, still more than an Eigen-heavy build fits in
+      # 7 GB. Each leg's `jobs` is its runner's core count.
       - name: Build
-        run: cmake --build build --parallel ${{ matrix.jobs }} --config ${{ matrix.build_type }}
+        run: cmake --build build --parallel ${{ matrix.jobs }}
 
       # PARALLEL on purpose, since 2026-09-10. It used to be serial because twenty test files each
       # wrote into the shared fs::temp_directory_path() and -j made them collide; they now take
@@ -260,8 +320,17 @@ jobs:
       # true: the collision was invisible to a serial run, so a serial CI could not have caught it
       # coming back. A [gpu] SKIP reports as a ctest skip, not a failure — catch_discover_tests
       # sets SKIP_RETURN_CODE=4.
+      #
+      # The CI tier, `-LE comprehensive`, on every leg but the comprehensive one, unless a dispatched
+      # run asks for every case everywhere. The [comprehensive] cases take 20 s or more on some runner,
+      # and on 2026-11-19 they were 90 to 95 percent of each leg's test time.
       - name: Test
-        run: ctest --test-dir build --output-on-failure -C ${{ matrix.build_type }} --parallel 4
+        run: |
+          tier=(-LE comprehensive)
+          if [ "${{ matrix.comprehensive }}" = true ] || [ "${{ inputs.tests }}" = comprehensive ]; then
+            tier=()
+          fi
+          ctest --test-dir build --output-on-failure --parallel 4 "${tier[@]}"
 
       # ctest links runmode.cpp into the test binary, so it never exercises the SHIPPED
       # executable. This does: that flowview launches at all, and resolves its dynamic
@@ -319,11 +388,11 @@ jobs:
       - name: Install Linux windowing dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols
+          sudo apt-get install -y --no-install-recommends $LINUX_WINDOWING_PACKAGES ninja-build
 
       - name: Configure parent project
         run: >
-          cmake -S .github/subproject-smoke -B build-subproject
+          cmake -S .github/subproject-smoke -B build-subproject -G Ninja
           -DCMAKE_BUILD_TYPE=Release
           -DLAIN_SOURCE_DIR=${{ github.workspace }}
 

@@ -488,7 +488,7 @@ TEST_CASE("a free model's solution does not depend on where the heap put its blo
 	}
 }
 
-TEST_CASE("a moving camera of 60 frames and 20000 landmarks refines its shared model", "[camera][ceres][freemodel][scale]")
+TEST_CASE("a moving camera of 60 frames and 20000 landmarks refines its shared model", "[camera][ceres][freemodel][scale][comprehensive]")
 {
 	lain::testing::skipInDebug("runs in Release builds, where it takes 6.4 s");
 	ensureCeres();
