@@ -92,7 +92,7 @@ namespace
 			out << "outlier " << o.unit.substr(0, 12) << " " << o.camera.value << " " << number(o.rmsWhitened) << "\n";
 		if (d.refinement)
 		{
-			const RefinementSummary& s = *d.refinement;
+			const refinement::Summary& s = *d.refinement;
 			out << "refinement " << name(s.status) << " (" << s.detail << ") iterations " << s.iterations << " cost "
 				<< number(s.initialCost) << " -> " << number(s.finalCost) << " corners " << s.residuals << " bodies "
 				<< s.bodies << " landmarks " << s.landmarks << " noise " << number(s.noise.pixelSigma) << " loss " << name(s.loss.family) << " "

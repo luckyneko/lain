@@ -4,18 +4,18 @@ Guidance for Claude Code working in this repository. [AGENTS.md](AGENTS.md) hold
 the general working discipline and applies in full; this file is more specific
 and overrides it where they differ.
 
-## Current status (2026-11-13)
+## Current status (2026-11-19)
 
 - **Milestones.** M1 to M8 and M10 to M15 are complete. **M9** (camera calibration and fixed
-  registration) is built to its slice plans and to its 2026-10-20 review, and awaits acceptance through
-  its PR #1 to `develop`. What is left of it is owed by the repo owner (the real-camera capture, the
-  targetless calibration judgements), gui-mode checks on a Metal session, and work waiting on real
+  registration) is built to its slice plans and to its 2026-10-20 review, and was merged into `develop`
+  through PR #1 on 2026-11-19. What is left of it is owed by the repo owner (the real-camera capture,
+  the targetless calibration judgements), gui-mode checks on a Metal session, and work waiting on real
   footage.
-- **Branches.** `feature/M9` carries M9. `feature/M15` (rig design) was cut from it and had M9 merged
-  in on 2026-11-10, so it holds both.
-- **Last verified** on `feature/M15`, 2026-11-13: `ctest -j8` **1719/1719** MSVC Debug and
-  **1727/1727** MSVC Release, with video, OpenCV and Ceres on. CI was last green on all eight jobs at
-  `ea273a1` ([run 43136024980](https://github.com/luckyneko/lain/actions/runs/43136024980)); GCC and
+- **Branches.** `develop` holds M9; `feature/M9` is deleted on origin. `feature/M15` (rig design) was
+  cut from M9, had M9 merged in on 2026-11-10 and `develop` on 2026-11-19, so it holds both.
+- **Last verified** on `feature/M15`, 2026-11-19, after merging `develop`: `ctest -j8` **1720/1720**
+  MSVC Debug and **1728/1728** MSVC Release, with video, OpenCV and Ceres on. CI was last green on all
+  eight jobs at `178a5b0` ([run 44204963901](https://github.com/luckyneko/lain/actions/runs/44204963901)); GCC and
   macOS are built only there. gui-mode is verified by the repo owner's eyeball on a Metal machine,
   never by CI.
 - **What is owed** is WORK.md's *Outstanding work — one index*: every unfinished milestone item,

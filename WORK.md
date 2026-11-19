@@ -6048,6 +6048,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      Registration keeps both old names as aliases, so its code, its report's `RefinementSummary` and
      the golden read as before. No field is renamed, since a field cannot be aliased:
      `Problem::observations` keeps its name, and sub-slice 5 is where the problem's shape changes.
+     *(The aliases were retired on 2026-11-13; see *The registration refinement aliases are
+     retired*.)*
    - **The dependency direction is stated, not guarded.** The refinement header says it includes
      nothing from registration or calibration, and why. Nothing in the tree enforces ADR-0016's
      separation today. A guard should cover the whole rule (calibration and the shared seams include
@@ -7756,7 +7758,7 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      before.
    - **`refinement::Summary`** is in `refinement/refiner.h`, after `Solution`. Registration keeps
      `RefinementSummary` as an alias in `registration/refiner.h`, beside `RefinementStatus`, so both
-     goldens and the Ceres refiner test read it unchanged.
+     goldens and the Ceres refiner test read it unchanged. *(Retired 2026-11-13, with the other two.)*
    - **`src/calibration/coverage.{h,cpp}`**, in `camera::detail`: `CoverageCells`, `coverageCell`,
      `cover` and `coveredFraction`, over pixels. Board calibration's `cellsOf` and `coverage` go
      through them.
@@ -19906,7 +19908,8 @@ A survey of every random draw in the tree followed, asking what else belongs in 
 - **Not run:** GCC and macOS, which only CI has, and the builds with video, OpenCV or Ceres off,
   whose suites contain none of the moved cases except core's. *(CI first built it on 2026-11-12, after
   the merge into M15: macOS printed one digit of the targetless golden's moved scene differently, and the
-  golden comparison now allows a last-digit flip. See feature/M15's CI run after the fixed-rig footage.)*
+  golden comparison now allows a last-digit flip. See feature/M15's CI run after the fixed-rig footage,
+  and *A golden is compared line by line*, below, for its backport to feature/M9.)*
 
 ## `lain::camera::testing`: the camera tests' shared code is a target (built 2026-11-09)
 
@@ -20746,6 +20749,159 @@ flow are, locked decisions, intended architecture, conventions, where to start, 
 - **Merging M9 into M15 next time:** M9 adds its entries to CLAUDE.md's log, which M15 no longer has.
   Keep M15's CLAUDE.md, and take each M9 entry's content from the WORK.md section it names.
 
+## A golden is compared line by line, a number within its last digit (built 2026-11-13)
+
+The golden half of `ea273a1` on `feature/M15`, backported so `feature/M9` can be pushed on its own.
+feature/M15's CI ([run 43125621287](https://github.com/luckyneko/lain/actions/runs/43125621287), its
+first build of `928751e`) found that macOS prints line 251 of the targetless registration golden as
+`outlier track00109 cam02 7.27842948`, where Windows prints `...47`. Pushed without this, `feature/M9`
+fails the same way.
+
+- **The cause is how a golden prints.** `golden::number` snaps a value to a 1e-9 grid and prints nine
+  significant digits, which for a value near 7 rounds again at 1e-8. So the snap cannot keep a value off
+  a rounding boundary, and this residual, out of an iterative solve, crossed one.
+- **Fixed in the comparison, not the printing.** `requireGolden` now compares line by line
+  (`goldentext.h`'s `sameLine`): the text exactly, and each number within one unit of its last printed
+  digit, or one step of the snap near zero. A count below 1e8 is compared exactly, and so are the digits
+  in a name like `track00109`. All three goldens go through it, and no golden file changed.
+- **Not taken:** `ea273a1`'s other half, `plugins/camera/test/test_comparison.cpp`, which is about M15's
+  capture comparison and has no counterpart here.
+
+### Verified
+
+- A new case, *a golden line may differ in a number's last printed digit and in nothing else*, holds the
+  comparison both ways. Two sabotages, each caught by it: any two numbers close (7 of its 13 checks
+  fail), and numbers compared as text (3 fail). The first cut of the first one did not build (C4702,
+  unreachable code), so the old binary answered; it was redone so that it compiles.
+- The committed golden with line 251 edited to macOS's `...48` passes, and with `...50` fails, naming
+  line 251.
+- `ctest -j8` **1363/1363** MSVC Debug and **1371/1371** MSVC Release with video, camera and Ceres on
+  (+1 each, the new case); warning-clean; `format-check` exit 0 over all 733 files.
+- **Not run:** macOS, the platform this is for, which only CI has.
+
+## Measurements out of ctest: `bench-camera-opencv` and `bench-camera-ceres` (built 2026-11-13)
+
+`8b3ccb9` on `feature/M15`, backported so `feature/M9` can land on its own. It is the eighth of the
+NOTES.txt (2026-11-02) follow-ups, decided with the repo owner there: **move the clock and memory checks,
+not the cases.** A bound on how long something takes, or on a memory peak, also fails when the machine
+is slower or busier, so it is no regression check. Each case keeps every check about what lain's code
+does; what it costs is printed by a bench that ctest does not run. M15's WORK.md section of the same
+name holds the full reasoning; this one records the backport.
+
+- **Of M9's 17 Release-only cases, four held a time or memory figure to a bound**, the four the commit
+  names, and they were why `RUN_SERIAL` existed:
+  - **"an 8K frame is searched at the default size"** (was "... in bounded memory"): the side searched
+    and the features found stay; the time and the glibc peak go.
+  - **"exact and approximate search at 8192 features a view"**: the matches and Approximate's 90% recall
+    stay; "Approximate is 3 times faster" goes.
+  - **"every pair of 40 frames along the path is matched and verified"** (was "the time to match every
+    pair of 40 frames"): the 780-pair production run stays; the per-pair timings and their ratios go.
+  - **"a rig of 100 cameras and 50000 tracks registers"**: Ready and the worst camera stay; `< 120 s`
+    goes, and it skips through `skipInDebug` rather than `SKIP` under `#ifndef NDEBUG`.
+- **`RUN_SERIAL` is gone** from `test-camera-ceres` and `test-camera-opencv-features`, each one
+  `catch_discover_tests` again.
+- **`LAIN_BUILD_BENCHMARK`** (default `${LAIN_NOT_SUBPROJECT}`, so CI compiles the benches) builds two
+  Catch2 executables beside their plugins, never registered with ctest, every case skipped in Debug:
+  `bench-camera-opencv` (the three OpenCV measurements) and `bench-camera-ceres` (the registration). Two,
+  because a feature facade asks its registry's `keys().front()`, and the Ceres case's stand-in matcher
+  `"exact"` sorts before `"opencv"`. Catch2 and `lain::testing` now build for tests or benchmarks, and
+  `lain::camera::testing` for tests, apps or benchmarks.
+- **So the benches reach no test directory:** `largeCamera` moved to `testcamera.h`, the feature-cell
+  helpers to a new framework-free `featurecells.h`, `scene::rig()` replaces three identical copies, and
+  `scene::resetRing()` the scale case's inline ring.
+
+### Adapted to M9
+
+Every file but four was identical on M9 and took M15's change as it is. The four:
+
+- **The root `CMakeLists.txt`:** M9 has neither M15's rigplan apps nor `libs/rigplan/testing`, so only
+  the option, the Catch2 gate and the `libs/testing` gate were taken.
+- **`testcamera.h`:** M9 keeps `testcameraparameters.h` apart (M15 folded it back), so only the
+  `<cstdint>` include and `largeCamera` were added.
+- **`libs/camera/testing/CMakeLists.txt`:** its comment keeps `testcameraparameters.h` among the
+  framework-free headers.
+- **M9's comparison case** (`plugins/camera/test/test_comparison.cpp`, which still renders
+  `texturedscene.h`) holds no time or memory bound, so nothing there changed.
+
+### Verified
+
+- **The same cases are discovered:** 1363 in Debug before and after, two of them renamed and none added
+  or removed; no ctest test carries `RUN_SERIAL`.
+- `ctest -j8` gives **1363/1363** MSVC Debug and **1371/1371** MSVC Release with video, camera and Ceres
+  on, the same counts as before. The Release run took 170 s, against 263 s with `RUN_SERIAL`.
+- **The benches build and print** (Release, MSVC, 32 logical cores, nothing else running):
+  - **bench-camera-ceres:** the 100-camera registration in 13.8 s, 4.3 s of it the refinement in 7
+    iterations, Ready, on 31 workers.
+  - **bench-camera-opencv:** the 8K search 1050 features in 0.25 s at 1600 px and 976 in 0.27 s at
+    1920 px; at 8192 features a view, Exact 3683 matches in 5.19 s, Approximate 3636 in 0.32 s (96.8% of
+    Exact's); the 40-frame production run 780 pairs, 0 skipped, 2608 tracks in 38.6 s on four workers.
+  - **Every count matches what the tests record** (3683 exact and 10816 consolidation matches, 10756
+    and 10738 rows at the cap, 2608 tracks), so the benches measure the cases beside them.
+- In Debug, both benches skip every case.
+- Warning-clean builds of both trees, benches included; `format-check` exit 0 over all 737 files.
+- **Not run:** GCC and macOS, and the bench's glibc peak-memory branch, which only Linux compiles.
+
+## Board registration refuses a covariance that is not positive definite (built 2026-11-13)
+
+The last open known defect, from §NOTES.txt (2026-11-02). Board registration whitened a detector's
+corner covariance (`whitenedSquared`, in the outlier test, and in the refiner through each corner's
+observation) without asking `positiveDefinite`, which both targetless methods ask of a track before
+anything else. Decided with the repo owner: **refuse, as the targetless methods do.**
+
+- **The check:** after the record is written and before any pose is solved, the first usable
+  detection's corner (in canonical group order) whose covariance is not positive definite fails the
+  registration as **`InvalidDataset`**, naming the capture group, the camera and the corner:
+  *capture group 1a2b3c4d5e6f has a covariance that is not positive definite: camera "cam01", corner 7*.
+  It is the targetless methods' refusal, spelled for a board. One place, `analyse()`, so both overloads
+  reach it: the detections given, and the detections made from footage. The report still records
+  every detection.
+- **What the defect did, measured and read:** through the stand-in refiner, which does not whiten, the
+  registration came back **Ready** with cam01's view named an outlier at an infinite residual, so the
+  degenerate covariance passed silently. The Ceres refiner refuses such a corner itself
+  (`ceresrefiner.cpp`, read, not run), so through it the registration would have failed as
+  `RefinementFailed`, naming no group or camera.
+- **Only usable detections are asked.** A failed detection's corners never reach the solve.
+- **The stand-in rig's detector** (`syntheticrig.h`) gains `Scene::reportedCovariance`: a (camera,
+  group) whose detector reports a given covariance on every corner.
+
+### Verified
+
+- A new case, *a detection whose covariance is not positive definite is refused, naming it*: three
+  degenerate forms over given detections (indefinite, all zero, a NaN), the same over footage, and a
+  positive-definite one that still registers exactly. Each refusal names the group, camera and words,
+  poses nothing, asks the refiner nothing, and keeps all 24 detections on the record.
+- **Sabotage, caught:** the check removed fails both refusal sections, and the positive-definite one
+  still passes.
+- `ctest -j8` **1364/1364** MSVC Debug and **1372/1372** MSVC Release with video, camera and Ceres on
+  (+1 each, the new case); warning-clean; `format-check` exit 0 over all 737 files. Both registration
+  goldens pass unchanged, so no existing report moved.
+- **Not run:** GCC and macOS, and the Ceres path's own refusal, which was read.
+
+## The registration refinement aliases are retired (built 2026-11-13)
+
+`registration/refiner.h` kept three aliases for names the refiner seam's move to
+`lain::camera::refinement` changed (M9 slice 4, sub-slices 3 and 9a): `RefinementObservation`
+(`refinement::BodyObservation`), `RefinementStatus` (`refinement::Status`) and `RefinementSummary`
+(`refinement::Summary`). They were kept only so that move touched no caller. Each use now spells the
+seam's name, so one thing has one name; the using-declarations of names that did not change
+(`refinement::Problem`, `refine`, ...) stay, since they are the seam named where registration's callers
+look for it.
+
+- **Ten uses in seven files:** `registration/report.h`, `src/registration/board.cpp` and
+  `targetless.cpp`, the two golden tests, and `plugins/camera/ceres/test/test_refiner.cpp`.
+  `RefinementObservation` had no use left.
+- **`report.h` now declares `std::optional<refinement::Summary> refinement;`**, a member named as the
+  namespace that types it. GCC's `-Wchanges-meaning` was the risk; calibration's report has declared
+  exactly that shape since sub-slice 9a, and CI's GCC legs build it, so it is not new.
+
+### Verified
+
+- `ctest -j8` **1364/1364** MSVC Debug and **1372/1372** MSVC Release with video, camera and Ceres on,
+  unchanged; both registration goldens pass with their files untouched. Warning-clean builds of both
+  trees; `format-check` exit 0 over all 737 files. No name `RefinementSummary`, `RefinementStatus` or
+  `RefinementObservation` is left in code.
+- **Not run:** GCC and macOS.
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because
@@ -20765,6 +20921,7 @@ row here**. A row is cheap to delete and expensive to leave.
 ### Unfinished milestones
 
 - **M9 — camera calibration and fixed registration.** Designed 2026-08-14/15 with three ADRs.
+  **Merged into `develop` through PR #1 on 2026-11-19**, and `develop` into `feature/M15` the same day.
   **Built:** slice 0 (OpenCV lands), slice 1 sub-slices 0 to 7 plus the fixture machinery (8a to 8c),
   slice 2 (fixed-camera board registration, with Ceres), slice 3 (targetless registration with
   known intrinsics, all eleven sub-slices, 2026-10-09) and slice 4 (targetless calibration and the
@@ -21186,14 +21343,12 @@ review of 2026-10-20 moved after it), with clock-domain identity and timestamp g
 
 ### Known defects, each owed its own commit
 
-Not deferred features — acknowledged bugs, listed here so they stop being rediscovered.
+Not deferred features — acknowledged bugs, listed here so they stop being rediscovered. **None is
+open.**
 
-- **Board registration whitens a detector's covariance without checking it**
-  (`registration/board.cpp`, `whitenedSquared`). Only the targetless methods refuse an observation
-  whose covariance is not `positiveDefinite`; a detector reporting a degenerate one would whiten to
-  infinity or NaN there. *(§NOTES.txt (2026-11-02).)*
-
-**Ten earlier ones are fixed** — `gui::Texture` freeing a descriptor set a running frame
+**Eleven earlier ones are fixed** — board registration whitening a detector's covariance without
+checking it (2026-11-13; see *Board registration refuses a covariance that is not positive definite*),
+`gui::Texture` freeing a descriptor set a running frame
 could still read (2026-09-29; see Milestone 14 › *A texture's descriptor outlives the frames that
 drew it*), a group replaced at its own NodeId looking clean and delivering
 nothing (found by M14 slice 1, fixed 2026-09-28 by making versions process-unique; see
@@ -23567,7 +23722,7 @@ follow-ups, in WORK.md's *NOTES.txt (2026-11-02)*.
   `lookingAt` orientation cases. **Keeping `UnionFind`'s higher root passes all 518 camera and flowview
   tests**: nothing observes which root is kept, so the rule is unpinned determinism insurance.
 - **Found, recorded as a known defect:** board registration whitens a detector's covariance without
-  checking it is positive definite.
+  checking it is positive definite. *(**Fixed 2026-11-13**: it refuses one, as targetless does.)*
 - **CI's first run (41597659039 on `f7b2c69`) found two things, each fixed in its own commit:** a check of
   mine too strict for macOS arm64 (`rotationBetween(a, -a)` reads 1e-17, not 0), and GCC 13's false
   `-Wmaybe-uninitialized` on `calibrateScene`'s empty optional, which stopped all three Linux Release
@@ -26237,7 +26392,7 @@ under M9 slice 4.
 
 - **Two names lose their stutter**: `refinement::Status` and `refinement::BodyObservation`.
   Registration keeps `RefinementStatus` and `RefinementObservation` as aliases, and its old headers
-  keep exporting every name they did, so no registration caller changed.
+  keep exporting every name they did, so no registration caller changed. *(Retired 2026-11-13.)*
 - **Code that implements the seam, or asks whether a backend exists, spells `refinement::`**: the
   Ceres plugin, the stand-in refiners, the kinds table and the tests that register a refiner. The
   facade's missing-backend text drops "registration", since calibration will read it too.
