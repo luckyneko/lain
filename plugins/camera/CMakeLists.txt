@@ -21,6 +21,14 @@ if(LAIN_OPENCV_UNAVAILABLE)
 endif()
 add_feature_info(LAIN_CAMERA_OPENCV "TARGET lain::camera::opencv" "${_lain_opencv_summary}")
 
+# Ceres is BUILT from source (ADR-0017), but heavy enough that a bundled lain should not compile it
+# unasked, so it defaults the way a fetched prebuilt does. It is available wherever lain builds.
+option(LAIN_CAMERA_CERES "Build the Ceres camera plugin (BSD-3-Clause, built from source; Eigen MPL-2.0)" ${LAIN_NOT_SUBPROJECT})
+if(LAIN_CAMERA_CERES)
+	add_subdirectory(ceres)
+endif()
+add_feature_info(LAIN_CAMERA_CERES "TARGET lain::camera::ceres" "Ceres camera registration backend (BSD-3-Clause, built from source)")
+
 # Turn the discovered plugin list into the aggregator's #includes and registerBackend() calls. Each
 # entry is both the link target and the namespace: "lain::camera::opencv" ->
 # include <lain/camera/opencv/register.h> + call lain::camera::opencv::registerBackend().

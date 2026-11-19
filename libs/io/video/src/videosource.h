@@ -22,6 +22,9 @@ namespace lain::io::video
 	public:
 		VideoSource(lain::core::Uri uri, std::unique_ptr<VideoReader> reader);
 
+		// One file holds every frame.
+		bool isContainer() const override { return true; }
+
 	protected:
 		lain::image::Image decodeFrame(std::size_t ordinal) const override;
 		lain::core::Time timestampOf(std::size_t ordinal) const override;

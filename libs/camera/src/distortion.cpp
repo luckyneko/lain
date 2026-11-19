@@ -112,9 +112,10 @@ namespace lain::camera
 	{
 		// An angle, not a radius: it stops at the side of the camera, so this domain is never
 		// unbounded and never more than pi/2.
-		const double fold = foldOf([this](double theta)
-								   { return distortedAngleSlope(theta) > 0; }, kHalfPi);
-		return {fold, distortedAngle(fold)};
+		const Coefficients<double> c = coefficients();
+		const double fold = foldOf([&c](double theta)
+								   { return distortedAngleSlope(c, theta) > 0; }, kHalfPi);
+		return {fold, distortedAngle(c, fold)};
 	}
 
 	// --- free functions ---------------------------------------------------------

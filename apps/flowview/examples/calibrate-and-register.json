@@ -1,0 +1,448 @@
+{
+  "version": 2,
+  "nodes": [
+    {
+      "id": "00000000-0000-7000-8000-000000000001",
+      "kind": "groupInput",
+      "name": "GroupInput",
+      "dynamicPins": [
+        {
+          "name": "footage",
+          "type": "ListOfFrameSequence"
+        }
+      ]
+    },
+    {
+      "id": "00000000-0000-7000-8000-000000000002",
+      "kind": "groupOutput",
+      "name": "GroupOutput",
+      "dynamicPins": [
+        {
+          "name": "report",
+          "type": "RegistrationReport"
+        },
+        {
+          "name": "rig",
+          "type": "RegisteredRig"
+        }
+      ]
+    },
+    {
+      "id": "00000000-0000-7000-8000-000000000003",
+      "kind": "boardSpecification",
+      "name": "BoardSpecification",
+      "params": [
+        {
+          "name": "dictionary",
+          "type": "arucoDictionary",
+          "value": "Aruco5x5_100"
+        },
+        {
+          "name": "squaresX",
+          "type": "int",
+          "value": 7
+        },
+        {
+          "name": "squaresY",
+          "type": "int",
+          "value": 5
+        },
+        {
+          "name": "markerToSquare",
+          "type": "float",
+          "value": 0.75
+        },
+        {
+          "name": "firstMarkerId",
+          "type": "int",
+          "value": 0
+        },
+        {
+          "name": "layout",
+          "type": "charucoLayout",
+          "value": "Standard"
+        },
+        {
+          "name": "identity",
+          "type": "string",
+          "value": "board"
+        },
+        {
+          "name": "squareLengthMm",
+          "type": "float",
+          "value": 24.0
+        }
+      ]
+    },
+    {
+      "id": "00000000-0000-7000-8000-000000000004",
+      "kind": "map",
+      "name": "Map",
+      "graph": {
+        "nodes": [
+          {
+            "id": "00000000-0000-7000-8000-000000000005",
+            "kind": "groupInput",
+            "name": "GroupInput",
+            "dynamicPins": [
+              {
+                "name": "footage",
+                "type": "FrameSequence"
+              },
+              {
+                "name": "board",
+                "type": "BoardSpecification"
+              }
+            ]
+          },
+          {
+            "id": "00000000-0000-7000-8000-000000000006",
+            "kind": "groupOutput",
+            "name": "GroupOutput",
+            "dynamicPins": [
+              {
+                "name": "model",
+                "type": "CameraModel"
+              }
+            ]
+          },
+          {
+            "id": "00000000-0000-7000-8000-000000000007",
+            "kind": "calibrateCamera",
+            "name": "CalibrateCamera",
+            "params": [
+              {
+                "name": "model",
+                "type": "distortionModel",
+                "value": "None"
+              },
+              {
+                "name": "importedPolicy",
+                "type": "importedModelPolicy",
+                "value": "Ignore"
+              },
+              {
+                "name": "fitnessProfile",
+                "type": "string",
+                "value": ""
+              },
+              {
+                "name": "heldOutFraction",
+                "type": "float",
+                "value": 0.20000000298023224
+              },
+              {
+                "name": "resamples",
+                "type": "int",
+                "value": 20
+              },
+              {
+                "name": "seed",
+                "type": "int",
+                "value": 1
+              },
+              {
+                "name": "deterministic",
+                "type": "bool",
+                "value": false
+              },
+              {
+                "name": "maximumViews",
+                "type": "int",
+                "value": 30
+              },
+              {
+                "name": "longestSide",
+                "type": "int",
+                "value": 0
+              },
+              {
+                "name": "refineNative",
+                "type": "bool",
+                "value": true
+              },
+              {
+                "name": "minimumCorners",
+                "type": "int",
+                "value": 4
+              }
+            ]
+          },
+          {
+            "id": "00000000-0000-7000-8000-000000000008",
+            "kind": "cameraModel",
+            "name": "CameraModel"
+          }
+        ],
+        "edges": [
+          {
+            "from": {
+              "node": "00000000-0000-7000-8000-000000000005",
+              "port": "footage"
+            },
+            "to": {
+              "node": "00000000-0000-7000-8000-000000000007",
+              "port": "footage"
+            }
+          },
+          {
+            "from": {
+              "node": "00000000-0000-7000-8000-000000000005",
+              "port": "board"
+            },
+            "to": {
+              "node": "00000000-0000-7000-8000-000000000007",
+              "port": "board"
+            }
+          },
+          {
+            "from": {
+              "node": "00000000-0000-7000-8000-000000000007",
+              "port": "report"
+            },
+            "to": {
+              "node": "00000000-0000-7000-8000-000000000008",
+              "port": "report"
+            }
+          },
+          {
+            "from": {
+              "node": "00000000-0000-7000-8000-000000000008",
+              "port": "model"
+            },
+            "to": {
+              "node": "00000000-0000-7000-8000-000000000006",
+              "port": "model"
+            }
+          }
+        ],
+        "editor": {
+          "00000000-0000-7000-8000-000000000005": {
+            "x": 40.0,
+            "y": 40.0
+          },
+          "00000000-0000-7000-8000-000000000006": {
+            "x": 730.0,
+            "y": 40.0
+          },
+          "00000000-0000-7000-8000-000000000007": {
+            "x": 270.0,
+            "y": 40.0
+          },
+          "00000000-0000-7000-8000-000000000008": {
+            "x": 500.0,
+            "y": 40.0
+          }
+        }
+      },
+      "interface": {
+        "inputs": [
+          {
+            "name": "board",
+            "type": "BoardSpecification"
+          },
+          {
+            "name": "footage",
+            "type": "ListOfFrameSequence"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "model",
+            "type": "ListOfCameraModel"
+          }
+        ]
+      }
+    },
+    {
+      "id": "00000000-0000-7000-8000-000000000009",
+      "kind": "registerCameras",
+      "name": "RegisterCameras",
+      "params": [
+        {
+          "name": "reference",
+          "type": "string",
+          "value": ""
+        },
+        {
+          "name": "unknownApplicability",
+          "type": "applicabilityPolicy",
+          "value": "Accept"
+        },
+        {
+          "name": "loss",
+          "type": "lossFamily",
+          "value": "Cauchy"
+        },
+        {
+          "name": "lossScale",
+          "type": "float",
+          "value": 3.0
+        },
+        {
+          "name": "fitnessProfile",
+          "type": "string",
+          "value": ""
+        },
+        {
+          "name": "heldOutFraction",
+          "type": "float",
+          "value": 0.20000000298023224
+        },
+        {
+          "name": "resamples",
+          "type": "int",
+          "value": 10
+        },
+        {
+          "name": "seed",
+          "type": "int",
+          "value": 1
+        },
+        {
+          "name": "maximumIterations",
+          "type": "int",
+          "value": 100
+        },
+        {
+          "name": "deterministic",
+          "type": "bool",
+          "value": false
+        },
+        {
+          "name": "pixelSigma",
+          "type": "float",
+          "value": 0.5
+        },
+        {
+          "name": "longestSide",
+          "type": "int",
+          "value": 0
+        },
+        {
+          "name": "refineNative",
+          "type": "bool",
+          "value": true
+        },
+        {
+          "name": "minimumCorners",
+          "type": "int",
+          "value": 4
+        }
+      ]
+    },
+    {
+      "id": "00000000-0000-7000-8000-00000000000a",
+      "kind": "registeredRig",
+      "name": "RegisteredRig"
+    }
+  ],
+  "edges": [
+    {
+      "from": {
+        "node": "00000000-0000-7000-8000-000000000001",
+        "port": "footage"
+      },
+      "to": {
+        "node": "00000000-0000-7000-8000-000000000004",
+        "port": "footage"
+      }
+    },
+    {
+      "from": {
+        "node": "00000000-0000-7000-8000-000000000003",
+        "port": "board"
+      },
+      "to": {
+        "node": "00000000-0000-7000-8000-000000000004",
+        "port": "board"
+      }
+    },
+    {
+      "from": {
+        "node": "00000000-0000-7000-8000-000000000001",
+        "port": "footage"
+      },
+      "to": {
+        "node": "00000000-0000-7000-8000-000000000009",
+        "port": "footage"
+      }
+    },
+    {
+      "from": {
+        "node": "00000000-0000-7000-8000-000000000004",
+        "port": "model"
+      },
+      "to": {
+        "node": "00000000-0000-7000-8000-000000000009",
+        "port": "models"
+      }
+    },
+    {
+      "from": {
+        "node": "00000000-0000-7000-8000-000000000003",
+        "port": "board"
+      },
+      "to": {
+        "node": "00000000-0000-7000-8000-000000000009",
+        "port": "board"
+      }
+    },
+    {
+      "from": {
+        "node": "00000000-0000-7000-8000-000000000009",
+        "port": "report"
+      },
+      "to": {
+        "node": "00000000-0000-7000-8000-00000000000a",
+        "port": "report"
+      }
+    },
+    {
+      "from": {
+        "node": "00000000-0000-7000-8000-000000000009",
+        "port": "report"
+      },
+      "to": {
+        "node": "00000000-0000-7000-8000-000000000002",
+        "port": "report"
+      }
+    },
+    {
+      "from": {
+        "node": "00000000-0000-7000-8000-00000000000a",
+        "port": "rig"
+      },
+      "to": {
+        "node": "00000000-0000-7000-8000-000000000002",
+        "port": "rig"
+      }
+    }
+  ],
+  "editor": {
+    "00000000-0000-7000-8000-000000000001": {
+      "x": 40.0,
+      "y": 40.0
+    },
+    "00000000-0000-7000-8000-000000000002": {
+      "x": 960.0,
+      "y": 40.0
+    },
+    "00000000-0000-7000-8000-000000000003": {
+      "x": 40.0,
+      "y": 190.0
+    },
+    "00000000-0000-7000-8000-000000000004": {
+      "x": 270.0,
+      "y": 40.0
+    },
+    "00000000-0000-7000-8000-000000000009": {
+      "x": 500.0,
+      "y": 40.0
+    },
+    "00000000-0000-7000-8000-00000000000a": {
+      "x": 730.0,
+      "y": 190.0
+    }
+  }
+}

@@ -179,7 +179,7 @@ namespace flowview
 			{
 				// A circular arrow, for an interior run again and again. Screen y points down, so a
 				// growing angle turns clockwise and the head points along (-sin, cos).
-				constexpr float kTwoPi = 6.2831853f;
+				const float kTwoPi = math::two_pi<float>();
 				const float radius = r * 0.85f;
 				const float start = -kTwoPi * 0.25f + 0.5f;
 				const float end = start + kTwoPi * 0.75f;
@@ -481,7 +481,7 @@ namespace flowview
 			// just landed EMPTY has still just landed.
 			constexpr double kLandedFade = 0.6;
 			constexpr double kPulsesPerSecond = 1.2;
-			constexpr double kTwoPi = 6.283185307179586;
+			const double kTwoPi = math::two_pi<double>();
 			int nodeVarsPushed = 0;
 			if (freshness == Freshness::Computing)
 			{

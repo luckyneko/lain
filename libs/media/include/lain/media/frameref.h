@@ -51,4 +51,10 @@ namespace lain::media
 		}
 		bool operator!=(const FrameRef& other) const { return !(*this == other); }
 	};
+
+	// Whether `a` was captured before `b`: CAPTURE ORDER, wherever a method or a report puts frames
+	// in one. An earlier timestamp first, then a lower ordinal; frames tied on both are ordered by
+	// source. So the order is total, and two frames are equivalent in it exactly when they are equal,
+	// which is what lets a sorted list find a frame given twice beside its twin.
+	bool capturedBefore(const FrameRef& a, const FrameRef& b);
 } // namespace lain::media

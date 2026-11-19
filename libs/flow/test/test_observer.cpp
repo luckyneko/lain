@@ -54,7 +54,6 @@ namespace lain::flow::test::observer
 				return id;
 		}
 		FAIL("no body in that interior");
-		return NodeId{};
 	}
 
 	static PortId inputNamed(const Node& node, const std::string& name)

@@ -7,7 +7,6 @@
 #include "lain/camera/provenance.h"
 
 #include <lain/core/factory.h>
-#include <lain/math/rigidtransform.h>
 
 #include <optional>
 #include <string>
@@ -25,9 +24,10 @@ namespace lain::camera::calibration
 		std::string failure; // why there are no parameters
 	};
 
-	// A calibration estimator backend (ADR-0004's service shape). It fits a model to observations and
-	// recovers a board's pose under a fixed model; view selection, validation, resampling and the
-	// verdict are the method module's, the same whichever backend runs.
+	// A calibration estimator backend (ADR-0004's service shape). It fits a model to observations;
+	// view selection, validation, resampling and the verdict are the method module's, the same
+	// whichever backend runs. A board's pose under a fixed model is not an estimator's question but
+	// the board module's (board::pose), since registration needs it too.
 	class Estimator
 	{
 	public:
@@ -44,11 +44,6 @@ namespace lain::camera::calibration
 		virtual Estimate estimate(const ImageGeometry& image, const std::vector<camera::board::Observation>& views,
 								  const camera::board::Specification& board, DistortionModel model,
 								  const std::optional<CameraModelParameters>& initial) const = 0;
-
-		// The board's pose in one view with `model` held fixed, as cameraFromBoard, or nullopt when
-		// it cannot be recovered.
-		virtual std::optional<math::RigidTransformd> boardPose(const CameraModel& model, const camera::board::Specification& board,
-															   const camera::board::Observation& view) const = 0;
 	};
 
 	// The process-wide estimator registry, keyed by backend name ("opencv").

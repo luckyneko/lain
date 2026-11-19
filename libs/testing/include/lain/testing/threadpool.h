@@ -19,8 +19,8 @@
 // multi's own WorkerPool destructor already does (it asserts, then stops defensively). Tests are
 // different only because they have no such owner.
 //
-// Header-only and test-only: `lain::testing` is built under LAIN_BUILD_TESTING and linked by test
-// targets alone.
+// Header-only and test-only: `lain::testing` is built under LAIN_BUILD_TESTING or LAIN_BUILD_BENCHMARK
+// and linked by test and benchmark targets alone.
 
 #include <lain/task/task.h>
 

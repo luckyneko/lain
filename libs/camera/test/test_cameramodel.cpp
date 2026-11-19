@@ -1,8 +1,7 @@
 // CameraModel::create: the only door to a camera model, and what it refuses.
 
-#include "testcamera.h"
-
 #include <lain/camera/cameramodel.h>
+#include <lain/camera/testing/testcamera.h>
 
 #include <catch2/catch_test_macros.hpp>
 

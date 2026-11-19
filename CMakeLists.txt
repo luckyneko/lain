@@ -28,6 +28,10 @@ endif()
 # add_subdirectory they stay off, matching the siblings).
 option(LAIN_BUILD_TESTING "Build the unit/integration tests" ${LAIN_NOT_SUBPROJECT})
 option(LAIN_BUILD_APPS "Build the runnable apps (flowview)" ${LAIN_NOT_SUBPROJECT})
+# Measurements, beside the tests and not run by ctest: what something costs in time or memory depends
+# on the machine and on what else runs, so a bound on it is no regression check (WORK.md, Measurements
+# out of ctest). Built as the tests are, so a bench cannot stop compiling unnoticed; run by hand.
+option(LAIN_BUILD_BENCHMARK "Build the benchmark executables (bench-camera-*)" ${LAIN_NOT_SUBPROJECT})
 option(LAIN_FORMAT "Provide clang-format format / format-check targets" ${LAIN_NOT_SUBPROJECT})
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
@@ -109,6 +113,9 @@ endif()
 
 if(LAIN_BUILD_TESTING)
 	enable_testing() # must be at the project root for ctest to find tests
+endif()
+# The benchmarks run on Catch2 too, as their cases' tests do, without registering anything with ctest.
+if(LAIN_BUILD_TESTING OR LAIN_BUILD_BENCHMARK)
 	include(addcatch2)
 endif()
 
@@ -127,8 +134,9 @@ add_subdirectory(libs/camera)           # camera geometry: models, distortion, p
 add_subdirectory(libs/task)
 add_subdirectory(libs/flow)             # the node-graph engine (WORK.md M1)
 
-# Test-support, built only when there are tests to support (see libs/testing/scratch.h).
-if(LAIN_BUILD_TESTING)
+# Test-support, built only when there are tests (or benchmarks, which start the pool through
+# lain::testing's ThreadPool and skip in Debug through its skip.h) to support.
+if(LAIN_BUILD_TESTING OR LAIN_BUILD_BENCHMARK)
 	add_subdirectory(libs/testing)      # collision-free scratch paths for parallel ctest
 endif()
 

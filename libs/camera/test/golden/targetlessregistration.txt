@@ -1,0 +1,919 @@
+== connected
+status Succeeded
+reference cam00 requested 0
+camera cam00 q(1 0 0 0) t(0 0 0)
+camera cam01 q(0.98873698 0.008211535 -0.149184562 -0.008701831) t(0.291074718 0.013453312 0.044986179)
+camera cam02 q(0.955204492 0.015880385 -0.295151701 -0.014753497) t(0.556148599 0.021315459 0.173839833)
+camera cam03 q(0.900166817 0.022465193 -0.43458892 -0.018096581) t(0.771543382 0.024347279 0.37514839)
+scale Arbitrary: normalised: the median depth of the 240 landmarks the reference sees is 1
+verdict Ready
+thresholds registration-targetless/1 unit Track ready(100 50 0.002 0.001 0.002 0.05 10) exploratory(30 15 0.006 0.005 0.02 0.15 10)
+heldOut units 60 predictions 240 unpredicted 0 residuals 240 epipolar 0 rmsAngle 0 rmsPixels 0 worstPixels 0
+heldOut robustAngle 0
+heldOut camera cam00 predictions 60 residuals 60 robustAngle 0 rmsAngle 0
+heldOut camera cam01 predictions 60 residuals 60 robustAngle 0 rmsAngle 0
+heldOut camera cam02 predictions 60 residuals 60 robustAngle 0 rmsAngle 0
+heldOut camera cam03 predictions 60 residuals 60 robustAngle 0 rmsAngle 0
+resampling 10 rotation 0 translation 0 absolute 0 worst -
+edge cam00-cam01 shared 240 bridge 0
+edge cam00-cam02 shared 240 bridge 0
+edge cam00-cam03 shared 240 bridge 0
+edge cam01-cam02 shared 240 bridge 0
+edge cam01-cam03 shared 240 bridge 0
+edge cam02-cam03 shared 240 bridge 0
+component cam00 cam01 cam02 cam03
+refinement Converged () iterations 0 cost 0 -> 0 residuals 960 bodies 0 landmarks 240 noise 0.5 loss Cauchy 3
+cameraEvidence cam00 Unknown shared 240 residuals 240 outliers 0 rmsPixels 0 rmsAngle 0
+cameraEvidence cam01 Unknown shared 240 residuals 240 outliers 0 rmsPixels 0 rmsAngle 0
+cameraEvidence cam02 Unknown shared 240 residuals 240 outliers 0 rmsPixels 0 rmsAngle 0
+cameraEvidence cam03 Unknown shared 240 residuals 240 outliers 0 rmsPixels 0 rmsAngle 0
+heldOutUnit track00002
+heldOutUnit track00007
+heldOutUnit track00012
+heldOutUnit track00017
+heldOutUnit track00022
+heldOutUnit track00027
+heldOutUnit track00032
+heldOutUnit track00037
+heldOutUnit track00042
+heldOutUnit track00047
+heldOutUnit track00052
+heldOutUnit track00057
+heldOutUnit track00062
+heldOutUnit track00067
+heldOutUnit track00072
+heldOutUnit track00077
+heldOutUnit track00082
+heldOutUnit track00087
+heldOutUnit track00092
+heldOutUnit track00097
+heldOutUnit track00102
+heldOutUnit track00107
+heldOutUnit track00112
+heldOutUnit track00117
+heldOutUnit track00122
+heldOutUnit track00127
+heldOutUnit track00132
+heldOutUnit track00137
+heldOutUnit track00142
+heldOutUnit track00147
+heldOutUnit track00152
+heldOutUnit track00157
+heldOutUnit track00162
+heldOutUnit track00167
+heldOutUnit track00172
+heldOutUnit track00177
+heldOutUnit track00182
+heldOutUnit track00187
+heldOutUnit track00192
+heldOutUnit track00197
+heldOutUnit track00202
+heldOutUnit track00207
+heldOutUnit track00212
+heldOutUnit track00217
+heldOutUnit track00222
+heldOutUnit track00227
+heldOutUnit track00232
+heldOutUnit track00237
+heldOutUnit track00242
+heldOutUnit track00247
+heldOutUnit track00252
+heldOutUnit track00257
+heldOutUnit track00262
+heldOutUnit track00267
+heldOutUnit track00272
+heldOutUnit track00277
+heldOutUnit track00282
+heldOutUnit track00287
+heldOutUnit track00292
+heldOutUnit track00297
+medianDepth 0.982730795
+targetless tracks 300 usable 300 landmarks 240 untriangulated 0 behind 0
+targetless seed cam00 cam01 angle 0.286371114 belowFloor 0
+targetless placement cam00 cam01 cam02 cam03
+targetless unplaceable
+targetless extraction unset trackSet unset
+source /scene/cam00
+source /scene/cam01
+source /scene/cam02
+source /scene/cam03
+frames 4 geometry truth/1 extractor / matcher / refiner passthrough/1 extraction unset
+request reference unset unknownApplicability Accept noise 0.5 loss Cauchy 3 profile (method's)
+request overrides unset unset unset unset unset unset unset
+request heldOutFraction 0.2 resamples 10 seed 1 maximumIterations 100 execution Normal
+== noisy
+status Succeeded
+reference cam02 requested 1
+camera cam00 q(0.955204492 -0.015880385 0.295151701 0.014753497) t(-0.562143981 -0.038960581 0.172689404)
+camera cam01 q(0.988736866 -0.008225195 0.149308598 0.00622076) t(-0.293876728 -0.01803889 0.043726965)
+camera cam02 q(1 0 0 0) t(0 0 0)
+camera cam03 q(0.98873679 0.008234327 -0.149391461 -0.003734527) t(0.294909698 0.015146346 0.044890032)
+scale Arbitrary: normalised: the median depth of the 225 landmarks the reference sees is 1
+verdict Rejected
+note Ready: 347 of 900 observations are outliers, above 0.05
+note Exploratory: 347 of 900 observations are outliers, above 0.15
+thresholds registration-targetless/1 unit Track ready(100 50 0.002 0.001 0.002 0.05 10) exploratory(30 15 0.006 0.005 0.02 0.15 10)
+heldOut units 75 predictions 300 unpredicted 0 residuals 300 epipolar 0 rmsAngle 0.001166395 rmsPixels 0.614847815 worstPixels 1.60105788
+heldOut robustAngle 0.001136225
+heldOut camera cam00 predictions 75 residuals 75 robustAngle 0.001174739 rmsAngle 0.001242603
+heldOut camera cam01 predictions 75 residuals 75 robustAngle 0.00091645 rmsAngle 0.000977414
+heldOut camera cam02 predictions 75 residuals 75 robustAngle 0.001135945 rmsAngle 0.001051996
+heldOut camera cam03 predictions 75 residuals 75 robustAngle 0.001216123 rmsAngle 0.001354923
+resampling 6 rotation 0 translation 0.001126126 absolute 0.001120993 worst -
+edge cam00-cam01 shared 225 bridge 0
+edge cam00-cam02 shared 225 bridge 0
+edge cam00-cam03 shared 225 bridge 0
+edge cam01-cam02 shared 225 bridge 0
+edge cam01-cam03 shared 225 bridge 0
+edge cam02-cam03 shared 225 bridge 0
+component cam00 cam01 cam02 cam03
+outlier track00000 cam02 6.31834329
+outlier track00000 cam03 11.059792
+outlier track00001 cam02 6.37449524
+outlier track00004 cam03 3.20196697
+outlier track00005 cam02 8.77224973
+outlier track00005 cam03 11.0635313
+outlier track00007 cam03 4.81729446
+outlier track00008 cam03 8.24162782
+outlier track00009 cam02 11.0428865
+outlier track00009 cam03 10.275599
+outlier track00011 cam02 4.32334506
+outlier track00011 cam03 10.8562742
+outlier track00012 cam02 5.79203327
+outlier track00012 cam03 16.0912478
+outlier track00013 cam02 9.78737025
+outlier track00013 cam03 7.38270297
+outlier track00015 cam02 3.14295185
+outlier track00015 cam03 16.5444801
+outlier track00016 cam02 3.15568563
+outlier track00017 cam00 3.32884694
+outlier track00017 cam01 3.29527137
+outlier track00017 cam02 4.25829786
+outlier track00019 cam02 5.93340214
+outlier track00020 cam02 4.963586
+outlier track00021 cam02 7.09019486
+outlier track00021 cam03 5.92251391
+outlier track00023 cam03 4.8703666
+outlier track00024 cam03 6.79088978
+outlier track00025 cam02 6.20387483
+outlier track00025 cam03 9.1303992
+outlier track00027 cam03 10.3291531
+outlier track00028 cam02 3.34065681
+outlier track00028 cam03 8.36671702
+outlier track00031 cam02 5.97888406
+outlier track00031 cam03 8.19198308
+outlier track00032 cam02 4.71984284
+outlier track00032 cam03 4.00708895
+outlier track00033 cam02 8.30966339
+outlier track00033 cam03 8.76078939
+outlier track00035 cam02 4.16581487
+outlier track00035 cam03 3.8968448
+outlier track00036 cam02 4.1866147
+outlier track00039 cam02 3.23411854
+outlier track00039 cam03 4.13725017
+outlier track00040 cam02 9.75839845
+outlier track00040 cam03 4.39479066
+outlier track00041 cam02 9.26103089
+outlier track00041 cam03 6.12079015
+outlier track00043 cam02 3.9359605
+outlier track00043 cam03 9.38412321
+outlier track00044 cam03 3.33842633
+outlier track00045 cam02 8.56886397
+outlier track00045 cam03 10.6601447
+outlier track00048 cam02 9.09964506
+outlier track00048 cam03 12.2484355
+outlier track00049 cam02 9.72851289
+outlier track00049 cam03 4.28769106
+outlier track00051 cam03 6.32317912
+outlier track00052 cam02 10.021003
+outlier track00052 cam03 8.58942556
+outlier track00053 cam03 5.43125384
+outlier track00055 cam03 5.84416364
+outlier track00056 cam02 3.93313367
+outlier track00056 cam03 5.64109435
+outlier track00057 cam02 4.3658342
+outlier track00059 cam03 3.70133078
+outlier track00060 cam02 8.83792486
+outlier track00060 cam03 13.6008378
+outlier track00061 cam02 8.13207988
+outlier track00061 cam03 6.03054586
+outlier track00064 cam02 12.7309696
+outlier track00064 cam03 8.87022945
+outlier track00065 cam02 7.04077376
+outlier track00065 cam03 10.6209301
+outlier track00067 cam02 4.44520078
+outlier track00068 cam02 12.1685404
+outlier track00068 cam03 6.84159766
+outlier track00069 cam03 3.13212456
+outlier track00072 cam03 5.43081545
+outlier track00073 cam02 4.23427246
+outlier track00073 cam03 5.97013158
+outlier track00076 cam02 4.6552883
+outlier track00076 cam03 7.87683252
+outlier track00077 cam02 4.17798282
+outlier track00077 cam03 5.57377519
+outlier track00079 cam03 6.55750957
+outlier track00080 cam02 7.60842316
+outlier track00080 cam03 7.17847901
+outlier track00081 cam03 4.59561488
+outlier track00083 cam02 13.0916617
+outlier track00083 cam03 12.7641495
+outlier track00084 cam02 7.18002558
+outlier track00084 cam03 3.62455629
+outlier track00085 cam03 6.1574105
+outlier track00087 cam02 8.27201482
+outlier track00087 cam03 10.0329402
+outlier track00088 cam02 5.88020825
+outlier track00088 cam03 4.99354923
+outlier track00089 cam03 4.8966031
+outlier track00091 cam02 5.64688511
+outlier track00091 cam03 4.10093484
+outlier track00092 cam02 4.01301209
+outlier track00092 cam03 7.05726121
+outlier track00095 cam02 8.69430028
+outlier track00095 cam03 8.00385612
+outlier track00096 cam02 6.51481763
+outlier track00096 cam03 10.2569224
+outlier track00097 cam03 8.39062889
+outlier track00099 cam02 3.8614105
+outlier track00099 cam03 5.27000127
+outlier track00100 cam03 6.02593947
+outlier track00101 cam02 5.87428968
+outlier track00101 cam03 10.4246046
+outlier track00103 cam03 4.15739158
+outlier track00104 cam02 4.44614505
+outlier track00105 cam00 3.88739109
+outlier track00105 cam01 4.12052985
+outlier track00107 cam02 8.8544112
+outlier track00107 cam03 10.8885599
+outlier track00108 cam02 3.63750434
+outlier track00108 cam03 3.99277088
+outlier track00109 cam02 7.27842947
+outlier track00109 cam03 11.22917
+outlier track00111 cam03 3.98374391
+outlier track00112 cam02 6.68084684
+outlier track00112 cam03 5.4108438
+outlier track00113 cam02 6.22974402
+outlier track00113 cam03 6.47756894
+outlier track00115 cam02 9.51994315
+outlier track00115 cam03 7.06406716
+outlier track00116 cam02 7.67025384
+outlier track00116 cam03 7.84322768
+outlier track00117 cam02 6.88356151
+outlier track00117 cam03 7.52903231
+outlier track00119 cam02 6.95103794
+outlier track00119 cam03 6.00810788
+outlier track00120 cam02 3.14537404
+outlier track00120 cam03 4.61096437
+outlier track00121 cam02 13.0620385
+outlier track00121 cam03 19.2338262
+outlier track00123 cam02 8.43383113
+outlier track00123 cam03 10.8089157
+outlier track00124 cam02 8.48618804
+outlier track00124 cam03 4.45300025
+outlier track00128 cam02 7.1112912
+outlier track00128 cam03 11.3214764
+outlier track00129 cam02 3.50228083
+outlier track00129 cam03 7.12503709
+outlier track00131 cam02 3.30217971
+outlier track00131 cam03 3.82977464
+outlier track00132 cam02 3.65884522
+outlier track00133 cam02 6.92449389
+outlier track00133 cam03 3.80688313
+outlier track00135 cam02 12.8511635
+outlier track00135 cam03 19.1243319
+outlier track00136 cam02 6.65091884
+outlier track00136 cam03 4.04007188
+outlier track00137 cam02 3.66114555
+outlier track00137 cam03 7.90181403
+outlier track00139 cam02 17.1678065
+outlier track00139 cam03 19.9918276
+outlier track00140 cam02 5.2185365
+outlier track00140 cam03 5.81806955
+outlier track00141 cam03 8.80970117
+outlier track00143 cam02 4.00359988
+outlier track00144 cam03 11.774967
+outlier track00145 cam02 9.602763
+outlier track00145 cam03 4.93877419
+outlier track00147 cam02 4.63800675
+outlier track00147 cam03 9.56135605
+outlier track00148 cam02 3.03511715
+outlier track00149 cam03 7.2536992
+outlier track00151 cam02 6.96815456
+outlier track00151 cam03 9.05345729
+outlier track00152 cam03 7.15094884
+outlier track00153 cam02 6.07400935
+outlier track00153 cam03 7.02797801
+outlier track00155 cam02 4.84160841
+outlier track00156 cam02 7.04727413
+outlier track00156 cam03 7.5577632
+outlier track00157 cam02 4.0690224
+outlier track00157 cam03 6.06169862
+outlier track00159 cam02 3.32091736
+outlier track00159 cam03 6.32945941
+outlier track00160 cam02 5.32140376
+outlier track00160 cam03 4.48871629
+outlier track00161 cam02 8.86655067
+outlier track00161 cam03 5.52184813
+outlier track00163 cam02 7.06908962
+outlier track00164 cam02 7.49982285
+outlier track00164 cam03 10.2511489
+outlier track00165 cam02 6.85329713
+outlier track00165 cam03 7.45040907
+outlier track00167 cam02 10.175349
+outlier track00167 cam03 10.464943
+outlier track00168 cam02 3.49412852
+outlier track00168 cam03 9.32152901
+outlier track00169 cam02 9.97680592
+outlier track00169 cam03 10.7474286
+outlier track00171 cam02 4.81734617
+outlier track00171 cam03 4.21155006
+outlier track00172 cam03 5.25226964
+outlier track00173 cam02 6.67942572
+outlier track00173 cam03 8.93049726
+outlier track00175 cam02 4.59851576
+outlier track00176 cam02 5.05222825
+outlier track00176 cam03 7.6082344
+outlier track00177 cam02 5.44561766
+outlier track00177 cam03 10.2014295
+outlier track00180 cam02 6.92450628
+outlier track00180 cam03 12.1951511
+outlier track00181 cam02 12.6975185
+outlier track00181 cam03 16.3304562
+outlier track00183 cam02 14.847994
+outlier track00183 cam03 12.4486741
+outlier track00184 cam02 8.94046404
+outlier track00184 cam03 8.7975409
+outlier track00185 cam03 4.88984867
+outlier track00187 cam02 10.3265844
+outlier track00187 cam03 19.7466954
+outlier track00188 cam03 7.25517104
+outlier track00189 cam03 9.57375257
+outlier track00191 cam02 9.06765488
+outlier track00191 cam03 8.61810851
+outlier track00193 cam03 6.89917623
+outlier track00195 cam02 20.4538017
+outlier track00195 cam03 16.6528099
+outlier track00196 cam02 9.88992831
+outlier track00196 cam03 15.767457
+outlier track00197 cam02 6.56076115
+outlier track00197 cam03 7.02014837
+outlier track00199 cam03 11.4617362
+outlier track00200 cam02 4.80130047
+outlier track00200 cam03 9.14986999
+outlier track00201 cam02 16.4989087
+outlier track00201 cam03 20.2519127
+outlier track00203 cam02 4.13697588
+outlier track00203 cam03 4.24742259
+outlier track00204 cam02 9.39437075
+outlier track00204 cam03 9.69186699
+outlier track00207 cam02 4.36414844
+outlier track00207 cam03 10.2062837
+outlier track00208 cam02 7.12865664
+outlier track00208 cam03 9.30300992
+outlier track00209 cam02 8.81763748
+outlier track00209 cam03 12.5185741
+outlier track00211 cam02 10.9842448
+outlier track00211 cam03 5.67035817
+outlier track00212 cam02 4.81495887
+outlier track00212 cam03 6.48494211
+outlier track00213 cam02 6.38688694
+outlier track00213 cam03 8.23046678
+outlier track00215 cam02 3.59915423
+outlier track00215 cam03 10.5483151
+outlier track00217 cam02 8.551346
+outlier track00217 cam03 8.1972608
+outlier track00219 cam02 6.51590404
+outlier track00219 cam03 9.14209263
+outlier track00220 cam02 4.32043952
+outlier track00220 cam03 8.03803889
+outlier track00221 cam00 3.19084533
+outlier track00221 cam01 3.31657914
+outlier track00221 cam02 5.08840217
+outlier track00221 cam03 5.6000662
+outlier track00223 cam02 3.23156459
+outlier track00223 cam03 3.88780505
+outlier track00224 cam02 6.42894214
+outlier track00224 cam03 7.48948123
+outlier track00227 cam02 6.14444498
+outlier track00227 cam03 5.58152238
+outlier track00229 cam03 3.45133118
+outlier track00231 cam02 14.7494755
+outlier track00231 cam03 22.5904392
+outlier track00232 cam02 6.72740594
+outlier track00233 cam03 5.0464494
+outlier track00236 cam00 3.73193066
+outlier track00236 cam01 3.93821138
+outlier track00236 cam03 3.30075528
+outlier track00237 cam03 5.84583142
+outlier track00239 cam02 6.08267463
+outlier track00239 cam03 11.4549591
+outlier track00240 cam02 5.56095754
+outlier track00240 cam03 13.6222133
+outlier track00241 cam02 4.30014066
+outlier track00241 cam03 10.9663702
+outlier track00243 cam02 15.3083172
+outlier track00243 cam03 23.7319403
+outlier track00244 cam02 7.67663704
+outlier track00244 cam03 3.706784
+outlier track00245 cam03 7.47000331
+outlier track00247 cam03 7.57276293
+outlier track00248 cam03 5.73694863
+outlier track00249 cam03 7.43681749
+outlier track00251 cam03 6.19593327
+outlier track00252 cam02 5.69963814
+outlier track00253 cam02 3.20180022
+outlier track00253 cam03 4.74711321
+outlier track00255 cam02 6.5463945
+outlier track00256 cam03 5.06167066
+outlier track00257 cam02 3.76528076
+outlier track00257 cam03 7.30230328
+outlier track00259 cam03 4.82486791
+outlier track00260 cam02 6.51656492
+outlier track00260 cam03 4.26386853
+outlier track00261 cam02 3.46227784
+outlier track00261 cam03 8.86903722
+outlier track00264 cam02 5.69944895
+outlier track00264 cam03 7.61712864
+outlier track00265 cam03 5.45336836
+outlier track00267 cam02 3.51440201
+outlier track00267 cam03 5.5934858
+outlier track00268 cam02 9.71797185
+outlier track00268 cam03 14.1183043
+outlier track00269 cam02 4.04355135
+outlier track00271 cam02 4.65908144
+outlier track00271 cam03 14.8623796
+outlier track00272 cam03 11.3317813
+outlier track00273 cam02 5.47136618
+outlier track00273 cam03 5.78177712
+outlier track00275 cam03 3.63113794
+outlier track00276 cam03 9.90771188
+outlier track00277 cam02 3.55770802
+outlier track00279 cam02 4.44248583
+outlier track00279 cam03 3.04130849
+outlier track00280 cam03 7.75587324
+outlier track00281 cam02 4.60938367
+outlier track00281 cam03 4.13732722
+outlier track00283 cam02 7.72236433
+outlier track00283 cam03 11.5357714
+outlier track00284 cam02 6.1759904
+outlier track00284 cam03 4.61464966
+outlier track00285 cam02 4.68758086
+outlier track00285 cam03 7.32803149
+outlier track00287 cam03 3.98902341
+outlier track00289 cam02 16.1221539
+outlier track00289 cam03 18.8416056
+outlier track00291 cam02 11.2143416
+outlier track00291 cam03 9.00154727
+outlier track00292 cam02 3.16968037
+outlier track00293 cam03 3.70831488
+outlier track00295 cam02 5.85821622
+outlier track00295 cam03 8.47053012
+outlier track00296 cam02 11.5515702
+outlier track00296 cam03 9.26678161
+outlier track00297 cam03 6.72430608
+outlier track00299 cam02 4.85300897
+outlier track00299 cam03 7.78730941
+refinement Converged () iterations 0 cost 0 -> 0 residuals 900 bodies 0 landmarks 225 noise 0.5 loss Huber 3
+cameraEvidence cam00 Unknown shared 225 residuals 225 outliers 4 rmsPixels 0.195177082 rmsAngle 0.00037046
+cameraEvidence cam01 Unknown shared 225 residuals 225 outliers 4 rmsPixels 0.196917817 rmsAngle 0.000373067
+cameraEvidence cam02 Unknown shared 225 residuals 225 outliers 155 rmsPixels 0.873527556 rmsAngle 0.001653509
+cameraEvidence cam03 Unknown shared 225 residuals 225 outliers 184 rmsPixels 1.12270565 rmsAngle 0.002131938
+heldOutUnit track00002
+heldOutUnit track00006
+heldOutUnit track00010
+heldOutUnit track00014
+heldOutUnit track00018
+heldOutUnit track00022
+heldOutUnit track00026
+heldOutUnit track00030
+heldOutUnit track00034
+heldOutUnit track00038
+heldOutUnit track00042
+heldOutUnit track00046
+heldOutUnit track00050
+heldOutUnit track00054
+heldOutUnit track00058
+heldOutUnit track00062
+heldOutUnit track00066
+heldOutUnit track00070
+heldOutUnit track00074
+heldOutUnit track00078
+heldOutUnit track00082
+heldOutUnit track00086
+heldOutUnit track00090
+heldOutUnit track00094
+heldOutUnit track00098
+heldOutUnit track00102
+heldOutUnit track00106
+heldOutUnit track00110
+heldOutUnit track00114
+heldOutUnit track00118
+heldOutUnit track00122
+heldOutUnit track00126
+heldOutUnit track00130
+heldOutUnit track00134
+heldOutUnit track00138
+heldOutUnit track00142
+heldOutUnit track00146
+heldOutUnit track00150
+heldOutUnit track00154
+heldOutUnit track00158
+heldOutUnit track00162
+heldOutUnit track00166
+heldOutUnit track00170
+heldOutUnit track00174
+heldOutUnit track00178
+heldOutUnit track00182
+heldOutUnit track00186
+heldOutUnit track00190
+heldOutUnit track00194
+heldOutUnit track00198
+heldOutUnit track00202
+heldOutUnit track00206
+heldOutUnit track00210
+heldOutUnit track00214
+heldOutUnit track00218
+heldOutUnit track00222
+heldOutUnit track00226
+heldOutUnit track00230
+heldOutUnit track00234
+heldOutUnit track00238
+heldOutUnit track00242
+heldOutUnit track00246
+heldOutUnit track00250
+heldOutUnit track00254
+heldOutUnit track00258
+heldOutUnit track00262
+heldOutUnit track00266
+heldOutUnit track00270
+heldOutUnit track00274
+heldOutUnit track00278
+heldOutUnit track00282
+heldOutUnit track00286
+heldOutUnit track00290
+heldOutUnit track00294
+heldOutUnit track00298
+medianDepth 0.995441315
+targetless tracks 300 usable 300 landmarks 225 untriangulated 0 behind 0
+targetless seed cam00 cam01 angle 0.286311701 belowFloor 0
+targetless placement cam00 cam01 cam02 cam03
+targetless unplaceable
+targetless extraction unset trackSet unset
+source /scene/cam00
+source /scene/cam01
+source /scene/cam02
+source /scene/cam03
+frames 4 geometry truth/1 extractor / matcher / refiner passthrough/1 extraction unset
+request reference cam02 unknownApplicability Accept noise 0.5 loss Huber 3 profile (method's)
+request overrides unset unset unset unset unset unset unset
+request heldOutFraction 0.25 resamples 6 seed 17 maximumIterations 100 execution Normal
+== chain
+status Failed
+failure Disconnected: cameras cam02, cam03 share no triangulable landmark with the cameras placed before them
+reference cam01 requested 0
+scale Arbitrary
+verdict Rejected
+thresholds registration-targetless/1 unit Track ready(100 50 0.002 0.001 0.002 0.05 10) exploratory(30 15 0.006 0.005 0.02 0.15 10)
+heldOut unavailable: not computed
+resampling unavailable: not computed
+edge cam00-cam01 shared 40 bridge 1
+edge cam01-cam02 shared 40 bridge 1
+edge cam02-cam03 shared 40 bridge 1
+component cam00 cam01 cam02 cam03
+weakBridge cam00-cam01 shared 40 bridge 1
+weakBridge cam01-cam02 shared 40 bridge 1
+weakBridge cam02-cam03 shared 40 bridge 1
+componentEstimate cam00
+componentEstimate camera cam00 q(1 0 0 0) t(0 0 0)
+componentEstimate camera cam01 q(0.98873698 0.008211535 -0.149184562 -0.008701831) t(0.987237277 0.04562956 0.152579494)
+refinement none
+cameraEvidence cam00 Unknown shared 40 residuals 0 outliers 0 rmsPixels 0 rmsAngle 0
+cameraEvidence cam01 Unknown shared 80 residuals 0 outliers 0 rmsPixels 0 rmsAngle 0
+cameraEvidence cam02 Unknown shared 80 residuals 0 outliers 0 rmsPixels 0 rmsAngle 0
+cameraEvidence cam03 Unknown shared 40 residuals 0 outliers 0 rmsPixels 0 rmsAngle 0
+heldOutUnit track00002
+heldOutUnit track00007
+heldOutUnit track00012
+heldOutUnit track00017
+heldOutUnit track00022
+heldOutUnit track00027
+heldOutUnit track00032
+heldOutUnit track00037
+heldOutUnit track00042
+heldOutUnit track00047
+heldOutUnit track00052
+heldOutUnit track00057
+heldOutUnit track00062
+heldOutUnit track00067
+heldOutUnit track00072
+heldOutUnit track00077
+heldOutUnit track00082
+heldOutUnit track00087
+heldOutUnit track00092
+heldOutUnit track00097
+heldOutUnit track00102
+heldOutUnit track00107
+heldOutUnit track00112
+heldOutUnit track00117
+heldOutUnit track00122
+heldOutUnit track00127
+heldOutUnit track00132
+heldOutUnit track00137
+heldOutUnit track00142
+heldOutUnit track00147
+medianDepth 0
+targetless tracks 150 usable 150 landmarks 0 untriangulated 0 behind 0
+targetless seed angle 0 belowFloor 0
+targetless placement
+targetless unplaceable cam02 cam03
+targetless extraction unset trackSet unset
+source /scene/cam00
+source /scene/cam01
+source /scene/cam02
+source /scene/cam03
+frames 4 geometry / extractor / matcher / refiner / extraction unset
+request reference unset unknownApplicability Accept noise 0.5 loss Cauchy 3 profile (method's)
+request overrides unset unset unset unset unset unset unset
+request heldOutFraction 0.2 resamples 10 seed 1 maximumIterations 100 execution Normal
+== disconnected
+status Failed
+failure Disconnected: the cameras fall into 2 groups that share no track: {cam00, cam01} {cam02, cam03}
+reference unset requested 0
+scale Arbitrary
+verdict Rejected
+thresholds registration-targetless/1 unit Track ready(100 50 0.002 0.001 0.002 0.05 10) exploratory(30 15 0.006 0.005 0.02 0.15 10)
+heldOut unavailable: not computed
+resampling unavailable: not computed
+edge cam00-cam01 shared 80 bridge 1
+edge cam02-cam03 shared 80 bridge 1
+component cam00 cam01
+component cam02 cam03
+componentEstimate cam00
+componentEstimate camera cam00 q(1 0 0 0) t(0 0 0)
+componentEstimate camera cam01 q(0.98873698 0.008211535 -0.149184562 -0.008701831) t(0.987237277 0.04562956 0.152579494)
+componentEstimate cam02
+componentEstimate camera cam02 q(1 0 0 0) t(0 0 0)
+componentEstimate camera cam03 q(0.98873679 0.008234327 -0.149391461 -0.003734527) t(0.987237277 0.050676245 0.150978399)
+refinement none
+cameraEvidence cam00 Unknown shared 80 residuals 0 outliers 0 rmsPixels 0 rmsAngle 0
+cameraEvidence cam01 Unknown shared 80 residuals 0 outliers 0 rmsPixels 0 rmsAngle 0
+cameraEvidence cam02 Unknown shared 80 residuals 0 outliers 0 rmsPixels 0 rmsAngle 0
+cameraEvidence cam03 Unknown shared 80 residuals 0 outliers 0 rmsPixels 0 rmsAngle 0
+heldOutUnit track00002
+heldOutUnit track00007
+heldOutUnit track00012
+heldOutUnit track00017
+heldOutUnit track00022
+heldOutUnit track00027
+heldOutUnit track00032
+heldOutUnit track00037
+heldOutUnit track00042
+heldOutUnit track00047
+heldOutUnit track00052
+heldOutUnit track00057
+heldOutUnit track00062
+heldOutUnit track00067
+heldOutUnit track00072
+heldOutUnit track00077
+heldOutUnit track00082
+heldOutUnit track00087
+heldOutUnit track00092
+heldOutUnit track00097
+heldOutUnit track00102
+heldOutUnit track00107
+heldOutUnit track00112
+heldOutUnit track00117
+heldOutUnit track00122
+heldOutUnit track00127
+heldOutUnit track00132
+heldOutUnit track00137
+heldOutUnit track00142
+heldOutUnit track00147
+heldOutUnit track00152
+heldOutUnit track00157
+heldOutUnit track00162
+heldOutUnit track00167
+heldOutUnit track00172
+heldOutUnit track00177
+heldOutUnit track00182
+heldOutUnit track00187
+heldOutUnit track00192
+heldOutUnit track00197
+medianDepth 0
+targetless tracks 200 usable 200 landmarks 0 untriangulated 0 behind 0
+targetless seed angle 0 belowFloor 0
+targetless placement
+targetless unplaceable
+targetless extraction unset trackSet unset
+source /scene/cam00
+source /scene/cam01
+source /scene/cam02
+source /scene/cam03
+frames 4 geometry / extractor / matcher / refiner / extraction unset
+request reference unset unknownApplicability Accept noise 0.5 loss Cauchy 3 profile (method's)
+request overrides unset unset unset unset unset unset unset
+request heldOutFraction 0.2 resamples 10 seed 1 maximumIterations 100 execution Normal
+== behind
+status Succeeded
+reference cam00 requested 0
+camera cam00 q(1 0 0 0) t(0 0 0)
+camera cam01 q(0.98873698 0.008211535 -0.149184562 -0.008701831) t(0.295821572 0.013672709 0.045719815)
+camera cam02 q(0.955204492 0.015880385 -0.295151701 -0.014753497) t(0.565218284 0.021663072 0.176674817)
+camera cam03 q(0.972869674 0.017188572 -0.230438624 -0.011277923) t(0.04405003 -0.029778944 0.948305053)
+scale Arbitrary: normalised: the median depth of the 160 landmarks the reference sees is 1
+verdict Rejected
+note Ready: 1 of 4 cameras in fewer than 100 shared tracks (fewest: cam03, in 13)
+note Exploratory: 1 of 4 cameras in fewer than 30 shared tracks (fewest: cam03, in 13)
+thresholds registration-targetless/1 unit Track ready(100 50 0.002 0.001 0.002 0.05 10) exploratory(30 15 0.006 0.005 0.02 0.15 10)
+heldOut units 40 predictions 123 unpredicted 0 residuals 123 epipolar 0 rmsAngle 0 rmsPixels 0 worstPixels 0
+heldOut robustAngle 0
+heldOut camera cam00 predictions 40 residuals 40 robustAngle 0 rmsAngle 0
+heldOut camera cam01 predictions 40 residuals 40 robustAngle 0 rmsAngle 0
+heldOut camera cam02 predictions 40 residuals 40 robustAngle 0 rmsAngle 0
+heldOut camera cam03 predictions 3 residuals 3 robustAngle 0 rmsAngle 0
+resampling 10 rotation 0 translation 0 absolute 0 worst -
+edge cam00-cam01 shared 160 bridge 0
+edge cam00-cam02 shared 160 bridge 0
+edge cam00-cam03 shared 13 bridge 0
+edge cam01-cam02 shared 160 bridge 0
+edge cam01-cam03 shared 13 bridge 0
+edge cam02-cam03 shared 13 bridge 0
+component cam00 cam01 cam02 cam03
+outlier track00006 cam03 inf
+refinement Converged () iterations 0 cost 0 -> 0 residuals 492 bodies 0 landmarks 160 noise 0.5 loss Cauchy 3
+cameraEvidence cam00 Unknown shared 160 residuals 160 outliers 0 rmsPixels 0 rmsAngle 0
+cameraEvidence cam01 Unknown shared 160 residuals 160 outliers 0 rmsPixels 0 rmsAngle 0
+cameraEvidence cam02 Unknown shared 160 residuals 160 outliers 0 rmsPixels 0 rmsAngle 0
+cameraEvidence cam03 Unknown shared 13 residuals 12 outliers 1 rmsPixels 1e-09 rmsAngle 0
+heldOutUnit track00002
+heldOutUnit track00007
+heldOutUnit track00012
+heldOutUnit track00017
+heldOutUnit track00022
+heldOutUnit track00027
+heldOutUnit track00032
+heldOutUnit track00037
+heldOutUnit track00042
+heldOutUnit track00047
+heldOutUnit track00052
+heldOutUnit track00057
+heldOutUnit track00062
+heldOutUnit track00067
+heldOutUnit track00072
+heldOutUnit track00077
+heldOutUnit track00082
+heldOutUnit track00087
+heldOutUnit track00092
+heldOutUnit track00097
+heldOutUnit track00102
+heldOutUnit track00107
+heldOutUnit track00112
+heldOutUnit track00117
+heldOutUnit track00122
+heldOutUnit track00127
+heldOutUnit track00132
+heldOutUnit track00137
+heldOutUnit track00142
+heldOutUnit track00147
+heldOutUnit track00152
+heldOutUnit track00157
+heldOutUnit track00162
+heldOutUnit track00167
+heldOutUnit track00172
+heldOutUnit track00177
+heldOutUnit track00182
+heldOutUnit track00187
+heldOutUnit track00192
+heldOutUnit track00197
+medianDepth 0.997797902
+targetless tracks 200 usable 200 landmarks 160 untriangulated 0 behind 1
+targetless seed cam00 cam01 angle 0.286972743 belowFloor 0
+targetless placement cam00 cam01 cam02 cam03
+targetless unplaceable
+targetless extraction unset trackSet unset
+source /scene/cam00
+source /scene/cam01
+source /scene/cam02
+source /scene/cam03
+frames 4 geometry truth/1 extractor / matcher / refiner passthrough/1 extraction unset
+request reference unset unknownApplicability Accept noise 0.5 loss Cauchy 3 profile (method's)
+request overrides unset unset unset unset unset unset unset
+request heldOutFraction 0.2 resamples 10 seed 1 maximumIterations 100 execution Normal
+== narrow
+status Succeeded
+reference cam00 requested 0
+camera cam00 q(1 0 0 0) t(0 0 0)
+camera cam01 q(0.999987501 1.659e-06 -0.004988739 -0.000332574) t(0.010038688 0 0)
+camera cam02 q(0.999950014 6.635e-06 -0.00997636 -0.000665024) t(0.020077376 0 0)
+scale Arbitrary: normalised: the median depth of the 160 landmarks the reference sees is 1
+verdict Ready
+thresholds registration-targetless/1 unit Track ready(100 50 0.002 0.001 0.002 0.05 10) exploratory(30 15 0.006 0.005 0.02 0.15 10)
+heldOut units 40 predictions 120 unpredicted 0 residuals 120 epipolar 0 rmsAngle 0 rmsPixels 0 worstPixels 0
+heldOut robustAngle 0
+heldOut camera cam00 predictions 40 residuals 40 robustAngle 0 rmsAngle 0
+heldOut camera cam01 predictions 40 residuals 40 robustAngle 0 rmsAngle 0
+heldOut camera cam02 predictions 40 residuals 40 robustAngle 0 rmsAngle 0
+resampling 10 rotation 0 translation 0 absolute 0 worst -
+edge cam00-cam01 shared 160 bridge 0
+edge cam00-cam02 shared 160 bridge 0
+edge cam01-cam02 shared 160 bridge 0
+component cam00 cam01 cam02
+refinement Converged () iterations 0 cost 0 -> 0 residuals 480 bodies 0 landmarks 160 noise 0.5 loss Cauchy 3
+cameraEvidence cam00 Unknown shared 160 residuals 160 outliers 0 rmsPixels 0 rmsAngle 0
+cameraEvidence cam01 Unknown shared 160 residuals 160 outliers 0 rmsPixels 0 rmsAngle 0
+cameraEvidence cam02 Unknown shared 160 residuals 160 outliers 0 rmsPixels 0 rmsAngle 0
+heldOutUnit track00002
+heldOutUnit track00007
+heldOutUnit track00012
+heldOutUnit track00017
+heldOutUnit track00022
+heldOutUnit track00027
+heldOutUnit track00032
+heldOutUnit track00037
+heldOutUnit track00042
+heldOutUnit track00047
+heldOutUnit track00052
+heldOutUnit track00057
+heldOutUnit track00062
+heldOutUnit track00067
+heldOutUnit track00072
+heldOutUnit track00077
+heldOutUnit track00082
+heldOutUnit track00087
+heldOutUnit track00092
+heldOutUnit track00097
+heldOutUnit track00102
+heldOutUnit track00107
+heldOutUnit track00112
+heldOutUnit track00117
+heldOutUnit track00122
+heldOutUnit track00127
+heldOutUnit track00132
+heldOutUnit track00137
+heldOutUnit track00142
+heldOutUnit track00147
+heldOutUnit track00152
+heldOutUnit track00157
+heldOutUnit track00162
+heldOutUnit track00167
+heldOutUnit track00172
+heldOutUnit track00177
+heldOutUnit track00182
+heldOutUnit track00187
+heldOutUnit track00192
+heldOutUnit track00197
+medianDepth 0.999228692
+targetless tracks 200 usable 200 landmarks 160 untriangulated 0 behind 0
+targetless seed cam00 cam02 angle 0.019450679 belowFloor 1
+targetless placement cam00 cam02 cam01
+targetless unplaceable
+targetless extraction unset trackSet unset
+source /scene/cam00
+source /scene/cam01
+source /scene/cam02
+frames 3 geometry truth/1 extractor / matcher / refiner passthrough/1 extraction unset
+request reference unset unknownApplicability Accept noise 0.5 loss Cauchy 3 profile (method's)
+request overrides unset unset unset unset unset unset unset
+request heldOutFraction 0.2 resamples 10 seed 1 maximumIterations 100 execution Normal
+== spare
+status Succeeded
+reference cam00 requested 0
+camera cam00 q(1 0 0 0) t(0 0 0)
+camera cam01 q(0.98873698 0.008211535 -0.149184562 -0.008701831) t(0.287090107 0.013269146 0.04437035)
+camera cam02 q(0.955204492 0.015880385 -0.295151701 -0.014753497) t(0.54853531 0.021023665 0.171460086)
+camera cam03 q(0.900166817 0.022465193 -0.43458892 -0.018096581) t(0.760981487 0.024013982 0.370012869)
+scale Arbitrary: normalised: the median depth of the 24 landmarks the reference sees is 1
+verdict Rejected
+note Ready: 4 of 4 cameras in fewer than 100 shared tracks (fewest: cam02, in 18)
+note Ready: no held-out evidence: no tracks were held out
+note Exploratory: 4 of 4 cameras in fewer than 30 shared tracks (fewest: cam02, in 18)
+thresholds registration-targetless/1 unit Track ready(100 50 0.002 0.001 0.002 0.05 10) exploratory(30 15 0.006 0.005 0.02 0.15 10)
+heldOut unavailable: no tracks were held out
+resampling 4 rotation 0 translation 0 absolute 0 worst -
+edge cam00-cam01 shared 20 bridge 0
+edge cam00-cam02 shared 4 bridge 0
+edge cam00-cam03 shared 4 bridge 0
+edge cam01-cam02 shared 4 bridge 0
+edge cam01-cam03 shared 4 bridge 0
+edge cam02-cam03 shared 18 bridge 0
+component cam00 cam01 cam02 cam03
+refinement Converged () iterations 0 cost 0 -> 0 residuals 84 bodies 0 landmarks 38 noise 0.5 loss Cauchy 3
+cameraEvidence cam00 Unknown shared 24 residuals 24 outliers 0 rmsPixels 0 rmsAngle 0
+cameraEvidence cam01 Unknown shared 24 residuals 24 outliers 0 rmsPixels 0 rmsAngle 0
+cameraEvidence cam02 Unknown shared 18 residuals 18 outliers 0 rmsPixels 0 rmsAngle 0
+cameraEvidence cam03 Unknown shared 18 residuals 18 outliers 0 rmsPixels 0 rmsAngle 0
+medianDepth 1.00738435
+targetless tracks 38 usable 38 landmarks 38 untriangulated 0 behind 0
+targetless seed cam02 cam03 angle 0.285803182 belowFloor 0
+targetless placement cam02 cam03 cam00 cam01
+targetless unplaceable
+targetless extraction unset trackSet unset
+source /scene/cam00
+source /scene/cam01
+source /scene/cam02
+source /scene/cam03
+frames 4 geometry truth/1 extractor / matcher / refiner passthrough/1 extraction unset
+request reference unset unknownApplicability Accept noise 0.5 loss Cauchy 3 profile (method's)
+request overrides unset unset unset unset unset unset unset
+request heldOutFraction 0.2 resamples 10 seed 1 maximumIterations 100 execution Normal

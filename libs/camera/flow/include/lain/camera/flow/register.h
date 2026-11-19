@@ -15,7 +15,19 @@ namespace lain::camera
 	inline constexpr const char* kRenderBoardKey = "renderBoard";
 	inline constexpr const char* kDetectBoardKey = "detectBoard";
 	inline constexpr const char* kCalibrateCameraKey = "calibrateCamera";
+	inline constexpr const char* kCalibrateCameraTargetlessKey = "calibrateCameraTargetless";
+	inline constexpr const char* kCalibrationMethodKey = "calibrationMethod";
+	inline constexpr const char* kNextAttemptKey = "nextAttempt";
+	inline constexpr const char* kCalibrationAttemptsKey = "calibrationAttempts";
 	inline constexpr const char* kCameraModelKey = "cameraModel";
+	inline constexpr const char* kRegisterCamerasKey = "registerCameras";
+	inline constexpr const char* kRegisterCamerasTargetlessKey = "registerCamerasTargetless";
+	inline constexpr const char* kRegisteredRigKey = "registeredRig";
+
+	// EVERY camera node kind, in display order, whatever the backends: what registerCameraNodes puts
+	// in a factory. For a host that treats every kind alike (a colour per kind) and for a test that
+	// must notice a kind it was not told about; neither then keeps a copy of this list to drift.
+	std::vector<std::string> cameraNodeKeys();
 
 	// The camera node kinds this build can RUN, in display order: each kind is here only when the
 	// backend it needs is registered. What a host's menu OFFERS, so nobody adds a node that can only
@@ -33,8 +45,10 @@ namespace lain::camera
 	void registerCameraNodes(core::Factory<flow::Node>& factory);
 
 	// Register the camera payload types as addable port types (flow::registerPortType): a board
-	// specification, a detection report, a calibration report and a camera model. ALWAYS, whatever
-	// the backends: a port type is vocabulary, and an unregistered one cannot be named on save, so a
-	// boundary pin of that type would be dropped with its wiring.
+	// specification, a detection report, a calibration report, a calibration method and the attempts
+	// a fallback made, a camera model and a list of them (so a map can lift one, ADR-0014), a
+	// registration report and the rig it found. ALWAYS, whatever the backends: a port type is
+	// vocabulary, and an unregistered one cannot be named on save, so a boundary pin of that type would
+	// be dropped with its wiring.
 	void registerCameraPortTypes();
 } // namespace lain::camera

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lain/math/axisconvention.h"
 #include "lain/math/types.h"
 
 #include <cassert>
@@ -94,4 +95,57 @@ namespace lain::math
 
 	using RigidTransformf = RigidTransform<float>;
 	using RigidTransformd = RigidTransform<double>;
+
+	// referenceFromAimed for a frame at `position` whose forward points at `target`, both in
+	// `reference` coordinates, turned about forward so that its up is as near the reference's up as
+	// forward allows. `aimed` says which of its own axes are forward and up: the camera frame by
+	// default. nullopt when `target` is `position`, or lies straight above or below it, where no turn
+	// about forward is the upright one.
+	//
+	// PRECONDITION: both conventions are right-handed (asserted in debug). A rigid transform cannot
+	// relate frames of opposite handedness, and the cross products here assume a right-handed one.
+	template <typename T>
+	std::optional<RigidTransform<T>> lookingAt(const Vec3<T>& position, const Vec3<T>& target,
+											   const AxisConvention& reference,
+											   const AxisConvention& aimed = AxisConvention::XRightYDownZForward())
+	{
+		assert(reference.rightHanded() && aimed.rightHanded() && "lookingAt needs right-handed conventions");
+		const Vec3<T> toTarget = target - position;
+		if (dot(toTarget, toTarget) == T(0))
+			return std::nullopt;
+		Vec3<T> up{T(0)};
+		for (length_t i = 0; i < 3; ++i)
+		{
+			const AxisDirection d = i == 0 ? reference.x() : i == 1 ? reference.y()
+																	: reference.z();
+			if (d == AxisDirection::Up || d == AxisDirection::Down)
+				up[i] = d == AxisDirection::Up ? T(1) : T(-1);
+		}
+		const Vec3<T> forward = normalize(toTarget);
+		const Vec3<T> side = cross(forward, up);
+		if (dot(side, side) == T(0))
+			return std::nullopt;
+		const Vec3<T> right = normalize(side);
+		// Each of the aimed frame's axes, in reference coordinates.
+		const auto axis = [&](AxisDirection d) -> Vec3<T>
+		{
+			switch (d)
+			{
+				case AxisDirection::Right:
+					return right;
+				case AxisDirection::Left:
+					return -right;
+				case AxisDirection::Up:
+					return cross(right, forward);
+				case AxisDirection::Down:
+					return cross(forward, right);
+				case AxisDirection::Forward:
+					return forward;
+				case AxisDirection::Backward:
+					return -forward;
+			}
+			return forward;
+		};
+		return RigidTransform<T>{quat_cast(Mat<3, 3, T>{axis(aimed.x()), axis(aimed.y()), axis(aimed.z())}), position};
+	}
 } // namespace lain::math

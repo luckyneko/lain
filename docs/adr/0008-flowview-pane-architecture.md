@@ -39,8 +39,9 @@ Split into **one plain-struct pane per file** under `apps/flowview/src/panes/`, 
   frame.
 - **Cross-pane needs become small shared units, extracted only when a second pane needs them** — `pinkey.h`
   (the port-addressing key), `panes/canvasids.{h,cpp}` (`pinId` + `selectedNodes`, shared by the canvas and
-  inspector), `panes/imagesave.{h,cpp}` (the format-dropdown + Save widget, shared by inspector + interface),
-  and `previewExtent` / `addCatalogNode` on `AppContext`. A helper used by exactly one pane stays private to
+  inspector), `panes/valuesave.{h,cpp}` (the format-dropdown + Save widget, shared by inspector + interface;
+  `imagesave` until 2026-10-20, when a camera model became savable beside an image), and `previewExtent` /
+  `addCatalogNode` on `AppContext`. A helper used by exactly one pane stays private to
   that pane's `.cpp` (e.g. the canvas's `decodePin`/`tryConnect`, the interface's `renderAddPin`).
 - **The single `edited` flag stays window-owned.** Multiple surfaces (canvas, menu Add, Nodes palette)
   contribute edits in a frame; `onRender` owns the one `if (edited) { reevaluate; markDirty; … }` response
