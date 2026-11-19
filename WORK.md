@@ -11534,10 +11534,39 @@ repo owner, cut the Windows leg from 24.4 to 10.6 minutes.
   moved within run-to-run noise.
 - **What sets the run now.** The CI-tier run's 22.3 minutes was Linux Debug, 12.5 of them installing
   packages: three Linux legs spent 12–14 minutes there, against under a minute on a good day, all
-  downloading from a slow mirror. Without it the run is macOS Release's, about 18 minutes.
+  downloading from a slow mirror. Without it the run is macOS Release's, about 18 minutes. *(The
+  package list was trimmed the same day: the next section.)*
 - **Owed when M15 merges:** its 9 cases over 20 s (`flowview::capture`'s two among them) need the tag,
   and their executables `lain_discover_tests`. They add about 4 minutes to macOS Release's Test step.
 - **Not taken: a compiler cache**, at the repo owner's call (2026-11-19).
+
+### The Linux legs install only what they use (2026-11-19)
+
+The Linux legs installed `xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols libva-dev` with
+their recommended packages: 82 packages and 24.7 MB, downloaded from a mirror that ran anywhere from 87
+down to 17 kB/s. Now both install steps take `LINUX_WINDOWING_PACKAGES` (the top of `ci.yml`, with what
+each package is for) and `--no-install-recommends`: 22 packages and 2.3 MB.
+
+- **What the build needs.** GLFW 3.4's X11 backend wants X11 with Xkb, Xrandr, Xinerama, Xcursor, Xi and
+  Xshape. Its Wayland backend wants wayland-client, -cursor and -egl, wayland-scanner and xkbcommon; it
+  carries its own protocol XML, so `wayland-protocols` was never used. The Vulkan loader wants xcb, x11
+  and xrandr. FFmpeg's prebuilt wants `libva.so.2` and `libva-drm.so.2` by soname, which
+  `addFFmpeg.cmake` already checks for, so the runtime packages `libva2` and `libva-drm2` replace
+  `libva-dev` and the four VA drivers its recommends pulled in.
+- **Found by the first scratch run (44503910733): lain needed OpenGL's headers for nothing.** Every Linux
+  leg failed in ImGui's GLFW backend, `GL/gl.h: No such file or directory`. `glfw3.h` includes the
+  system's OpenGL header unless `GLFW_INCLUDE_NONE` is defined, and the `GLFW_INCLUDE_VULKAN` that
+  lain's three GLFW files define does not stop it, so they would have failed next. `xorg-dev` had been
+  supplying the header. `cmake/addGLFW.cmake` now gives the `glfw` target `GLFW_INCLUDE_NONE` as an
+  interface definition, so everything compiled against GLFW, ImGui's backend included, leaves OpenGL
+  out. That also means a Linux user no longer needs OpenGL's development package to build lain.
+- **What the configure stopped finding**, diffed against run 44493095641: OpenGL, which only libtiff's
+  `tiffgt` viewer looks for (never built: it also needs GLUT, which was never found), and CMake's
+  optional X11 ICE probe, which nothing uses. Every other lookup is unchanged.
+- **Measured (run 44508705221, green on every leg):** each Linux install took 0.8–1.2 minutes, against
+  0.3–14 the day before, and the run 18.5 minutes, set by macOS Release (18.3) and Windows Release
+  (17.7). Windows' Ninja build has now taken 8.0, 10.2, 14.2 and 13.7 minutes on four runs, so a single
+  run says little about it.
 
 ### Not covered, and deliberately
 

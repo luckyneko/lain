@@ -1430,7 +1430,7 @@ Two cases renamed, none added or removed. Full notes in WORK.md's *Measurements 
 changed; a new case and two sabotages hold it. Not taken: `ea273a1`'s M15-only comparison half. Full
 notes in WORK.md's *A golden is compared line by line*.
 
-### Update 2026-11-19 — CI: two test tiers, and Ninja on every leg
+### Update 2026-11-19 — CI: two test tiers, Ninja on every leg, a trimmed Linux install
 
 A CI run took 24–48 minutes, set by Windows Release. Now the 18 cases on develop taking 20 s or more on
 some runner are tagged `[comprehensive]` and run on macOS Release only, or on every leg when a
@@ -1439,8 +1439,12 @@ Every leg builds with Ninja. Measured on scratch runs, one each: Windows Release
 Linux Release 19.5 → 9.8, macOS Release unchanged at about 18. Full notes in WORK.md's *Two test
 tiers, and Ninja on every leg*.
 
-- **The run is now set by the Linux package install**, 12–14 minutes on three legs of that run from a
-  slow mirror, or else by macOS Release.
+- **The Linux legs install only what they use**: 22 packages and 2.3 MB instead of `xorg-dev`'s 82 and
+  24.7 MB, about a minute where a slow mirror had taken up to 14. The run is now about 18.5 minutes,
+  set by macOS Release and Windows Release.
+- **lain no longer needs OpenGL's headers to build on Linux.** GLFW's header includes `GL/gl.h` unless
+  `GLFW_INCLUDE_NONE` is defined, and `GLFW_INCLUDE_VULKAN` does not stop it. `cmake/addGLFW.cmake`
+  now gives the `glfw` target `GLFW_INCLUDE_NONE` for everything compiled against it.
 - **MSBuild's parallel compilation did not help** (Ceres and Catch2 finished at the same minute), and
   a compiler cache was declined.
 - **Owed when M15 merges:** tag its 9 cases over 20 s. The branch conflicts with M15 in `ci.yml`,

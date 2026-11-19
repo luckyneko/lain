@@ -25,6 +25,22 @@ on:
 permissions:
   contents: read
 
+env:
+  # The headers the Linux builds need from apt, for GLFW 3.4's two backends and the Vulkan loader
+  # archimedes builds from source. Both install steps take this list.
+  # - GLFW's X11 backend: X11 and its Xkb (libx11-dev), Xrandr, Xinerama, Xcursor, Xi, and Xshape
+  #   (libxext-dev).
+  # - GLFW's Wayland backend: wayland-client, -cursor, -egl and wayland-scanner (libwayland-dev, which
+  #   brings libwayland-bin), and xkbcommon. GLFW carries its own protocol XML, so wayland-protocols
+  #   is not needed.
+  # - The Vulkan loader: xcb (libx11-dev brings libxcb1-dev), x11 and xrandr.
+  # They are named one by one, with --no-install-recommends. The list used to be xorg-dev and the
+  # recommended packages, 82 packages and 24.7 MB, most of which nothing here uses. From a slow mirror
+  # that download took 5 minutes, and 12 to 14 on three legs of run 44493095641 (2026-11-19).
+  LINUX_WINDOWING_PACKAGES: >-
+    libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev
+    libwayland-dev libxkbcommon-dev
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -220,18 +236,19 @@ jobs:
             ${{ runner.os }}-deps-video${{ matrix.video }}-camera${{ matrix.camera }}-
             ${{ runner.os }}-deps-
 
-      # xorg/wayland: GLFW's backends and the from-source Vulkan loader need these headers.
-      # libva: the Linux FFmpeg prebuilt is configured --enable-vaapi (its MANIFEST.txt says so),
-      # so libavcodec.so carries an unresolved dependency on libva that the linker has to satisfy
-      # in every consumer — without it, anything linking the video plugin fails with a page of
-      # undefined `va*` references (CI, 2026-09-04). It is the only flag in that build needing an
-      # external shared library: v4l2-m2m is kernel headers, and nvenc/ffnvcodec are dlopen'd.
+      # The windowing headers are LINUX_WINDOWING_PACKAGES, at the top of this file.
+      # libva2, libva-drm2: the Linux FFmpeg prebuilt is configured --enable-vaapi (its MANIFEST.txt
+      # says so), so libavcodec.so names libva.so.2 and libva-drm.so.2 in DT_NEEDED and the linker has
+      # to find them for every executable that links the video plugin (CI, 2026-09-04). It resolves
+      # those by soname, so the runtime packages are enough, and addFFmpeg.cmake checks for exactly
+      # those files. It is the only flag in that build needing an external shared library: v4l2-m2m
+      # is kernel headers, and nvenc/ffnvcodec are dlopen'd.
       # ninja-build: the generator every leg builds with.
       - name: Install Linux windowing dependencies
         if: ${{ matrix.linux_deps }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols libva-dev ninja-build
+          sudo apt-get install -y --no-install-recommends $LINUX_WINDOWING_PACKAGES libva2 libva-drm2 ninja-build
 
       - name: Install Ninja
         if: ${{ runner.os == 'macOS' }}
@@ -371,7 +388,7 @@ jobs:
       - name: Install Linux windowing dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols ninja-build
+          sudo apt-get install -y --no-install-recommends $LINUX_WINDOWING_PACKAGES ninja-build
 
       - name: Configure parent project
         run: >
