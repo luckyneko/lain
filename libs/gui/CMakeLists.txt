@@ -1,6 +1,7 @@
 # lain::gui — the inspector toolkit: Dear ImGui (re-exposed as lain::gui) + its
-# GLFW/Vulkan backends + imnodes (the node canvas, re-exposed as lain::gui::nodes),
-# bridged to lain::math, integrated over a lain::app window + archimedes handles.
+# GLFW/Vulkan backends + imnodes (the node canvas, re-exposed as lain::gui::nodes) + ImGuizmo
+# (the 3D manipulation gizmo, re-exposed as lain::gui::gizmo), bridged to lain::math,
+# integrated over a lain::app window + archimedes handles.
 #
 # The lain config for ImGui lives here: apply the IMGUI_USER_CONFIG bridge header +
 # the lain::math link to the imgui target (created by addImGui) — PUBLIC, so imgui's
@@ -13,6 +14,7 @@ add_library(gui STATIC
 	src/context.cpp
 	src/dialogs.cpp
 	src/dock.cpp
+	src/frametexture.cpp
 	src/texture.cpp
 )
 add_library(lain::gui ALIAS gui)
@@ -22,7 +24,7 @@ target_include_directories(gui PUBLIC include)
 target_link_libraries(gui
 	# lain::image is PUBLIC: gui's headers speak image types (texture.h uploads an image::Image,
 	# color.h packs an image::ColorRGBA8), so a consumer needs image on its include path.
-	PUBLIC imgui imnodes lain::app lain::math lain::meta lain::image archimedes
+	PUBLIC imgui imnodes imguizmo lain::app lain::math lain::meta lain::image archimedes
 	PRIVATE lain::warnings pfd::pfd
 )
 

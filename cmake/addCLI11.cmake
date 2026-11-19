@@ -29,3 +29,9 @@ if(cli11_SOURCE_DIR AND TARGET CLI11)
 		target_include_directories(CLI11 SYSTEM INTERFACE ${_cli_inc})
 	endif()
 endif()
+
+# CLI11's notice for --licenses (lainNotices.cmake).
+include(lainNotices)
+lain_register_notice(cli11 NAME "CLI11" VERSION "${CLI11_VER}" SPDX "BSD-3-Clause"
+	SOURCE_DIR "${cli11_SOURCE_DIR}" FILES LICENSE
+	PACKAGE_DIR "${CLI11_DIR}" PACKAGE_VERSION "${CLI11_VERSION}")

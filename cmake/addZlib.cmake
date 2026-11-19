@@ -37,3 +37,9 @@ target_include_directories(zlibstatic SYSTEM PUBLIC "${zlib_SOURCE_DIR}" "${zlib
 if(NOT TARGET ZLIB::ZLIB)
 	add_library(ZLIB::ZLIB ALIAS zlibstatic)
 endif()
+
+# zlib's notice for --licenses (lainNotices.cmake). Its licence binds only source distributions, so
+# this is the uniform rule rather than an obligation.
+include(lainNotices)
+lain_register_notice(zlib NAME "zlib" VERSION "${ZLIB_VER}" SPDX "Zlib"
+	SOURCE_DIR "${zlib_SOURCE_DIR}" FILES LICENSE)

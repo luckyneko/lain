@@ -1,0 +1,325 @@
+// A board mover in a rig plan's render scene, drawn by a stand-in board renderer: its own executable,
+// since a renderer registry only grows and test_scene.cpp's must have none. The sheet's geometry is held
+// to the board frame on the CPU, and its plain back on the device (SKIPs where there is none). A ray
+// through the board meets it at its frame and the room behind it in the still scene. And a moving
+// board's frames share every other mesh and texture, so an update between them uploads none.
+
+#include <lain/camera/board/rendering.h>
+#include <lain/camera/projection.h>
+#include <lain/render/renderer.h>
+#include <lain/render/testing/gpu.h>
+#include <lain/rigplan/mover.h>
+#include <lain/rigplan/scene.h>
+#include <lain/rigplan/testing/scenecast.h>
+#include <lain/rigplan/testing/standinboard.h>
+#include <lain/rigplan/testing/testplan.h>
+
+#include <catch2/catch_approx.hpp>
+#include <catch2/catch_test_macros.hpp>
+
+#include <cstring>
+#include <optional>
+#include <string>
+
+using namespace lain;
+using namespace lain::rigplan;
+
+static RigPlan planWithBoard()
+{
+	RigPlan plan = testplan::plan();
+	plan.boards.push_back(testplan::board());
+	return plan;
+}
+
+TEST_CASE("a board's sheet spans its raster, with the squares where the board frame puts them", "[rigplan][scene][mover]")
+{
+	registerStandIn();
+	const RigPlan plan = planWithBoard();
+	const AssetsResult assets = loadSceneAssets(plan);
+	REQUIRE(assets.problems.empty());
+	const BoardSheet& sheet = assets.assets.boards.at(testplan::boardId);
+
+	// 24 mm squares at 100 pixels each, and a 10 mm margin to the nearest pixel: 41.67, so 42.
+	const double perMetre = 100 / 0.024;
+	REQUIRE(sheet.raster->width() == 7 * 100 + 2 * 42);
+	REQUIRE(sheet.raster->height() == 5 * 100 + 2 * 42);
+	REQUIRE(sheet.raster->colorSpace() == image::ColorSpace::sRGB);
+	REQUIRE(sheet.raster->pixelFormat() == image::PixelFormat::RGBA8); // stored as the device keeps it
+
+	// The print's corners are the raster's outer edges in the board frame, facing a camera in front.
+	const mesh::Mesh& print = *sheet.print;
+	REQUIRE(print.positions.size() == 4);
+	const double x0 = -42 / perMetre, x1 = (784 - 42) / perMetre;
+	const double y0 = -42 / perMetre, y1 = (584 - 42) / perMetre;
+	CHECK(print.positions[0].x == Catch::Approx(x0).margin(1e-7));
+	CHECK(print.positions[0].y == Catch::Approx(y0).margin(1e-7));
+	CHECK(print.positions[2].x == Catch::Approx(x1).margin(1e-7));
+	CHECK(print.positions[2].y == Catch::Approx(y1).margin(1e-7));
+	CHECK(print.positions[0].z == 0.0f);
+	CHECK(print.normals[0] == math::Vec3f{0.0f, 0.0f, -1.0f});
+
+	// A corner of the squares, mapped through the print's coordinates, lands on the raster pixel boundary
+	// that draws it: corner (i, j) of the squares at pixel (42 + 100 i, 42 + 100 j), with the raster's top
+	// row at v = 1.
+	const camera::board::Specification specification = *specificationOf(plan.boards[0]);
+	for (std::uint32_t id = 0; id < specification.pattern().cornerCount(); ++id)
+	{
+		const math::Vec3d at = *specification.cornerPosition(id);
+		const double u = (at.x - print.positions[0].x) / (print.positions[2].x - print.positions[0].x);
+		const double v = (at.y - print.positions[0].y) / (print.positions[2].y - print.positions[0].y);
+		const double expectedU = (42 + 100 * (at.x / 0.024)) / 784.0;
+		const double expectedV = (42 + 100 * (at.y / 0.024)) / 584.0;
+		REQUIRE(u == Catch::Approx(expectedU).margin(1e-6));
+		REQUIRE(v == Catch::Approx(expectedV).margin(1e-6));
+		REQUIRE(print.uvs[0] == math::Vec2f{0.0f, 1.0f}); // (x0, y0) is the raster's top-left
+	}
+
+	// The back is the same rectangle, plain, its backing behind the print and facing the other way.
+	const mesh::Mesh& back = *sheet.back;
+	CHECK(back.positions[0].z == Catch::Approx(0.003));
+	CHECK(back.normals[0] == math::Vec3f{0.0f, 0.0f, 1.0f});
+}
+
+TEST_CASE("a board follows its path through the frames of a scene", "[rigplan][scene][mover]")
+{
+	registerStandIn();
+	const RigPlan plan = planWithBoard();
+	const RealisationResult realised = realise(plan);
+	REQUIRE(realised.realisation);
+	const AssetsResult assets = loadSceneAssets(plan);
+	REQUIRE(assets.problems.empty());
+	for (std::size_t frame : {std::size_t{0}, std::size_t{6}, std::size_t{23}})
+	{
+		const SceneResult scene = renderScene(plan, *realised.realisation, assets.assets, frame);
+		REQUIRE(scene.problems.empty());
+		// The board's print and back, found by their meshes, are both placed by planFromBoard.
+		const BoardSheet& sheet = assets.assets.boards.at(testplan::boardId);
+		const render::Instance* printed = nullptr;
+		const render::Instance* backed = nullptr;
+		for (const render::Instance& instance : scene.scene.instances)
+		{
+			if (scene.scene.meshes[instance.mesh] == sheet.print)
+				printed = &instance;
+			if (scene.scene.meshes[instance.mesh] == sheet.back)
+				backed = &instance;
+		}
+		REQUIRE(printed);
+		REQUIRE(backed);
+		const math::Mat4d expected = planFromBoard(plan.boards[0], frame).matrix();
+		CHECK(printed->worldFromMesh == expected);
+		CHECK(backed->worldFromMesh == expected);
+		// The print shows the raster on white; the back is plain white.
+		const render::Material& print = scene.scene.materials[printed->materials[0]];
+		const render::Material& back = scene.scene.materials[backed->materials[0]];
+		REQUIRE(print.texture.has_value());
+		CHECK(scene.scene.textures[*print.texture] == sheet.raster);
+		CHECK(print.diffuse == image::ColorRGBf{1.0f, 1.0f, 1.0f});
+		CHECK_FALSE(back.texture.has_value());
+		CHECK(back.diffuse == image::ColorRGBf{1.0f, 1.0f, 1.0f});
+	}
+}
+
+TEST_CASE("a board the renderer will not draw is named", "[rigplan][scene][mover]")
+{
+	registerStandIn();
+	StandInBoard::fail = true;
+	const AssetsResult assets = loadSceneAssets(planWithBoard());
+	StandInBoard::fail = false;
+	REQUIRE(assets.problems.size() == 1);
+	CHECK(assets.problems[0].find("board 'charuco'") != std::string::npos);
+	CHECK(assets.assets.boards.empty());
+}
+
+TEST_CASE("a ray through the board meets it at its frame, and the wall behind it in the still scene", "[rigplan][scene][mover][cast]")
+{
+	registerStandIn();
+	RigPlan plan = planWithBoard();
+	Room room;
+	room.centre = {0.0, 1.0};
+	room.size = {10.0, 8.0, 3.2}; // its north wall at y = 5, a metre behind the board's first key
+	plan.room = room;
+	const RealisationResult realised = realise(plan);
+	REQUIRE(realised.realisation);
+	const AssetsResult assets = loadSceneAssets(plan);
+	REQUIRE(assets.problems.empty());
+
+	// The pixel where cam0 sees the centre of the board's squares at frame 0, 0.875 m in front of it.
+	const RealisedCamera& cam0 = realised.realisation->cameras[0];
+	const math::Vec3d centre = plan.boards[0].path.keys[0].position;
+	const math::Vec3d inCamera = cam0.planFromCamera.inverse().apply(centre);
+	const camera::Projection<double> seen = camera::project(cam0.model, inCamera.x, inCamera.y, inCamera.z);
+	REQUIRE(seen.ok());
+	const math::Vec2d pixel{seen.u, seen.v};
+
+	const SceneResult atFrame = renderScene(plan, *realised.realisation, assets.assets, 0);
+	REQUIRE(atFrame.problems.empty());
+	const std::optional<rigplan::testing::SceneHit> board = rigplan::testing::cast(atFrame, cam0, pixel);
+	REQUIRE(board);
+	CHECK(board->owner.object == SceneObject::Board);
+	CHECK(board->owner.id == testplan::boardId);
+	CHECK(math::distance(board->point, centre) < 1e-6);
+
+	// What a feature recorded there would be if it were the room's: the wall, the board left out.
+	const SceneResult still = staticScene(plan, *realised.realisation, assets.assets);
+	REQUIRE(still.problems.empty());
+	const std::optional<rigplan::testing::SceneHit> behind = rigplan::testing::cast(still, cam0, pixel);
+	REQUIRE(behind);
+	CHECK(behind->owner.object == SceneObject::Room);
+	CHECK(behind->point.y == Catch::Approx(5.0).margin(1e-9));
+}
+
+TEST_CASE("a camera behind a board sees its plain back, not its pattern", "[rigplan][scene][mover][gpu]")
+{
+	registerStandIn();
+	render::Renderer renderer(render::testing::device());
+	REQUIRE(renderer.problems().empty());
+
+	// A board whose squares are all black, at rest 2 m along +Y, between two bulbs.
+	RigPlan plan;
+	BoardMover board = testplan::board();
+	board.path.keys = {{0, {0.0, 2.0, 1.5}, Aim{}}};
+	plan.boards.push_back(board);
+	LightSpecification bulb;
+	bulb.name = "bulb";
+	plan.specifications.lights.push_back(bulb);
+	for (const double y : {1.0, 3.0})
+	{
+		Mount hook;
+		hook.id = core::Uuid::generate();
+		hook.name = "hook";
+		hook.kind = FixedPoint{{0.0, y, 1.5}};
+		plan.mounts.push_back(hook);
+		PlacedLight light;
+		light.id = core::Uuid::generate();
+		light.name = "bulb";
+		light.light = "bulb";
+		light.mount = hook.id;
+		plan.lights.push_back(light);
+	}
+	const RealisationResult realised = realise(plan);
+	REQUIRE(realised.realisation);
+	const AssetsResult assets = loadSceneAssets(plan);
+	REQUIRE(assets.problems.empty());
+	const SceneResult scene = renderScene(plan, *realised.realisation, assets.assets, 0);
+	REQUIRE(scene.problems.empty());
+	render::UploadResult uploaded = renderer.upload(scene.scene);
+	REQUIRE(uploaded.problems.empty());
+
+	// The squares' centre, seen from a metre in front (a camera at rest) and from a metre behind (turned
+	// round). The renderer lights both sides of a surface, so only the back keeps the print out of view.
+	const auto centreFrom = [&](double y, double pan)
+	{
+		render::View view;
+		view.worldFromCamera = mountFromPlacement({0.0, y, 1.5}, Aim{pan, 0.0, 0.0});
+		view.image = {33, 33};
+		view.intrinsics = {200.0, 200.0, 16.0, 16.0};
+		const render::RenderResult drawn = renderer.render(*uploaded.scene, view);
+		REQUIRE(drawn.problems.empty());
+		const float* p = reinterpret_cast<const float*>(drawn.image.data()) + 4 * (16 * 33 + 16);
+		return p[0];
+	};
+	CHECK(centreFrom(1.0, 0.0) < 1e-3);	  // the black print
+	CHECK(centreFrom(3.0, 180.0) > 0.5f); // the white back, a metre from its bulb
+}
+
+// The test plan in a room, with a procedural plane and the board moving across it: everything but the
+// board stands still from one frame to the next.
+static RigPlan movingInARoom()
+{
+	RigPlan plan = planWithBoard();
+	Room room;
+	room.size = {10.0, 8.0, 3.2};
+	room.ceiling.present = false;
+	plan.room = room;
+	Plane patch;
+	patch.id = testplan::partitionId;
+	patch.name = "patch";
+	patch.centre = {2.0, 5.0, 1.2};
+	patch.size = {1.0, 1.0};
+	patch.material.surface = image::ProceduralTexture{5, 0.05};
+	plan.planes.push_back(patch);
+	return plan;
+}
+
+TEST_CASE("two frames of a rig plan's scene share every mesh and texture", "[rigplan][scene][mover]")
+{
+	registerStandIn();
+	const RigPlan plan = movingInARoom();
+	const RealisationResult realised = realise(plan);
+	REQUIRE(realised.realisation);
+	const AssetsResult assets = loadSceneAssets(plan);
+	REQUIRE(assets.problems.empty());
+	const SceneResult first = renderScene(plan, *realised.realisation, assets.assets, 0);
+	const SceneResult later = renderScene(plan, *realised.realisation, assets.assets, 6);
+	REQUIRE(first.problems.empty());
+	REQUIRE(later.problems.empty());
+	REQUIRE(later.scene.meshes == first.scene.meshes);
+	REQUIRE(later.scene.textures == first.scene.textures);
+	// And what moved is only the board.
+	const BoardSheet& sheet = assets.assets.boards.at(testplan::boardId);
+	for (std::size_t i = 0; i < first.scene.instances.size(); ++i)
+	{
+		const std::shared_ptr<const mesh::Mesh>& mesh = first.scene.meshes[first.scene.instances[i].mesh];
+		const bool board = mesh == sheet.print || mesh == sheet.back;
+		CHECK((first.scene.instances[i].worldFromMesh == later.scene.instances[i].worldFromMesh) != board);
+	}
+}
+
+TEST_CASE("an update from one frame to the next uploads nothing but what moved", "[rigplan][scene][mover][gpu]")
+{
+	registerStandIn();
+	render::Renderer renderer(render::testing::device());
+	REQUIRE(renderer.problems().empty());
+	const RigPlan plan = movingInARoom();
+	const RealisationResult realised = realise(plan);
+	REQUIRE(realised.realisation);
+	const AssetsResult assets = loadSceneAssets(plan);
+	REQUIRE(assets.problems.empty());
+
+	render::UploadResult uploaded = renderer.upload(renderScene(plan, *realised.realisation, assets.assets, 0).scene);
+	REQUIRE(uploaded.problems.empty());
+	const render::Scene later = renderScene(plan, *realised.realisation, assets.assets, 6).scene;
+	const render::UpdateResult updated = renderer.update(*uploaded.scene, later);
+	REQUIRE(updated.problems.empty());
+	CHECK(updated.meshesUploaded == 0);
+	CHECK(updated.texturesUploaded == 0);
+
+	// cam0 sees what a fresh upload of frame 6 shows it.
+	render::View view;
+	view.worldFromCamera = realised.realisation->cameras[0].planFromCamera;
+	view.image = {64, 36};
+	view.intrinsics = {50.0, 50.0, 31.5, 17.5};
+	const render::RenderResult viaUpdate = renderer.render(*uploaded.scene, view);
+	render::UploadResult fresh = renderer.upload(later);
+	REQUIRE(fresh.problems.empty());
+	const render::RenderResult viaUpload = renderer.render(*fresh.scene, view);
+	REQUIRE(viaUpdate.problems.empty());
+	REQUIRE(viaUpload.problems.empty());
+	CHECK(std::memcmp(viaUpdate.image.data(), viaUpload.image.data(), viaUpload.image.byteSize()) == 0);
+}
+
+TEST_CASE("a board whose drawing changed is drawn again, and one that only moved is not", "[rigplan][scene][mover]")
+{
+	registerStandIn();
+	RigPlan plan = planWithBoard();
+	AssetsResult assets = loadSceneAssets(plan);
+	REQUIRE(assets.problems.empty());
+	REQUIRE(missingAssets(plan, assets.assets).empty());
+	const std::shared_ptr<const image::Image> first = assets.assets.boards.at(testplan::boardId).raster;
+
+	// Moved, and its identity's text changed: neither is part of its drawing.
+	plan.boards[0].path.keys[0].position.x += 0.5;
+	plan.boards[0].instance.identity = "board-2";
+	CHECK(missingAssets(plan, assets.assets).empty());
+
+	// Drawn more finely: drawn again, and shown as it was until it is.
+	plan.boards[0].pixelsPerSquare = 50;
+	const std::vector<AssetJob> jobs = missingAssets(plan, assets.assets);
+	REQUIRE(jobs.size() == 1);
+	CHECK(jobs[0].what == "drawing board 'charuco'");
+	CHECK(assets.assets.boards.at(testplan::boardId).raster == first);
+	addAsset(assets.assets, jobs[0].run());
+	const image::Image& redrawn = *assets.assets.boards.at(testplan::boardId).raster;
+	CHECK(redrawn.width() < first->width());
+	CHECK(missingAssets(plan, assets.assets).empty());
+}

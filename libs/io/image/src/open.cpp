@@ -3,7 +3,7 @@
 #include "lain/io/image/load.h"
 #include "lain/io/image/save.h" // formatKeyOf
 
-#include <lain/core/parse.h>
+#include <lain/io/framepattern.h>
 #include <lain/io/uri.h>
 #include <lain/log/log.h>
 #include <lain/media/framesource.h>
@@ -58,57 +58,6 @@ namespace lain::io::image
 	{
 		const std::string key = formatKeyOf(path.string());
 		return !key.empty() && readerRegistry().contains(key);
-	}
-
-	// One matched still: its path, and the number that orders it.
-	struct Numbered
-	{
-		std::string path;
-		unsigned long long number = 0;
-	};
-
-	// Files matching a "shot.<frame:04>.png" pattern, ordered NUMERICALLY. The key marks where the
-	// number is, not how many digits to insist on — so an unpadded "shot.7.png" is found and
-	// sorted as 7, which is the case a lexicographic directory listing gets wrong.
-	static std::vector<std::string> filesMatchingPattern(const fs::path& pattern)
-	{
-		// Parsed ONCE, outside the scan: a Pattern is asked about every entry in the directory.
-		const lain::string::Pattern name{pattern.filename().string()};
-		const std::string key{frameKey};
-
-		const fs::path directory = pattern.has_parent_path() ? pattern.parent_path() : fs::path{"."};
-
-		std::vector<Numbered> matched;
-		std::error_code error;
-		for (const fs::directory_entry& entry : fs::directory_iterator{directory, error})
-		{
-			if (!entry.is_regular_file())
-				continue;
-
-			const std::optional<lain::string::Captures> captures = name.match(entry.path().filename().string());
-			if (!captures)
-				continue;
-
-			// What a capture MEANS is asked here rather than by the matcher, which delimits by the
-			// literals around a key and nothing else. This is where "shot.x.png" is rejected — and
-			// it has to be asked anyway, since the number is what orders the sequence.
-			const std::string& digits = captures->at(key);
-			const std::optional<unsigned long long> number = lain::core::parse<unsigned long long>(digits);
-			if (!number.has_value())
-				continue;
-
-			matched.push_back({entry.path().string(), *number});
-		}
-
-		std::sort(matched.begin(), matched.end(),
-				  [](const Numbered& a, const Numbered& b)
-				  { return a.number < b.number; });
-
-		std::vector<std::string> paths;
-		paths.reserve(matched.size());
-		for (Numbered& entry : matched)
-			paths.push_back(std::move(entry.path));
-		return paths;
 	}
 
 	// Every readable image in a directory, ordered by filename. Lexicographic to match flow's
@@ -184,7 +133,7 @@ namespace lain::io::image
 			return std::nullopt;
 		}
 
-		std::vector<std::string> paths = isDirectory ? filesInDirectory(directory) : filesMatchingPattern(path);
+		std::vector<std::string> paths = isDirectory ? filesInDirectory(directory) : io::numberedFiles(path);
 		if (paths.empty())
 		{
 			lain::log::info("io::image: no images found for {} — an empty sequence", canonical);

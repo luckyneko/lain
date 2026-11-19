@@ -42,8 +42,11 @@ namespace lain::app
 		Application& app() const;
 
 		const std::string& title() const;
+		// Retitles the window, as its title bar shows it (an editor's document name, say).
+		void setTitle(std::string title);
 		acm::Extent2D extent() const; // current swapchain extent
 		bool shouldClose() const;
+		// Asks the window to close, as its close button does: its delegate's onCloseRequested decides.
 		void requestClose();
 
 		// The window's renderer — record + present a frame from WindowDelegate::onRender:
@@ -69,6 +72,7 @@ namespace lain::app
 		acm::Surface surface() const;
 		bool createSwapChain(acm::Device& device, const acm::SurfaceOption& option);
 		GLFWwindow* glfwHandle() const;
+		void cancelClose(); // a close the delegate refused: the window stays open
 		acm::Extent2D framebufferExtent() const;
 		void releaseDeviceObjects(); // renderer + swapchain (before device teardown)
 		void releaseSurface();		 // surface + GLFW window (after device teardown)

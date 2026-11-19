@@ -11,5 +11,6 @@
 # default ON everywhere.
 add_subdirectory(io/image)
 add_subdirectory(io/data)
+add_subdirectory(io/mesh)
 add_subdirectory(io/video)
 add_subdirectory(camera)

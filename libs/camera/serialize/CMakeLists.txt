@@ -8,7 +8,6 @@
 # name with a function in the same scope (the media::serialize note).
 
 add_library(camera-serialize STATIC
-	src/versioned.cpp
 	src/cameramodel.cpp
 	src/board.cpp
 	src/registeredrig.cpp

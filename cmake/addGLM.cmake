@@ -39,3 +39,10 @@ if(glm_SOURCE_DIR AND TARGET glm)
 		target_include_directories(glm SYSTEM INTERFACE ${_glm_inc})
 	endif()
 endif()
+
+# GLM's notice for --licenses: its own copying.txt, which offers the Happy Bunny or the MIT licence
+# (lainNotices.cmake).
+include(lainNotices)
+lain_register_notice(glm NAME "GLM" VERSION "${GLM_VER}" SPDX "MIT"
+	SOURCE_DIR "${glm_SOURCE_DIR}" FILES copying.txt
+	PACKAGE_DIR "${glm_DIR}" PACKAGE_VERSION "${glm_VERSION}")

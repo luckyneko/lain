@@ -5,6 +5,7 @@
 #include <lain/camera/calibration/attempts.h>
 #include <lain/camera/calibration/report.h>
 #include <lain/camera/cameramodel.h>
+#include <lain/camera/comparison.h>
 #include <lain/camera/flow/register.h> // every camera kind
 #include <lain/camera/registration/report.h>
 #include <lain/image/colormath.h> // convert (HSV -> RGB)
@@ -91,6 +92,9 @@ namespace flowview
 
 		// The rig a registration found is a result passed on, as a camera model is: the camera's family.
 		style.addPortColor(typeid(camera::registration::RegisteredRig), image::ColorRGBA8(190, 155, 60, 255)); // deep gold
+		// A comparison of either is a report on it: the reports' family.
+		style.addPortColor(typeid(camera::ModelComparison), image::ColorRGBA8(175, 170, 150, 255)); // warm slate
+		style.addPortColor(typeid(camera::RigComparison), image::ColorRGBA8(165, 160, 145, 255));	// deep warm slate
 
 		// Node title colours by factory kind — categories are emergent from shared colour (no Category
 		// enum). These keys must match scene.cpp's registrations.

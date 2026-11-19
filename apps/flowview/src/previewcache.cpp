@@ -50,8 +50,10 @@ namespace flowview
 			live.insert(key);
 			Entry& entry = m_entries[key]; // default-empty on first sight
 			entry.source = value;
-			if (!entry.texture.upload(img))				// re-upload in place when size/format fits...
-				entry.texture = ctx.createTexture(img); // ...else first-time or resized -> reallocate
+			// A NEW texture, never the old one rewritten in place: the frames in flight may still be
+			// sampling that, and replacing it is what keeps it for them (gui::Texture). Safe against
+			// THIS frame for the reason the prune below gives.
+			entry.texture = ctx.createTexture(img);
 		};
 		for (const flow::NodeId id : graph.topoOrder())
 		{

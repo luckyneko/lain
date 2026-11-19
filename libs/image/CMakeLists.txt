@@ -8,6 +8,7 @@ add_library(image STATIC
 	src/image.cpp
 	src/convert.cpp
 	src/operations.cpp
+	src/procedural.cpp
 )
 add_library(lain::image ALIAS image)
 
@@ -17,6 +18,7 @@ target_link_libraries(image
 	PUBLIC lain::math				# math::Vec2i in the public extent()
 	PUBLIC lain::meta				# meta::TypeList in pixelformat.h/color.h (public headers)
 	PUBLIC lain::memory				# memory::Buffer is Image's storage (image.h)
+	PRIVATE lain::core				# core::splitMix64, the procedural texture's scramble (procedural.cpp)
 	PRIVATE lain::log				# enforcement diagnostics (convert.cpp / operations.cpp)
 	PRIVATE lain::warnings
 )

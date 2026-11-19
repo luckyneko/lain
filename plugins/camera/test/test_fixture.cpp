@@ -207,6 +207,14 @@ TEST_CASE("a fixture of one camera seen twice passes, and an imported model is c
 	// gated, the fixture would have failed.
 	REQUIRE(comparison.difference.has_value());
 	CHECK(comparison.difference->focal > report.agreements.front().focalBound);
+	// Measured as where it sends the estimate's rays (camera::compareModels): a model 2% long lands a
+	// ray 2% further from the principal point, so several pixels out at the corners. It is reported,
+	// and it still decides nothing.
+	REQUIRE(comparison.mapping.has_value());
+	REQUIRE(comparison.mapping->compared());
+	CHECK(comparison.mapping->focalDifference > 0.015);
+	CHECK(comparison.mapping->worstPixels > 5.0);
+	CHECK(report.toString().find("the estimate's rays through the imported model") != std::string::npos);
 }
 
 // Two sessions, one camera each. Each may well be Ready on its own: each IS a calibrated camera.

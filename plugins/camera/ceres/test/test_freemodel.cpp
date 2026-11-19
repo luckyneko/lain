@@ -5,6 +5,7 @@
 // 10's to measure. Every tolerance is a measurement, written beside its check.
 
 #include <lain/camera/ceres/register.h>
+#include <lain/camera/comparison.h>
 #include <lain/camera/refinement/refiner.h>
 #include <lain/camera/testing/syntheticrig.h>
 #include <lain/core/random.h>
@@ -173,31 +174,20 @@ namespace
 		return out;
 	}
 
-	// How far an estimate is from the truth: the focal lengths' relative error, and the RAY MAPPING's,
-	// every 16th pixel's true ray projected through the estimate, in pixels. The ray mapping is what a
-	// model is for, and what the rational model's unidentifiable coefficients still pin.
-	struct ModelError
+	// How far an estimate is from the truth: where it sends the truth's rays (camera::compareModels),
+	// the RAY MAPPING, and its focal lengths' relative difference. The ray mapping is what a model is
+	// for, and what the rational model's unidentifiable coefficients still pin. Every ray must reach
+	// the estimate, since every estimate here is near the truth.
+	//
+	// Until 2026-10-26 these cases measured on a grid that stopped short of the right and bottom edges.
+	// Reaching them moved the rational model's ray mapping from 2.8e-6 px to 3.1e-6, and nothing else
+	// here by more than 6e-8 px.
+	ModelComparison errorOf(const CameraModel& estimate, const CameraModel& truth)
 	{
-		double focal = 0;
-		double ray = 0;
-	};
-	ModelError errorOf(const CameraModel& estimate, const CameraModel& truth)
-	{
-		ModelError out;
-		out.focal = std::max(std::abs(estimate.intrinsics().fx / truth.intrinsics().fx - 1),
-							 std::abs(estimate.intrinsics().fy / truth.intrinsics().fy - 1));
-		for (double v = 0; v < double(truth.image().height); v += 16)
-		{
-			for (double u = 0; u < double(truth.image().width); u += 16)
-			{
-				const Unprojection<double> ray = unproject(truth, u, v);
-				REQUIRE(ray.ok());
-				const Projection<double> p = project(estimate, ray.x, ray.y, ray.z);
-				REQUIRE(p.ok());
-				out.ray = std::max(out.ray, std::hypot(p.u - u, p.v - v));
-			}
-		}
-		return out;
+		const ModelComparison c = compareModels(truth, estimate);
+		REQUIRE(c.compared());
+		REQUIRE(c.unreached == 0);
+		return c;
 	}
 
 	// The refined model, through CameraModel::create, which must accept it.
@@ -249,13 +239,13 @@ TEST_CASE("a shared free model is recovered for every distortion model", "[camer
 	REQUIRE(solution.models.size() == 1);
 
 	// Measured: the focal lengths within 7.3e-9 (modified Brown-Conrady's, the worst) and the ray
-	// mapping within 3.1e-6 px (the rational model's, whose coefficients are not identifiable but whose
+	// mapping within 3.3e-6 px (the rational model's, whose coefficients are not identifiable but whose
 	// mapping is), in 12 to 26 iterations. Timed on linux-x86_64: 1.6 to 8.5 s per model in Debug, 0.05
 	// to 0.18 s in Release.
-	const ModelError error = errorOf(created(solution, 0), truth);
-	CAPTURE(error.focal, error.ray);
-	CHECK(error.focal < 1e-6);
-	CHECK(error.ray < 1e-4);
+	const ModelComparison error = errorOf(created(solution, 0), truth);
+	CAPTURE(error.focalDifference, error.worstPixels);
+	CHECK(error.focalDifference < 1e-6);
+	CHECK(error.worstPixels < 1e-4);
 }
 
 TEST_CASE("a held principal point comes back exactly where it started", "[camera][ceres][freemodel]")
@@ -343,7 +333,7 @@ TEST_CASE("a free model that no camera sees through comes back as it started", "
 	REQUIRE(solution.models.size() == 2);
 	CHECK(sameParameters(solution.models[1], unused.parameters()));
 	// The one in use was refined: measured 1.2e-8 from the truth.
-	CHECK(errorOf(created(solution, 0), truth).focal < 1e-6);
+	CHECK(errorOf(created(solution, 0), truth).focalDifference < 1e-6);
 }
 
 TEST_CASE("a free model refines through a board's corners", "[camera][ceres][freemodel]")
@@ -391,10 +381,10 @@ TEST_CASE("a free model refines through a board's corners", "[camera][ceres][fre
 	REQUIRE(solution.status == Status::Converged);
 	CHECK_THAT(solution.detail, EndsWith("linear solver SPARSE_SCHUR"));
 	// Measured: the focal lengths within 5.8e-9 and the ray mapping within 1.6e-6 px, in 7 iterations.
-	const ModelError error = errorOf(created(solution, 0), truth);
-	CAPTURE(error.focal, error.ray);
-	CHECK(error.focal < 1e-6);
-	CHECK(error.ray < 1e-4);
+	const ModelComparison error = errorOf(created(solution, 0), truth);
+	CAPTURE(error.focalDifference, error.worstPixels);
+	CHECK(error.focalDifference < 1e-6);
+	CHECK(error.worstPixels < 1e-4);
 }
 
 TEST_CASE("the refiner refuses a problem whose models do not match its cameras", "[camera][ceres][freemodel]")
@@ -501,16 +491,16 @@ TEST_CASE("a moving camera of 60 frames and 20000 landmarks refines its shared m
 	const Solution solution = refine(problem);
 	INFO(solution.detail);
 	REQUIRE(solution.status == Status::Converged);
-	const ModelError error = errorOf(created(solution, 0), truth);
-	CAPTURE(error.focal, error.ray, solution.iterations, solution.elapsed.seconds());
+	const ModelComparison error = errorOf(created(solution, 0), truth);
+	CAPTURE(error.focalDifference, error.worstPixels, solution.iterations, solution.elapsed.seconds());
 	// Timed on linux-x86_64, Release, one thread: 6.4 s over 160,000 residuals, 162 MB at peak for the
 	// whole case. Measured: 13 iterations, and a final cost 1.001 of half the residual dimensions less
 	// the unknowns (every landmark, every frame but the reference, and the model's seven free
 	// parameters), which is where whitened noise leaves a least-squares minimum. The focal lengths
-	// came out 1.08% long and the worst ray 5.1 px out, which is the probe's finding: 8-view tracks
+	// came out 1.08% long and the worst ray 5.4 px out, which is the probe's finding: 8-view tracks
 	// condition a model poorly under noise.
 	const double dimensions = 2.0 * double(problem.landmarkObservations.size()) - 3.0 * double(problem.landmarks.size()) -
 							  6.0 * double(problem.cameraFromReference.size() - 1) - 7.0;
 	CHECK_THAT(solution.finalCost, WithinRel(0.5 * dimensions, 0.01));
-	CHECK(error.focal < 0.02);
+	CHECK(error.focalDifference < 0.02);
 }

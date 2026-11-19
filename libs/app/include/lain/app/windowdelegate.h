@@ -28,6 +28,13 @@ namespace lain::app
 		// The swapchain was rebuilt at a new size (resize). Main thread.
 		virtual void onResize([[maybe_unused]] Window& window, [[maybe_unused]] acm::Extent2D extent) {}
 
+		// The window was asked to close: its close button, the platform's own shortcut for it, or
+		// Window::requestClose. Return true to let it close, which ends the frame loop; return false to
+		// keep it open, as an editor does while it asks whether to save, and the loop carries on as
+		// though nothing had been asked. Asked once per request, at the top of a frame. Not asked when
+		// the app ends the run itself (Application::exit), which is the delegate's own decision already.
+		virtual bool onCloseRequested([[maybe_unused]] Window& window) { return true; }
+
 		// Release per-window GPU resources before the window/device tear down. The GPU is idle by
 		// now — every frame the loop submitted has FINISHED, not merely been submitted — so this
 		// may free anything a frame read, including objects acm does not own and so cannot defer

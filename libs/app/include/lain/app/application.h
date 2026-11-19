@@ -32,10 +32,10 @@ namespace lain::app
 	//     return status;
 	//
 	// Deliberately NOT hidden behind a macro that writes main for you. It would save three
-	// lines in the one app this tree has, while hiding where the program starts and breaking
-	// a grep for "int main" — and it is under-determined by a single caller: how the delegate
-	// is constructed, where the AppInfo comes from, whether it can be opted out of. Trigger
-	// for revisiting: a second app.
+	// lines an app, while hiding where the program starts and breaking a grep for "int main".
+	// Revisited when the second app arrived (rigplan, M15 slice 5e): its main and flowview's
+	// differ only in the delegate and the AppInfo, exactly what such a macro would have to take
+	// as arguments, so it still saves nothing.
 	class Application
 	{
 	public:
@@ -105,9 +105,11 @@ namespace lain::app
 		// was spread through run(); still a gap, because those paths have no run to report on.
 		void exit(int code = EXIT_SUCCESS);
 
-		// The shared device, created on demand (for windows or headless compute).
-		// Returned by reference: acm::Device is a move-only owning root, so the app
-		// holds the one instance and hands out access to it.
+		// The shared device, created on demand (for windows or headless compute), of the kind
+		// --device asks for: the best hardware device (falling back to the CPU device where there is
+		// none), or the CPU device. Invalid when --device cpu finds no CPU device. Returned by
+		// reference: acm::Device is a move-only owning root, so the app holds the one instance and
+		// hands out access to it.
 		acm::Device& device();
 
 		// The Vulkan instance (created on demand) — for a GUI backend that needs the

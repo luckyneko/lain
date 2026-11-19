@@ -61,7 +61,7 @@ namespace flowview
 	// to stdout, and write bound outputs. With `frameRange` set it becomes a RENDER: the graph runs
 	// once per frame over the range, with the frame position rebound each iteration and ONE
 	// Evaluation retained across the whole sweep, and each iteration's outputs written through a
-	// pattern naming io::image::frameKey ("out.<frame:04>.png").
+	// pattern naming io::frameKey ("out.<frame:04>.png").
 	//
 	// Returns a process exit code: 0, or 1 when the graph could not be loaded AS SAVED (any
 	// Severity::Error — a missing file, or a node this build has no kind for), a binding was

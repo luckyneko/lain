@@ -1,0 +1,789 @@
+{
+  "version": 1,
+  "specifications": {
+    "sensors": [
+      {
+        "name": "mono-720p",
+        "image": {
+          "width": 1280,
+          "height": 720
+        },
+        "pixelPitchUm": 2.0,
+        "principalPointToleranceUm": 20.0,
+        "body": {
+          "size": {
+            "x": 0.1,
+            "y": 0.1,
+            "z": 0.1
+          },
+          "opticalCentre": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        "sensorModel": {
+          "gain": 1.0,
+          "fullWellElectrons": 10000.0,
+          "readNoiseElectrons": 3.0,
+          "adcBits": 12,
+          "channels": "Grey",
+          "output": {
+            "format": "Png",
+            "bits": 8,
+            "curve": "sRGB"
+          }
+        }
+      }
+    ],
+    "lenses": [
+      {
+        "name": "2mm",
+        "focalLengthMm": 2.0,
+        "distortion": {
+          "type": "brownConrady5",
+          "value": {
+            "k1": 0.1,
+            "k2": -0.05,
+            "p1": 0.001,
+            "p2": -0.002,
+            "k3": 0.01
+          }
+        },
+        "focalLengthTolerance": 0.01,
+        "distortionTolerance": 0.1
+      }
+    ],
+    "cameras": [
+      {
+        "name": "mono-720p-2mm",
+        "sensor": "mono-720p",
+        "lens": "2mm"
+      }
+    ],
+    "lights": [
+      {
+        "name": "lamp",
+        "kind": "Point",
+        "intensity": 1.15,
+        "colour": {
+          "r": 1.0,
+          "g": 1.0,
+          "b": 1.0
+        },
+        "innerConeDegrees": 20.0,
+        "outerConeDegrees": 30.0
+      }
+    ]
+  },
+  "room": {
+    "centre": {
+      "x": 0.0,
+      "y": -0.75
+    },
+    "size": {
+      "x": 6.0,
+      "y": 4.5,
+      "z": 2.4
+    },
+    "floor": {
+      "present": true,
+      "material": {
+        "surface": {
+          "type": "procedural",
+          "value": {
+            "seed": 1,
+            "cell": 0.04
+          }
+        },
+        "specular": {
+          "r": 0.0,
+          "g": 0.0,
+          "b": 0.0
+        },
+        "shininess": 0.0
+      }
+    },
+    "ceiling": {
+      "present": true,
+      "material": {
+        "surface": {
+          "type": "procedural",
+          "value": {
+            "seed": 1,
+            "cell": 0.04
+          }
+        },
+        "specular": {
+          "r": 0.0,
+          "g": 0.0,
+          "b": 0.0
+        },
+        "shininess": 0.0
+      }
+    },
+    "north": {
+      "present": true,
+      "material": {
+        "surface": {
+          "type": "procedural",
+          "value": {
+            "seed": 1,
+            "cell": 0.04
+          }
+        },
+        "specular": {
+          "r": 0.0,
+          "g": 0.0,
+          "b": 0.0
+        },
+        "shininess": 0.0
+      }
+    },
+    "south": {
+      "present": true,
+      "material": {
+        "surface": {
+          "type": "procedural",
+          "value": {
+            "seed": 1,
+            "cell": 0.04
+          }
+        },
+        "specular": {
+          "r": 0.0,
+          "g": 0.0,
+          "b": 0.0
+        },
+        "shininess": 0.0
+      }
+    },
+    "east": {
+      "present": true,
+      "material": {
+        "surface": {
+          "type": "procedural",
+          "value": {
+            "seed": 1,
+            "cell": 0.04
+          }
+        },
+        "specular": {
+          "r": 0.0,
+          "g": 0.0,
+          "b": 0.0
+        },
+        "shininess": 0.0
+      }
+    },
+    "west": {
+      "present": true,
+      "material": {
+        "surface": {
+          "type": "procedural",
+          "value": {
+            "seed": 1,
+            "cell": 0.04
+          }
+        },
+        "specular": {
+          "r": 0.0,
+          "g": 0.0,
+          "b": 0.0
+        },
+        "shininess": 0.0
+      }
+    }
+  },
+  "planes": [],
+  "boxes": [
+    {
+      "id": "00000000-0000-7000-8000-00000000d001",
+      "name": "box",
+      "centre": {
+        "x": -0.2,
+        "y": 0.1,
+        "z": 0.45
+      },
+      "size": {
+        "x": 0.8,
+        "y": 0.6,
+        "z": 0.9
+      },
+      "yawDegrees": 0.0,
+      "material": {
+        "surface": {
+          "type": "procedural",
+          "value": {
+            "seed": 1,
+            "cell": 0.04
+          }
+        },
+        "specular": {
+          "r": 0.0,
+          "g": 0.0,
+          "b": 0.0
+        },
+        "shininess": 0.0
+      }
+    }
+  ],
+  "props": [],
+  "boards": [
+    {
+      "id": "00000000-0000-7000-8000-00000000b001",
+      "name": "charuco",
+      "pattern": {
+        "dictionary": "Aruco5x5_100",
+        "squaresX": 7,
+        "squaresY": 5,
+        "markerToSquare": 0.75,
+        "firstMarkerId": 0,
+        "layout": "Standard"
+      },
+      "instance": {
+        "identity": "board",
+        "squareLengthMm": 80.0
+      },
+      "margin": 0.01,
+      "pixelsPerSquare": 120,
+      "backing": 0.003,
+      "path": {
+        "keys": [
+          {
+            "frame": 0,
+            "position": {
+              "x": -0.1415,
+              "y": -1.1717,
+              "z": 0.7161
+            },
+            "aim": {
+              "panDegrees": -7.5178,
+              "tiltDegrees": 2.9151,
+              "rollDegrees": -1.2083
+            }
+          },
+          {
+            "frame": 1,
+            "position": {
+              "x": -0.0333,
+              "y": -1.1732,
+              "z": 0.7065
+            },
+            "aim": {
+              "panDegrees": -18.89,
+              "tiltDegrees": -11.391,
+              "rollDegrees": -2.9303
+            }
+          },
+          {
+            "frame": 2,
+            "position": {
+              "x": 0.0494,
+              "y": -1.1616,
+              "z": 0.7795
+            },
+            "aim": {
+              "panDegrees": -19.5093,
+              "tiltDegrees": -22.6298,
+              "rollDegrees": -3.1123
+            }
+          },
+          {
+            "frame": 3,
+            "position": {
+              "x": 0.0942,
+              "y": -1.1435,
+              "z": 0.8925
+            },
+            "aim": {
+              "panDegrees": -7.947,
+              "tiltDegrees": -16.9483,
+              "rollDegrees": -1.2616
+            }
+          },
+          {
+            "frame": 4,
+            "position": {
+              "x": 0.0942,
+              "y": -1.1297,
+              "z": 0.9792
+            },
+            "aim": {
+              "panDegrees": 7.6011,
+              "tiltDegrees": -1.036,
+              "rollDegrees": 1.207
+            }
+          },
+          {
+            "frame": 5,
+            "position": {
+              "x": 0.0494,
+              "y": -1.1281,
+              "z": 0.9888
+            },
+            "aim": {
+              "panDegrees": 18.0374,
+              "tiltDegrees": 5.4308,
+              "rollDegrees": 2.8855
+            }
+          },
+          {
+            "frame": 6,
+            "position": {
+              "x": -0.0333,
+              "y": -1.1398,
+              "z": 0.9158
+            },
+            "aim": {
+              "panDegrees": 18.6032,
+              "tiltDegrees": -5.8093,
+              "rollDegrees": 2.8873
+            }
+          },
+          {
+            "frame": 7,
+            "position": {
+              "x": -0.1415,
+              "y": -1.1578,
+              "z": 0.8029
+            },
+            "aim": {
+              "panDegrees": 8.0401,
+              "tiltDegrees": -20.8993,
+              "rollDegrees": 1.2918
+            }
+          },
+          {
+            "frame": 8,
+            "position": {
+              "x": -0.2585,
+              "y": -1.1717,
+              "z": 0.7161
+            },
+            "aim": {
+              "panDegrees": -8.0401,
+              "tiltDegrees": -20.8993,
+              "rollDegrees": -1.2918
+            }
+          },
+          {
+            "frame": 9,
+            "position": {
+              "x": -0.3667,
+              "y": -1.1732,
+              "z": 0.7065
+            },
+            "aim": {
+              "panDegrees": -18.6032,
+              "tiltDegrees": -5.8093,
+              "rollDegrees": -2.8873
+            }
+          },
+          {
+            "frame": 10,
+            "position": {
+              "x": -0.4494,
+              "y": -1.1616,
+              "z": 0.7795
+            },
+            "aim": {
+              "panDegrees": -18.0374,
+              "tiltDegrees": 5.4308,
+              "rollDegrees": -2.8855
+            }
+          },
+          {
+            "frame": 11,
+            "position": {
+              "x": -0.4942,
+              "y": -1.1435,
+              "z": 0.8925
+            },
+            "aim": {
+              "panDegrees": -7.6011,
+              "tiltDegrees": -1.036,
+              "rollDegrees": -1.207
+            }
+          },
+          {
+            "frame": 12,
+            "position": {
+              "x": -0.4942,
+              "y": -1.1297,
+              "z": 0.9792
+            },
+            "aim": {
+              "panDegrees": 7.947,
+              "tiltDegrees": -16.9483,
+              "rollDegrees": 1.2616
+            }
+          },
+          {
+            "frame": 13,
+            "position": {
+              "x": -0.4494,
+              "y": -1.1281,
+              "z": 0.9888
+            },
+            "aim": {
+              "panDegrees": 19.5093,
+              "tiltDegrees": -22.6298,
+              "rollDegrees": 3.1123
+            }
+          },
+          {
+            "frame": 14,
+            "position": {
+              "x": -0.3667,
+              "y": -1.1398,
+              "z": 0.9158
+            },
+            "aim": {
+              "panDegrees": 18.89,
+              "tiltDegrees": -11.391,
+              "rollDegrees": 2.9303
+            }
+          },
+          {
+            "frame": 15,
+            "position": {
+              "x": -0.2585,
+              "y": -1.1578,
+              "z": 0.8029
+            },
+            "aim": {
+              "panDegrees": 7.5178,
+              "tiltDegrees": 2.9151,
+              "rollDegrees": 1.2083
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "mounts": [
+    {
+      "id": "00000000-0000-7000-8000-00000000a001",
+      "name": "cam0 stand",
+      "kind": {
+        "type": "fixedPoint",
+        "value": {
+          "position": {
+            "x": -1.0843,
+            "y": -2.6754,
+            "z": 1.1
+          }
+        }
+      },
+      "yawDegrees": 0.0,
+      "tolerance": {
+        "positionMm": 10.0,
+        "yawDegrees": 1.0
+      }
+    },
+    {
+      "id": "00000000-0000-7000-8000-00000000a002",
+      "name": "cam1 stand",
+      "kind": {
+        "type": "fixedPoint",
+        "value": {
+          "position": {
+            "x": -0.5004,
+            "y": -2.7859,
+            "z": 1.1
+          }
+        }
+      },
+      "yawDegrees": 0.0,
+      "tolerance": {
+        "positionMm": 10.0,
+        "yawDegrees": 1.0
+      }
+    },
+    {
+      "id": "00000000-0000-7000-8000-00000000a003",
+      "name": "cam2 stand",
+      "kind": {
+        "type": "fixedPoint",
+        "value": {
+          "position": {
+            "x": 0.1004,
+            "y": -2.7859,
+            "z": 1.1
+          }
+        }
+      },
+      "yawDegrees": 0.0,
+      "tolerance": {
+        "positionMm": 10.0,
+        "yawDegrees": 1.0
+      }
+    },
+    {
+      "id": "00000000-0000-7000-8000-00000000a004",
+      "name": "cam3 stand",
+      "kind": {
+        "type": "fixedPoint",
+        "value": {
+          "position": {
+            "x": 0.6843,
+            "y": -2.6754,
+            "z": 1.1
+          }
+        }
+      },
+      "yawDegrees": 0.0,
+      "tolerance": {
+        "positionMm": 10.0,
+        "yawDegrees": 1.0
+      }
+    },
+    {
+      "id": "00000000-0000-7000-8000-00000000a101",
+      "name": "lamp 1 hook",
+      "kind": {
+        "type": "fixedPoint",
+        "value": {
+          "position": {
+            "x": -1.5,
+            "y": -1.8,
+            "z": 2.3
+          }
+        }
+      },
+      "yawDegrees": 0.0,
+      "tolerance": {
+        "positionMm": 0.0,
+        "yawDegrees": 0.0
+      }
+    },
+    {
+      "id": "00000000-0000-7000-8000-00000000a102",
+      "name": "lamp 2 hook",
+      "kind": {
+        "type": "fixedPoint",
+        "value": {
+          "position": {
+            "x": 1.5,
+            "y": -1.8,
+            "z": 2.3
+          }
+        }
+      },
+      "yawDegrees": 0.0,
+      "tolerance": {
+        "positionMm": 0.0,
+        "yawDegrees": 0.0
+      }
+    },
+    {
+      "id": "00000000-0000-7000-8000-00000000a103",
+      "name": "lamp 3 hook",
+      "kind": {
+        "type": "fixedPoint",
+        "value": {
+          "position": {
+            "x": -1.5,
+            "y": 0.4,
+            "z": 2.3
+          }
+        }
+      },
+      "yawDegrees": 0.0,
+      "tolerance": {
+        "positionMm": 0.0,
+        "yawDegrees": 0.0
+      }
+    },
+    {
+      "id": "00000000-0000-7000-8000-00000000a104",
+      "name": "lamp 4 hook",
+      "kind": {
+        "type": "fixedPoint",
+        "value": {
+          "position": {
+            "x": 1.5,
+            "y": 0.4,
+            "z": 2.3
+          }
+        }
+      },
+      "yawDegrees": 0.0,
+      "tolerance": {
+        "positionMm": 0.0,
+        "yawDegrees": 0.0
+      }
+    }
+  ],
+  "cameras": [
+    {
+      "id": "00000000-0000-7000-8000-00000000c001",
+      "name": "cam0",
+      "camera": "mono-720p-2mm",
+      "mount": "00000000-0000-7000-8000-00000000a001",
+      "offset": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "aim": {
+        "panDegrees": -16.0421,
+        "tiltDegrees": -8.8806,
+        "rollDegrees": 0.0
+      },
+      "tolerance": {
+        "offsetMm": 5.0,
+        "panDegrees": 0.5,
+        "tiltDegrees": 0.5,
+        "rollDegrees": 0.5
+      }
+    },
+    {
+      "id": "00000000-0000-7000-8000-00000000c002",
+      "name": "cam1",
+      "camera": "mono-720p-2mm",
+      "mount": "00000000-0000-7000-8000-00000000a002",
+      "offset": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "aim": {
+        "panDegrees": -5.3865,
+        "tiltDegrees": -8.8806,
+        "rollDegrees": 0.0
+      },
+      "tolerance": {
+        "offsetMm": 5.0,
+        "panDegrees": 0.5,
+        "tiltDegrees": 0.5,
+        "rollDegrees": 0.5
+      }
+    },
+    {
+      "id": "00000000-0000-7000-8000-00000000c003",
+      "name": "cam2",
+      "camera": "mono-720p-2mm",
+      "mount": "00000000-0000-7000-8000-00000000a003",
+      "offset": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "aim": {
+        "panDegrees": 5.3865,
+        "tiltDegrees": -8.8806,
+        "rollDegrees": 0.0
+      },
+      "tolerance": {
+        "offsetMm": 5.0,
+        "panDegrees": 0.5,
+        "tiltDegrees": 0.5,
+        "rollDegrees": 0.5
+      }
+    },
+    {
+      "id": "00000000-0000-7000-8000-00000000c004",
+      "name": "cam3",
+      "camera": "mono-720p-2mm",
+      "mount": "00000000-0000-7000-8000-00000000a004",
+      "offset": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "aim": {
+        "panDegrees": 16.0421,
+        "tiltDegrees": -8.8806,
+        "rollDegrees": 0.0
+      },
+      "tolerance": {
+        "offsetMm": 5.0,
+        "panDegrees": 0.5,
+        "tiltDegrees": 0.5,
+        "rollDegrees": 0.5
+      }
+    }
+  ],
+  "lights": [
+    {
+      "id": "00000000-0000-7000-8000-00000000f001",
+      "name": "lamp 1",
+      "light": "lamp",
+      "mount": "00000000-0000-7000-8000-00000000a101",
+      "offset": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "aim": {
+        "panDegrees": 0.0,
+        "tiltDegrees": 0.0,
+        "rollDegrees": 0.0
+      }
+    },
+    {
+      "id": "00000000-0000-7000-8000-00000000f002",
+      "name": "lamp 2",
+      "light": "lamp",
+      "mount": "00000000-0000-7000-8000-00000000a102",
+      "offset": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "aim": {
+        "panDegrees": 0.0,
+        "tiltDegrees": 0.0,
+        "rollDegrees": 0.0
+      }
+    },
+    {
+      "id": "00000000-0000-7000-8000-00000000f003",
+      "name": "lamp 3",
+      "light": "lamp",
+      "mount": "00000000-0000-7000-8000-00000000a103",
+      "offset": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "aim": {
+        "panDegrees": 0.0,
+        "tiltDegrees": 0.0,
+        "rollDegrees": 0.0
+      }
+    },
+    {
+      "id": "00000000-0000-7000-8000-00000000f004",
+      "name": "lamp 4",
+      "light": "lamp",
+      "mount": "00000000-0000-7000-8000-00000000a104",
+      "offset": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "aim": {
+        "panDegrees": 0.0,
+        "tiltDegrees": 0.0,
+        "rollDegrees": 0.0
+      }
+    }
+  ],
+  "timeline": {
+    "frames": 16,
+    "rate": {
+      "numerator": 30,
+      "denominator": 1
+    }
+  },
+  "seed": 1,
+  "scales": {
+    "intrinsic": 1.0,
+    "installation": 1.0,
+    "locked": true,
+    "noise": 1.0
+  }
+}

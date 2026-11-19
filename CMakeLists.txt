@@ -27,7 +27,7 @@ endif()
 # Tests and apps only when lain is the top-level project (consumed via
 # add_subdirectory they stay off, matching the siblings).
 option(LAIN_BUILD_TESTING "Build the unit/integration tests" ${LAIN_NOT_SUBPROJECT})
-option(LAIN_BUILD_APPS "Build the runnable apps (flowview)" ${LAIN_NOT_SUBPROJECT})
+option(LAIN_BUILD_APPS "Build the runnable apps (flowview, rigplan)" ${LAIN_NOT_SUBPROJECT})
 # Measurements, beside the tests and not run by ctest: what something costs in time or memory depends
 # on the machine and on what else runs, so a bound on it is no regression check (WORK.md, Measurements
 # out of ctest). Built as the tests are, so a bench cannot stop compiling unnoticed; run by hand.
@@ -54,6 +54,19 @@ add_subdirectory(extern/archimedes)     # acm:: Vulkan renderer (for flow + flow
 add_subdirectory(extern/multi)          # multi:: work-stealing pool (behind lain::task)
 # add_subdirectory(extern/thorax)       # deferred — no M1 consumer yet
 
+# lain's own notice and its submodules', first in --licenses (lainNotices.cmake): they are MIT too, and
+# whoever redistributes a lain binary owes them as much as any third party's. A submodule's version is
+# read from its own project() call.
+include(lainNotices)
+lain_register_notice(lain NAME "lain" VERSION "${lain_VERSION}" SPDX "MIT"
+	SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}" FILES LICENSE)
+get_directory_property(_lain_archimedes_version DIRECTORY extern/archimedes DEFINITION archimedes_VERSION)
+lain_register_notice(archimedes NAME "archimedes" VERSION "${_lain_archimedes_version}" SPDX "MIT"
+	SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/extern/archimedes" FILES LICENSE)
+get_directory_property(_lain_multi_version DIRECTORY extern/multi DEFINITION multi_VERSION)
+lain_register_notice(multi NAME "multi" VERSION "${_lain_multi_version}" SPDX "MIT"
+	SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/extern/multi" FILES LICENSE.md)
+
 # Third-party deps via cmake/addXXX.cmake FetchContent modules (prefer system
 # package, else pinned release; headers re-exposed SYSTEM under strict flags).
 include(addGLM)
@@ -68,6 +81,67 @@ include(addmagicenum)  # enum reflection behind lain::meta
 # and pulls MoltenVK on macOS.
 if(LAIN_BUILD_TESTING OR LAIN_BUILD_APPS)
 	acm_require_vulkan_runtime()
+
+	# The Vulkan stack's notices for --licenses (lainNotices.cmake), asked of FetchContent again because
+	# archimedes fetches inside functions whose scope keeps the source directories to themselves. The
+	# headers are Apache-2.0 OR MIT and printed under MIT; the loader and, on macOS, MoltenVK are
+	# Apache-2.0 only, and their texts are staged instead. Each registers only when archimedes fetched
+	# it (or, for the headers, a system package satisfied it): a consumer that supplied its own Vulkan
+	# targets owns their notices.
+	include(FetchContent)
+	FetchContent_GetProperties(VulkanHeaders)
+	if(vulkanheaders_POPULATED OR VulkanHeaders_DIR)
+		lain_register_notice(vulkan_headers NAME "Vulkan-Headers" VERSION "${ARCHIMEDES_VULKAN_SDK}" SPDX "Apache-2.0 OR MIT"
+			SOURCE_DIR "${vulkanheaders_SOURCE_DIR}" FILES LICENSE.md LICENSES/MIT.txt
+			PACKAGE_DIR "${VulkanHeaders_DIR}")
+	endif()
+	FetchContent_GetProperties(VulkanLoader)
+	if(vulkanloader_POPULATED)
+		lain_register_notice(vulkan_loader NAME "Vulkan-Loader" VERSION "${ARCHIMEDES_VULKAN_SDK}" SPDX "Apache-2.0"
+			SOURCE_DIR "${vulkanloader_SOURCE_DIR}" FILES LICENSE.txt STAGE
+			DETAILS "This software uses the Khronos Vulkan loader, built from source, linked dynamically and unmodified.")
+	endif()
+	FetchContent_GetProperties(MoltenVK)
+	if(moltenvk_POPULATED)
+		lain_register_notice(moltenvk NAME "MoltenVK" VERSION "${ARCHIMEDES_MOLTENVK_VERSION}" SPDX "Apache-2.0"
+			SOURCE_DIR "${moltenvk_SOURCE_DIR}" FILES LICENSE STAGE
+			DETAILS "This software ships MoltenVK's prebuilt release dylib, unmodified, as its Vulkan driver on macOS.")
+	endif()
+	# The CPU driver (archimedes' CPU device, ADR-0028), staged beside every runnable target. The prebuilt
+	# carries its licence texts and a manifest naming its upstream commit and patches, which Apache-2.0
+	# asks a modified build to state. A local build staged through ARCHIMEDES_SWIFTSHADER_DIR usually
+	# carries no licence texts, and then no notice is printed: such a build is a developer's own.
+	if(ACM_SWIFTSHADER_ICD AND ACM_SWIFTSHADER_LICENSES)
+		list(GET ACM_SWIFTSHADER_LICENSES 0 _lain_swiftshader_first)
+		get_filename_component(_lain_swiftshader_dir "${_lain_swiftshader_first}" DIRECTORY)
+		set(_lain_swiftshader_files "")
+		foreach(_license IN LISTS ACM_SWIFTSHADER_LICENSES)
+			get_filename_component(_name "${_license}" NAME)
+			list(APPEND _lain_swiftshader_files "${_name}")
+		endforeach()
+		set(_lain_swiftshader_release "")
+		set(_lain_swiftshader_details "This software ships SwiftShader as its CPU Vulkan driver, staged beside it in vulkan/.")
+		if(EXISTS "${_lain_swiftshader_dir}/MANIFEST.txt")
+			file(STRINGS "${_lain_swiftshader_dir}/MANIFEST.txt" _lain_manifest)
+			set(_lain_patches "")
+			foreach(_line IN LISTS _lain_manifest)
+				if(_line MATCHES "^  release +([^ ]+)")
+					set(_lain_swiftshader_release "${CMAKE_MATCH_1}")
+				elseif(_line MATCHES "^  commit +([0-9a-f]+)")
+					set(_lain_swiftshader_commit "${CMAKE_MATCH_1}")
+				elseif(_line MATCHES "^  ([0-9][0-9][0-9][0-9]-[^ ]+\\.patch)")
+					list(APPEND _lain_patches "${CMAKE_MATCH_1}")
+				endif()
+			endforeach()
+			list(JOIN _lain_patches ", " _lain_patches)
+			set(_lain_swiftshader_details
+				"This software ships SwiftShader as its CPU Vulkan driver, staged beside it in vulkan/: luckyneko/swiftshader-prebuilt ${_lain_swiftshader_release},"
+				"built from upstream commit ${_lain_swiftshader_commit} and modified by ${_lain_patches} (in that repository).")
+		endif()
+		lain_register_notice(swiftshader NAME "SwiftShader" VERSION "${_lain_swiftshader_release}" SPDX "Apache-2.0"
+			SOURCE_DIR "${_lain_swiftshader_dir}" FILES ${_lain_swiftshader_files} STAGE
+			DETAILS ${_lain_swiftshader_details})
+	endif()
 
 	# Say which assembler owns the loader's .asm, because in this tree two languages claim that
 	# extension. The loader enables ASM_MASM for its unknown-function trampolines; libpng then
@@ -127,17 +201,30 @@ add_subdirectory(libs/string)           # fmt-backed format() + lain-type format
 add_subdirectory(libs/meta)             # enum reflection (magic_enum) — lain::meta
 add_subdirectory(libs/math)             # typed GLM wrapper
 add_subdirectory(libs/image)            # CPU raster + pixel formats (lain::image)
+add_subdirectory(libs/mesh)             # CPU triangle meshes + mesh clips (lain::mesh, WORK.md M15)
 add_subdirectory(libs/media)            # frame sequences: finite lazy footage (WORK.md M10)
 add_subdirectory(libs/io)               # transport seam: read(uri) -> Buffer (WORK.md M3)
 add_subdirectory(libs/data)             # serialization DOM (Value) + reflection (WORK.md Tier A #1)
 add_subdirectory(libs/camera)           # camera geometry: models, distortion, projection (WORK.md M9)
+add_subdirectory(libs/rigplan)          # rig design: specifications, rig plans, realisations (WORK.md M15)
 add_subdirectory(libs/task)
 add_subdirectory(libs/flow)             # the node-graph engine (WORK.md M1)
+add_subdirectory(libs/editor)           # document editors' undo, recents, session, unsaved guard (WORK.md M15)
+# The raster renderer (WORK.md M15, ADR-0028), only where the Vulkan runtime is set up above: it
+# compiles its GLSL at build time, and a headless consumer of lain::flow should not build a compiler.
+if(LAIN_BUILD_TESTING OR LAIN_BUILD_APPS)
+	add_subdirectory(libs/render)
+	add_subdirectory(libs/rigplan/scene) # a rig plan as a render scene, beside the renderer it is for
+	add_subdirectory(libs/rigplan/capture) # a rig plan's synthetic capture written to disk
+endif()
 
 # Test-support, built only when there are tests (or benchmarks, which start the pool through
 # lain::testing's ThreadPool and skip in Debug through its skip.h) to support.
 if(LAIN_BUILD_TESTING OR LAIN_BUILD_BENCHMARK)
 	add_subdirectory(libs/testing)      # collision-free scratch paths for parallel ctest
+endif()
+if(LAIN_BUILD_TESTING)
+	add_subdirectory(libs/rigplan/testing) # a test rig plan, the example rig plans, a capture, and what a camera's ray met
 endif()
 
 # ---- Plugins (swappable satellites: lain::io::image::<fmt> codecs) ----------
@@ -155,10 +242,12 @@ if(LAIN_BUILD_APPS)
 	include(addCLI11)
 	include(addImGui)
 	include(addImnodes)
+	include(addImGuizmo)
 	include(addPortableFileDialogs)
 	add_subdirectory(libs/app)            # GLFW + CLI11 app harness
-	add_subdirectory(libs/gui)            # Dear ImGui + imnodes wrapper
+	add_subdirectory(libs/gui)            # Dear ImGui + imnodes + ImGuizmo wrapper
 	add_subdirectory(apps/flowview)       # the inspector (step 9)
+	add_subdirectory(apps/rigplan)        # rig design: synthetic captures of rig plans (WORK.md M15)
 endif()
 
 # What this configure built, last, where an option that was asked for but could not be honoured is

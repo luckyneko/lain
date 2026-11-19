@@ -6,11 +6,24 @@
 
 #include "lain/app/notices.h"
 
+#include <string>
+
 namespace lain::app
 {
 	std::string_view thirdPartyNotices()
 	{
-		static const std::string_view text = R"lain_notice(@LAIN_NOTICE_TEXT@)lain_notice";
+		// Pieces rather than one literal, since MSVC refuses a literal over 16380 bytes; joined once,
+		// on first use. The leading "" keeps the array well-formed when nothing registered a notice.
+		static constexpr const char* kPieces[] = {
+			"",
+@LAIN_NOTICE_PIECES@		};
+		static const std::string text = []
+		{
+			std::string joined;
+			for (const char* piece : kPieces)
+				joined += piece;
+			return joined;
+		}();
 		return text;
 	}
 } // namespace lain::app

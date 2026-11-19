@@ -34,3 +34,9 @@ if(nlohmann_json_SOURCE_DIR AND TARGET nlohmann_json)
 		target_include_directories(nlohmann_json SYSTEM INTERFACE ${_nj_inc})
 	endif()
 endif()
+
+# nlohmann/json's notice for --licenses (lainNotices.cmake).
+include(lainNotices)
+lain_register_notice(nlohmann_json NAME "nlohmann/json" VERSION "${NLOHMANN_VER}" SPDX "MIT"
+	SOURCE_DIR "${nlohmann_json_SOURCE_DIR}" FILES LICENSE.MIT
+	PACKAGE_DIR "${nlohmann_json_DIR}" PACKAGE_VERSION "${nlohmann_json_VERSION}")

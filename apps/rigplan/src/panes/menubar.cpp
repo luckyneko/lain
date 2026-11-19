@@ -1,0 +1,339 @@
+#include "menubar.h"
+
+#include "fields.h" // meshFilters, for Add > Prop...
+
+#include <lain/app/application.h>
+#include <lain/core/uri.h>
+#include <lain/editor/recents.h>
+#include <lain/gui/dialogs.h>
+#include <lain/gui/gui.h>
+#include <lain/gui/keys.h>
+#include <lain/string/format.h>
+
+#include <optional>
+#include <string>
+#include <system_error>
+#include <vector>
+
+namespace rigplan
+{
+	using namespace lain;
+	namespace fs = std::filesystem;
+
+	bool MenuBarPane::request(AppContext& ctx, app::Application& app, DocumentRequest request)
+	{
+		std::optional<DocumentRequest> now = ctx.guard.request(std::move(request), ctx.document.dirty);
+		if (!now)
+			return false;
+		perform(ctx, app, *now);
+		return true;
+	}
+
+	void MenuBarPane::perform(AppContext& ctx, app::Application& app, const DocumentRequest& request)
+	{
+		switch (request.kind)
+		{
+			case DocumentRequest::Kind::New:
+				ctx.document = newDocument();
+				++ctx.opened;
+				ctx.selection = Selection::nothing();
+				ctx.frame = 0;
+				ctx.playback.pause();
+				ctx.openProblems.clear();
+				ctx.session.plans.last.clear(); // nothing to reopen at the next launch; the recents stay
+				ctx.rememberSession();
+				return;
+			case DocumentRequest::Kind::Open:
+				if (request.path.empty())
+				{
+					// "All files" beside the filter: pfd's macOS picker can grey out everything under a
+					// lone restrictive one.
+					if (const auto picked = gui::openFile("Open rig plan", {}, {{"Rig plan", {"*.json"}}, {"All files", {"*"}}}))
+						openPath(ctx, *picked);
+				}
+				else
+					openPath(ctx, request.path);
+				return;
+			case DocumentRequest::Kind::Quit:
+				app.exit();
+				return;
+		}
+	}
+
+	bool MenuBarPane::openPath(AppContext& ctx, const fs::path& path)
+	{
+		DocumentRead opened = openDocument(path);
+		if (!opened.document)
+		{
+			ctx.openProblems = std::move(opened.problems);
+			ctx.note(string::format("{} did not open, so the current plan is kept", path.filename().string()), true);
+			// A moved or deleted file leaves Open Recent, and is not retried at every launch. One that is
+			// there stays: it may want a newer build, not another path.
+			std::error_code ec;
+			if (!fs::exists(path, ec))
+			{
+				editor::forgetDocument(ctx.session.plans, path);
+				ctx.rememberSession();
+			}
+			return false;
+		}
+		ctx.document = std::move(*opened.document);
+		++ctx.opened;
+		ctx.selection = Selection::nothing();
+		ctx.frame = 0;
+		ctx.playback.pause();
+		ctx.openProblems.clear();
+		editor::noteDocument(ctx.session.plans, ctx.document.path);
+		ctx.rememberSession();
+		return true;
+	}
+
+	bool MenuBarPane::save(AppContext& ctx)
+	{
+		if (ctx.document.path.empty())
+			return saveAs(ctx);
+		const std::vector<std::string> problems = saveDocument(ctx.document, ctx.document.path);
+		if (!problems.empty())
+		{
+			gui::message("Save failed", problems.front(), true);
+			return false;
+		}
+		editor::noteDocument(ctx.session.plans, ctx.document.path);
+		ctx.rememberSession();
+		return true;
+	}
+
+	bool MenuBarPane::saveAs(AppContext& ctx)
+	{
+		const auto picked = gui::saveFile("Save rig plan", {}, {{"json", {"*.json"}}});
+		if (!picked)
+			return false; // cancelled: not saved, so a request waiting on it is cancelled too
+		fs::path file = *picked;
+		file.replace_extension("json"); // the codec is chosen by the extension
+		const std::vector<std::string> problems = saveDocument(ctx.document, file);
+		if (!problems.empty())
+		{
+			gui::message("Save failed", problems.front(), true);
+			return false;
+		}
+		editor::noteDocument(ctx.session.plans, ctx.document.path);
+		ctx.rememberSession();
+		return true;
+	}
+
+	void MenuBarPane::drawOpenRecent(AppContext& ctx, app::Application& app)
+	{
+		const std::vector<fs::path>& recent = ctx.session.plans.recent;
+		if (!gui::BeginMenu("Open Recent", !recent.empty()))
+			return;
+		// Acted on after the menu closes: opening prunes the list on failure, so the loop must not be
+		// walking it.
+		fs::path chosen;
+		for (std::size_t i = 0; i < recent.size(); ++i)
+		{
+			gui::PushID(int(i));
+			if (gui::MenuItem(recent[i].filename().string().c_str()))
+				chosen = recent[i];
+			if (gui::IsItemHovered())
+				gui::SetTooltip("%s", recent[i].string().c_str());
+			gui::PopID();
+		}
+		gui::Separator();
+		const bool clear = gui::MenuItem("Clear Menu");
+		gui::EndMenu();
+		if (clear)
+		{
+			ctx.session.plans.recent.clear();
+			ctx.rememberSession();
+		}
+		else if (!chosen.empty())
+			request(ctx, app, {DocumentRequest::Kind::Open, chosen});
+	}
+
+	// Whether a camera or light can be added for this selection: it names a mount, or a camera or light
+	// on one.
+	static bool onAMount(const Selection& selection)
+	{
+		return selection.kind == Selected::Mount || selection.kind == Selected::Camera || selection.kind == Selected::Light;
+	}
+
+	// Add > Prop...: a mesh picked, then a prop showing it.
+	static void pickProp(AppContext& ctx)
+	{
+		if (const auto picked = gui::openFile("Choose a prop's mesh", gui::lastDirectory(), fields::meshFilters()))
+		{
+			const EditResult result = addProp(ctx.document.plan, core::Uri::fromPath(*picked));
+			if (result.changed())
+			{
+				ctx.selection = *result.selection;
+				ctx.changed();
+			}
+		}
+	}
+
+	void MenuBarPane::draw(AppContext& ctx, app::Application& app, bool& resetLayout)
+	{
+		const bool mac = gui::GetIO().ConfigMacOSXBehaviors;
+		const std::string m = mac ? "Cmd+" : "Ctrl+";
+		lain::rigplan::RigPlan& plan = ctx.document.plan;
+
+		if (gui::BeginMainMenuBar())
+		{
+			if (gui::BeginMenu("File"))
+			{
+				if (gui::MenuItem("New", (m + "N").c_str()))
+					request(ctx, app, {DocumentRequest::Kind::New, {}});
+				if (gui::MenuItem("Open...", (m + "O").c_str()))
+					request(ctx, app, {DocumentRequest::Kind::Open, {}});
+				drawOpenRecent(ctx, app);
+				if (gui::MenuItem("Save", (m + "S").c_str()))
+					save(ctx);
+				if (gui::MenuItem("Save As...", (m + "Shift+S").c_str()))
+					saveAs(ctx);
+				gui::Separator();
+				if (gui::MenuItem("Quit", (m + "Q").c_str()))
+					request(ctx, app, {DocumentRequest::Kind::Quit, {}});
+				gui::EndMenu();
+			}
+			if (gui::BeginMenu("Edit"))
+			{
+				if (gui::MenuItem("Undo", (m + "Z").c_str(), false, ctx.document.history.canUndo() || ctx.document.pendingSnapshot))
+					undo(ctx.document);
+				if (gui::MenuItem("Redo", (m + "Shift+Z").c_str(), false, ctx.document.history.canRedo()))
+					redo(ctx.document);
+				gui::Separator();
+				// Greyed out where it would key nothing; K says why instead (a static prop, say). Its id is fixed,
+				// since its label follows the frame, which playback moves under a click.
+				if (gui::MenuItem(string::format("Key at Frame {}###key", ctx.frame).c_str(), "K", false, canKey(plan, ctx.selection)))
+					ctx.apply(setKey(plan, ctx.selection, ctx.frame));
+				gui::Separator();
+				const bool something = ctx.selection.kind != Selected::Nothing && ctx.selection.kind != Selected::Plan;
+				if (gui::MenuItem("Duplicate", (m + "D").c_str(), false, something))
+					ctx.apply(duplicate(plan, ctx.selection));
+				if (gui::MenuItem("Delete", "Delete", false, something))
+					ctx.apply(remove(plan, ctx.selection));
+				gui::EndMenu();
+			}
+			if (gui::BeginMenu("Add"))
+			{
+				if (gui::MenuItem("Pole"))
+					ctx.apply(addPole(plan));
+				if (gui::MenuItem("Fixed Point"))
+					ctx.apply(addFixedPoint(plan));
+				gui::Separator();
+				if (gui::MenuItem("Camera", nullptr, false, onAMount(ctx.selection)))
+					ctx.apply(addCamera(plan, ctx.selection));
+				if (gui::MenuItem("Light", nullptr, false, onAMount(ctx.selection)))
+					ctx.apply(addLight(plan, ctx.selection));
+				if (!onAMount(ctx.selection) && gui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+					gui::SetTooltip("Select a mount to put it on");
+				gui::Separator();
+				if (gui::MenuItem("Plane"))
+					ctx.apply(addPlane(plan));
+				if (gui::MenuItem("Box"))
+					ctx.apply(addBox(plan));
+				if (gui::MenuItem("Prop..."))
+					pickProp(ctx);
+				if (gui::MenuItem("Board"))
+					ctx.apply(addBoard(plan));
+				if (gui::MenuItem("Room", nullptr, false, !plan.room))
+					ctx.apply(addRoom(plan));
+				gui::EndMenu();
+			}
+			m_specifications.draw(ctx);
+			if (gui::BeginMenu("View"))
+			{
+				if (gui::MenuItem("Frame All", "Home"))
+					ctx.view.frameAll = true;
+				if (gui::MenuItem("Frame Selected", "F"))
+					ctx.view.frameSelected = true;
+				gui::Separator();
+				gui::MenuItem("Preview Light", nullptr, &ctx.view.previewLight);
+				if (gui::IsItemHovered())
+					gui::SetTooltip("An ambient light the Viewport alone adds, so a plan with no lights is not black");
+				gui::SetNextItemWidth(160.0f);
+				const double lowest = 0.05;
+				const double highest = 20.0;
+				gui::DragScalar("Frustum Depth", ImGuiDataType_Double, &ctx.view.frustumDepth, 0.01f, &lowest, &highest, "%.2f m",
+								ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic);
+				gui::Separator();
+				if (gui::MenuItem("Reset Layout"))
+					resetLayout = true;
+				gui::EndMenu();
+			}
+			gui::EndMainMenuBar();
+		}
+
+		// No shortcut and no key acts while a popup is open: a question, a menu or a list is answered or
+		// walked with keys, and what is behind it must not act on them too (gui::popupOpen).
+		if (gui::popupOpen())
+			return;
+
+		// Global shortcuts. ImGuiMod_Ctrl is Cmd on macOS (ConfigMacOSXBehaviors), and mods match exactly,
+		// so Ctrl+S and Ctrl+Shift+S do not collide.
+		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_N, ImGuiInputFlags_RouteGlobal))
+			request(ctx, app, {DocumentRequest::Kind::New, {}});
+		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_O, ImGuiInputFlags_RouteGlobal))
+			request(ctx, app, {DocumentRequest::Kind::Open, {}});
+		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_S, ImGuiInputFlags_RouteGlobal))
+			saveAs(ctx);
+		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S, ImGuiInputFlags_RouteGlobal))
+			save(ctx);
+		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Q, ImGuiInputFlags_RouteGlobal))
+			request(ctx, app, {DocumentRequest::Kind::Quit, {}});
+		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Z, ImGuiInputFlags_RouteGlobal))
+			undo(ctx.document);
+		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z, ImGuiInputFlags_RouteGlobal))
+			redo(ctx.document);
+		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_D, ImGuiInputFlags_RouteGlobal) && ctx.selection.kind != Selected::Plan)
+			ctx.apply(duplicate(plan, ctx.selection));
+		// K keys the selected mover at the frame shown, as the Edit menu does, and says why when it cannot.
+		if (gui::keysAreFree() && gui::IsKeyPressed(ImGuiKey_K, false) && !gui::GetIO().KeyCtrl)
+			ctx.apply(setKey(plan, ctx.selection, ctx.frame));
+		// F frames the selection and Home frames everything, as the View menu does; never while typing.
+		if (gui::keysAreFree() && gui::IsKeyPressed(ImGuiKey_F, false) && !gui::GetIO().KeyCtrl)
+			ctx.view.frameSelected = true;
+		if (gui::keysAreFree() && gui::IsKeyPressed(ImGuiKey_Home, false))
+			ctx.view.frameAll = true;
+		// Delete and Backspace delete what is selected, but never while a text field has them.
+		if (gui::keysAreFree() && (gui::IsKeyPressed(ImGuiKey_Delete, false) || gui::IsKeyPressed(ImGuiKey_Backspace, false)) &&
+			ctx.selection.kind != Selected::Plan)
+			ctx.apply(remove(plan, ctx.selection));
+	}
+
+	void MenuBarPane::drawModals(AppContext& ctx, app::Application& app)
+	{
+		if (ctx.guard.takePrompt())
+			gui::OpenPopup("Unsaved changes");
+		if (gui::BeginPopupModal("Unsaved changes", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+		{
+			const DocumentRequest* pending = ctx.guard.pending();
+			const DocumentRequest::Kind kind = pending ? pending->kind : DocumentRequest::Kind::New;
+			gui::TextUnformatted(kind == DocumentRequest::Kind::New	   ? "Start a new plan? Unsaved changes to this one will be lost."
+								 : kind == DocumentRequest::Kind::Open ? "Open another plan? Unsaved changes to this one will be lost."
+																	   : "Quit? Unsaved changes to this plan will be lost.");
+			const auto resolve = [&](editor::UnsavedAnswer answer)
+			{
+				// A Save that is cancelled (an untitled plan's panel closed) or fails cancels the request:
+				// work the user just asked to keep is never thrown away.
+				const std::optional<DocumentRequest> now = ctx.guard.answer(answer, [&]
+																			{ return save(ctx); });
+				gui::CloseCurrentPopup();
+				if (now)
+					perform(ctx, app, *now); // last: an Open... asks with a native dialog
+			};
+			if (gui::Button("Save"))
+				resolve(editor::UnsavedAnswer::Save);
+			gui::SameLine();
+			if (gui::Button("Discard"))
+				resolve(editor::UnsavedAnswer::Discard);
+			gui::SameLine();
+			// Escape is Cancel, as in the Specifications menu's questions: ImGui closes no modal on Escape
+			// itself, so without this it would do nothing.
+			if (gui::Button("Cancel") || gui::IsKeyPressed(ImGuiKey_Escape, false))
+				resolve(editor::UnsavedAnswer::Cancel);
+			gui::EndPopup();
+		}
+		m_specifications.drawModals(ctx);
+	}
+} // namespace rigplan

@@ -34,3 +34,9 @@ else()
 endif()
 
 add_library(stb::image ALIAS stb_image)
+
+# stb's notice for --licenses (lainNotices.cmake): its LICENSE offers MIT or public domain, and
+# names both.
+include(lainNotices)
+lain_register_notice(stb NAME "stb" VERSION "${STB_SHA}" SPDX "MIT OR Unlicense"
+	SOURCE_DIR "${stb_SOURCE_DIR}" FILES LICENSE)

@@ -1,10 +1,77 @@
-# flowview unit tests (Catch2). Driver-free — no window, no device. Compiles the production
-# undo.cpp / groupnav.cpp / canvasids.cpp / validation.cpp / runner.cpp / runpolicy.cpp directly (not
-# copies), so the tests exercise the real UndoStack, the real group-navigation model, the real imnodes id
-# mapping, the real Issues-panel rules, the real coordinator thread and the real run triggers.
+# flowview unit tests (Catch2). Driver-free — no window, no device — but for test_textures.cpp's cases,
+# which draw through a real gui::Context and are opt-in behind LAIN_GUI_SMOKE=1, as lain::gui's windowed
+# cases are. Compiles the production session.cpp / groupnav.cpp / canvasids.cpp / validation.cpp /
+# runner.cpp / runpolicy.cpp directly (not copies), so the tests exercise the real session file shape,
+# the real group-navigation model, the real imnodes id mapping, the real Issues-panel rules, the real
+# coordinator thread and the real run triggers. And the app and its panes (flowviewapp.cpp, the main
+# window, panes/), so test_panes.cpp draws the real menu bar and canvas in a headless ImGui frame, as
+# rigplan's tests draw its panes. (The undo stack moved to lain::editor, and its tests with it.)
+
+# The production sources the tests run, compiled ONCE into an object library both test executables
+# link (test-flowview below, test-flowview-capture further down), so they test one flowview and cannot
+# drift into two. An OBJECT library rather than a static one: every object is linked whether or not a
+# test names it, exactly as compiling the files into each executable did. Its link libraries are what
+# those sources need, PUBLIC so each test inherits them. It now holds every source of flowview's but
+# main.cpp, which the app still compiles a second time; linking the app to it, as rigplan links
+# rigplan-tested, would need it defined outside LAIN_BUILD_TESTING.
+add_library(flowview-tested OBJECT
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/session.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/runner.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/runpolicy.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/freshness.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/groupnav.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/validation.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/canvasids.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/graphio.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/framepattern.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/runmode.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/scene.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/dump.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/clibinders.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/camerafiles.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/valueviews.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/imagecanvas.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/imageview.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/sequenceview.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/previewcache.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/flowviewapp.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/mainwindow.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/appcontext.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/groupedit.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/parameditors.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/canvasstyle.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/panes/menubar.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/panes/issuespane.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/panes/previewpane.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/panes/interfacepane.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/panes/inspectorpane.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/panes/graphpane.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/panes/valuesave.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/panes/canvasstate.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/panes/statusbar.cpp"
+)
+target_compile_features(flowview-tested PUBLIC cxx_std_17)
+target_include_directories(flowview-tested PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+# lain::flow::serialize: groupnav's layout tree is an EditorTree (the serialize layer's type).
+# lain::image + lain::io::data::codecs: graphio names image::Image / ColorRGBf and reads/writes json.
+# lain::gui + Vulkan::Loader: the value views, the preview cache and the panes draw with ImGui, so they
+# link it (the same recipe libs/gui's own tests use; lain::gui brings lain::app and archimedes, which the
+# app's own sources need). Driver-free unless a windowed case is asked for — otherwise the panes draw in
+# a headless ImGui frame and the views' POSTER half is what the tests call, with no gui::Context ever
+# constructed; graphio touches the file system, but no device and no window.
+target_link_libraries(flowview-tested
+	PUBLIC lain::data lain::flow lain::flow::serialize lain::flow-example lain::image
+		   lain::io lain::io::sequence lain::media::serialize lain::io::image lain::io::data::codecs lain::io::image::codecs
+		   lain::io::video::codecs
+		   lain::camera::flow lain::camera::backends lain::camera::serialize
+		   lain::log lain::string
+		   lain::editor # session.cpp's recents and file, and the undo stack AppContext holds
+		   lain::gui Vulkan::Loader
+	PRIVATE lain::warnings
+)
 
 add_executable(test-flowview
-	test_undo.cpp
+	test_session.cpp
 	test_groupnav.cpp
 	test_canvasids.cpp
 	test_clibinders.cpp
@@ -26,30 +93,14 @@ add_executable(test-flowview
 	test_runmode.cpp
 	test_examples.cpp
 	test_cameravertical.cpp
+	test_textures.cpp
+	test_panes.cpp
 	"${CMAKE_CURRENT_SOURCE_DIR}/../examples/src/examples.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../examples/src/camerafootage.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/../src/undo.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/../src/runner.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/../src/runpolicy.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/../src/freshness.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/../src/groupnav.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/../src/validation.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/../src/canvasids.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/../src/graphio.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/../src/framepattern.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/../src/runmode.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/../src/scene.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/../src/dump.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/../src/clibinders.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/../src/camerafiles.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/../src/valueviews.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/../src/imagecanvas.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/../src/imageview.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/../src/sequenceview.cpp"
 )
 
 target_compile_features(test-flowview PRIVATE cxx_std_17)
-target_include_directories(test-flowview PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src" "${CMAKE_CURRENT_SOURCE_DIR}/../examples/src")
+target_include_directories(test-flowview PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../examples/src")
 # The committed examples, which test_examples loads, runs and compares with what the builder writes.
 target_compile_definitions(test-flowview PRIVATE LAIN_FLOWVIEW_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../examples")
 # Whether this build has a camera backend, so should OFFER the camera kinds: the catalog test holds the
@@ -67,21 +118,13 @@ if(TARGET lain::camera::ceres)
 else()
 	target_compile_definitions(test-flowview PRIVATE LAIN_EXPECT_CAMERA_REFINER=0)
 endif()
-# lain::flow::serialize: groupnav's layout tree is an EditorTree (the serialize layer's type).
-# lain::image + lain::io::data::codecs: graphio names image::Image / ColorRGBf and reads/writes json.
-# lain::gui + Vulkan::Loader: the value views draw with ImGui, so they link it (the same recipe
-# libs/gui's own tests use). Still driver-free — the POSTER half is what the tests call, and no
-# gui::Context is ever constructed; graphio touches the file system, but no device and no window.
 # lain::camera::testing: the camera vertical's footage and truths, the camera tests' own.
-target_link_libraries(test-flowview PRIVATE
-	lain::data lain::flow lain::flow::serialize lain::flow-example lain::image
-	lain::io lain::io::sequence lain::media::serialize lain::io::image lain::io::data::codecs lain::io::image::codecs
-	lain::io::video::codecs
-	lain::camera::flow lain::camera::backends lain::camera::serialize lain::camera::testing
-	lain::log lain::string lain::testing
-	lain::gui Vulkan::Loader
-	lain::warnings Catch2::Catch2WithMain
-)
+target_link_libraries(test-flowview PRIVATE flowview-tested lain::camera::testing lain::testing lain::warnings Catch2::Catch2WithMain)
+# The windowed gate reads an env var via std::getenv, which MSVC flags C4996 under /WX.
+target_compile_definitions(test-flowview PRIVATE $<$<CXX_COMPILER_ID:MSVC>:_CRT_SECURE_NO_WARNINGS>)
+# The windowed cases need a driver, and on macOS the loader finds none unless the vendored MoltenVK ICD
+# sits beside the executable. No-op elsewhere.
+acm_stage_vulkan_runtime(test-flowview)
 
 # catch_discover_tests RUNS this executable at build time to enumerate its cases, so on Windows a
 # missing FFmpeg DLL fails the BUILD rather than the test — stage them beside it.
@@ -93,3 +136,38 @@ if(TARGET lain::camera::opencv)
 endif()
 
 catch_discover_tests(test-flowview TEST_PREFIX "(flowview) " ${LAIN_TEST_DL_PATHS})
+
+# The synthetic-capture vertical (WORK.md M15 slice 7): the committed example rig plan rendered with
+# lain::rigplan::capture on every kind of device the machine offers, then registered and scored through
+# flowview's committed register.json and compare-rigs.json, as a user runs them. It renders, so unlike
+# test-flowview it needs a device; and it draws M9's board, so it is built only where a board renderer
+# is. The flowview it runs is test-flowview's (flowview-tested above).
+if(TARGET lain::camera::opencv)
+	add_executable(test-flowview-capture
+		test_capturevertical.cpp
+	)
+	target_compile_features(test-flowview-capture PRIVATE cxx_std_17)
+	target_compile_definitions(test-flowview-capture PRIVATE
+		LAIN_FLOWVIEW_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../examples"
+	)
+	target_link_libraries(test-flowview-capture PRIVATE
+		flowview-tested
+		lain::rigplan::testing # the committed rig plan, rendered whole
+		lain::render::testing # the devices a [gpu] case draws on
+		lain::io::mesh::codecs							 # the meshes a rig plan names, as rigplan render registers them
+		lain::testing lain::warnings Catch2::Catch2WithMain
+	)
+
+	acm_stage_vulkan_runtime(test-flowview-capture)
+	# Where the CPU driver is staged beside it, a missing CPU device fails the case rather than skipping
+	# it (gpu.h), so a build whose staging broke cannot pass by drawing nothing.
+	if(ACM_SWIFTSHADER_ICD)
+		target_compile_definitions(test-flowview-capture PRIVATE LAIN_EXPECT_CPU_DEVICE)
+	endif()
+	if(TARGET lain::io::video::ffmpeg)
+		lain_ffmpeg_stage_runtime(test-flowview-capture)
+	endif()
+	lain_opencv_stage_runtime(test-flowview-capture)
+
+	catch_discover_tests(test-flowview-capture TEST_PREFIX "(flowview::capture) " ${LAIN_TEST_DL_PATHS})
+endif()

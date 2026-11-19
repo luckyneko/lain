@@ -12,7 +12,6 @@ add_executable(flowview
 	src/groupedit.cpp
 	src/validation.cpp
 	src/session.cpp
-	src/undo.cpp
 	src/previewcache.cpp
 	src/runner.cpp
 	src/runpolicy.cpp
@@ -48,6 +47,7 @@ target_link_libraries(flowview
 			lain::flow::serialize lain::io::data::codecs # graph <-> data::Value <-> json
 			lain::camera::flow lain::camera::backends # camera node kinds, and the backends that run them
 			lain::camera::serialize # camera models as files: --imported model.json, and a model output
+			lain::editor # undo, recents, the session file, the unsaved-changes guard
 			lain::string lain::log archimedes Vulkan::Loader lain::warnings
 )
 

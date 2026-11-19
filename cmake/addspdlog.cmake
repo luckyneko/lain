@@ -48,3 +48,9 @@ if(spdlog_SOURCE_DIR AND TARGET spdlog)
 		target_compile_options(spdlog PRIVATE -fvisibility=hidden -fvisibility-inlines-hidden)
 	endif()
 endif()
+
+# spdlog's notice for --licenses (lainNotices.cmake).
+include(lainNotices)
+lain_register_notice(spdlog NAME "spdlog" VERSION "${SPDLOG_VER}" SPDX "MIT"
+	SOURCE_DIR "${spdlog_SOURCE_DIR}" FILES LICENSE
+	PACKAGE_DIR "${spdlog_DIR}" PACKAGE_VERSION "${spdlog_VERSION}")

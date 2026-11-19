@@ -7,3 +7,6 @@ apps/flowview/examples/*.json text eol=lf
 # The board registration golden (libs/camera/test/test_registrationgolden.cpp) is compared byte for
 # byte too, for the same reason.
 libs/camera/test/golden/*.txt text eol=lf
+
+# The example rig plans likewise (apps/rigplan/test/test_examples.cpp).
+apps/rigplan/examples/*.json text eol=lf

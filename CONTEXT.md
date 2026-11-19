@@ -353,8 +353,12 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   residuals, consistency, and stability. Board and targetless diagnostics remain method-specific;
   comparing methods requires the same independent validation evidence. A fitness profile counts in
   one evidence unit, capture groups or accepted tracks, and its notes and the report's summary say
-  which. _Avoid_: board RMS as overall registration quality, targetless inlier ratio as overall
-  registration quality.
+  which. It judges the rig **against the camera models it was given, never the models**: a board pose
+  or a landmark solved through a wrong model absorbs the error, so a rig registered with uncalibrated
+  models can be Ready with a calibrated rig's held-out residual. A comparison against something
+  independent (a synthetic capture's truth, a calibration's own evidence) is what sees a wrong model.
+  _Avoid_: board RMS as overall registration quality, targetless inlier ratio as overall
+  registration quality, Ready as "the models are right".
 - **Held-out group** — a capture group kept out of a registration's initialisation and refinement so
   it can validate the result. Each member in turn is predicted from the others: the board's pose is
   solved from the other members with every camera held at its registered transform, lain's
@@ -743,6 +747,28 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   and an independently estimated or validated model. Manufacturer parameters are not ground truth;
   readiness is determined from held-out geometric evidence and stability rather than agreement with
   the factory values alone. _Avoid_: factory ground truth, manufacturer accuracy test.
+  *Measured by model comparison*: the real-camera fixture's manufacturer comparison reports the
+  estimate's rays through the imported model (M15 slice 6, 2026-10-26).
+- **Model comparison** — how far apart two camera models of one image geometry are, measured as
+  where each sends the same rays: the mean and worst pixel distance over the image. It knows nothing
+  of where either model came from, so it scores a calibration against a synthetic capture's ground
+  truth and against a manufacturer's model alike. The rays are the EXPECTED model's, at every 16th
+  pixel centre and the last row and column (so the corners, where distortion is strongest), each
+  projected through the found model; a ray the found model cannot project makes the comparison
+  infinite. The focal lengths' relative difference is reported beside it, not as part of it.
+  `camera::compareModels` (`lain/camera/comparison.h`), and the `compareModels` node. _Avoid_:
+  coefficient difference (two coefficient sets can differ while projecting alike, as a rational
+  model's do), model error.
+- **Rig comparison** — how far a registered rig is from an expected one, relative to the same
+  reference camera: per camera, the angle between their rotations and the distance between their
+  centres after the found rig's centres are scaled onto the expected one's by least squares. A
+  scale-only fit is the whole alignment, since both pin the reference to the identity; a similarity
+  fit could hide the reference camera's own error. An expected rig of another reference is derived
+  again for the found rig's, never the found one rebased. Cameras are paired by identity; one only
+  one rig holds is named and the rest compared, so a survey of some of a rig's cameras still scores
+  it. It scores against a synthetic capture's ground truth or a survey alike.
+  `camera::compareRigs` (`lain/camera/comparison.h`), and the `compareRigs` node, the first that
+  consumes a registered rig. _Avoid_: rig error, alignment error.
 - **Validation dataset** — observations paired with a camera model for offline validation and kept
   independent of the observations used to estimate that model. _Avoid_: calibration dataset when the
   same evidence was used for fitting.
@@ -750,6 +776,233 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   known target, known camera baseline, or scene control points. It is reported separately from
   calibration fitness because valid camera intrinsics alone do not resolve monocular scene scale.
   _Avoid_: metric calibration, guaranteed metric measurement.
+
+## Rig design — rig plans and the synthetic captures they produce
+
+*(Designed 2026-10-21 to 10-22 as Milestone 15, being built on `feature/M15`; ADR-0028 and ADR-0029.
+A rig is planned as it would be installed, and a synthetic capture is what that rig plan would have
+recorded: camera geometry's methods run on it unchanged, and its ground truth scores them.)*
+
+- **Rig plan** — the document a rig is designed in: the room, props and movers, the mounts with
+  their placed cameras and lights, the specifications they use, the capture timeline, the seed and
+  the scales. It is self-contained, holding its own copy of every specification it uses, so the same
+  rig plan and seed always render the same capture. It is nominal: what was meant, before any
+  realisation. _Avoid_: plan alone (an execution plan is the scheduler's), layout (a canvas's node
+  positions), scene, rig (a registered rig is a result).
+- **Rig plan document** — a rig plan written as a versioned document, in the camera documents'
+  conventions: a datasheet length is a number with its unit in its key (`focalLengthMm`,
+  `pixelPitchUm`), an angle has `Degrees` in its key, a position is `{x, y, z}` in metres, an identity
+  a uuid string, and a distortion the camera-model document's `{type, value}`. A read is strict about
+  its SHAPE (an unknown or missing key, an unknown name, an identity that is not a uuid is a named
+  problem) and not about its CONTENT: a rig plan with a mistake in it still opens, so it can be fixed,
+  and only realising it refuses. Frozen at version 1 since the first example rig plan was committed
+  (M15 slice 7): a change to its shape is a new version with a migrator. _Avoid_: plan file, scene file.
+- **Specification catalogue** — a document of camera, sensor, lens and light specifications kept for
+  reuse. A rig plan copies a specification in from one, and can save one back out; it never links to
+  one, so a catalogue edit changes no rig plan behind its back. A specification is known by its name
+  within its kind, compared exactly, and two of one name are one specification when their documents
+  are equal, so the one already there stands. A camera specification brings its sensor and lens with
+  it. Copied in, one whose name the plan already uses for a different specification arrives under a
+  numbered name, with the references to it following. Saved out over a different one, it asks:
+  replace the catalogue's, keep both (the one saved numbered), or cancel. A catalogue is added to,
+  never replaced: a file that is not a catalogue is never written over, and a new catalogue is never
+  made over a file that is there. _Avoid_: library, linked spec.
+- **Synthetic capture** — footage rendered from a rig plan, in the same shape as footage of a real
+  rig, together with its ground truth: the camera models and poses the footage was actually rendered
+  with. Judging a rig plan means running calibration or registration on its synthetic capture and
+  scoring the result against that truth; the design tool itself does no reconstruction. On disk it is
+  a folder: `rig/<camera>/frame.<n>.<ext>` (the footage, bound as M9 binds a rig's), `nominal/` and
+  `truth/models/` (a camera-model document per camera, so either binds as the rig's models),
+  `truth/poses.json`, `truth/rig.json` and `truth/board.json`, and `capture.json`, the manifest. The
+  manifest is written last, only when every frame was, so **a folder without `capture.json` is an
+  incomplete capture** and nothing reads it as footage. The manifest embeds the rig plan as rendered,
+  its seed and scales the ones used, so that plan alone reproduces the capture. _Avoid_: synthetic
+  dataset (it is a capture, consumed as one), simulation, test data when the ground truth is meant.
+- **Ground truth** — what a synthetic capture was actually rendered with: every camera's realised
+  camera model and realised plan-frame pose, and per frame the board's realised pose and each
+  corner's true pixel in every camera that sees it. "Sees" means **in view**: the corner projects
+  inside the image through the realised model, and the camera stands on the board's printed side.
+  Occlusion by a pole or a prop is not tested, so a consumer matching detections by corner id finds
+  no detection of a hidden corner rather than a wrong one. A rig document relative to one reference
+  camera (the rig plan's reference, its first camera unless it names one) is derived from the poses;
+  scoring a registration that chose another reference derives the truth again for that reference
+  rather than rebasing the result. _Avoid_: expected result, reference data, nominal model (that is
+  what the datasheet says, written beside the truth).
+- **Nominal model** — the camera model a camera specification derives, as a datasheet would state
+  it, written with every synthetic capture beside the realised ones. Registering with nominal models
+  is registering an uncalibrated rig; registering with the realised ones is registering a perfectly
+  calibrated one. It is the capture record's imported manufacturer model. _Avoid_: default model,
+  factory calibration.
+- **Viewport** — the designer's own view of a rig plan, through a pinhole the user steers. It is a
+  preview: nothing it draws is ever written into a synthetic capture, and it never applies a lens's
+  distortion. It draws the rig plan as planned: nominal poses, and each camera's frustum through its
+  nominal model, so a fisheye's frustum shows the fisheye's field of view. A room is drawn as a
+  **dollhouse**: each of its surfaces the eye is outside of is left out, so the rig inside is seen from
+  any side. What a build of the plan would hold is seen by looking through a camera instead. _Avoid_:
+  camera view, preview render when a capture render is meant.
+- **Capture render** — the image one placed camera records, rendered through its realised camera
+  model, distortion included; the only source of a synthetic capture's pixels. It shares the
+  viewport's scene and shading, and differs only in whose eye it is and which projection it uses.
+  Looking through a camera while designing is a live capture render at reduced resolution, through
+  its nominal or its realised model, so what it shows is what the capture will hold, shown as its
+  sensor records it but without the noise. _Avoid_: viewport render, camera preview.
+- **Intermediate image** — what a capture render rasterises before it remaps: pinhole **faces** at
+  the camera's optical centre, each cut into **tiles** at most 4096 a side. It is either the front
+  face alone or the cube's faces (front and four sides, never the back, since every camera model sees
+  only Z > 0), whichever takes fewer texels. Either way it is fine enough that every step of a camera
+  pixel spans at least m of its texels. It is shaded like the viewport and never written anywhere.
+  _Avoid_: cubemap (a cube texture is what archimedes lacks, and a narrow lens uses one face), canvas.
+- **Ray table** — what lain's own `unproject` gives a capture render, built once per camera model: the
+  ray through every pixel corner. A sub-sample's ray is its pixel's four corner rays blended, which is
+  the one approximation of the camera model a capture makes, and the table measures it (the
+  interpolation error, in pixels) and is refused past a tolerance. _Avoid_: remap table, lookup table,
+  distortion map (it maps pixels to rays, not pixels to pixels).
+- **Render scene** — what `lain::render` draws: meshes placed in a world, the materials their surfaces
+  show and the lights that light them, in metres, with no axis convention of its own (a view states
+  its camera in the same axes). It knows nothing of rig plans: a rig plan's realisation at one frame
+  is turned into one, and the viewport and every capture render of that frame draw the same one.
+  _Avoid_: scene graph (nothing in it is a hierarchy), world when the drawable content is meant.
+- **Visibility map** — a count over a plane of the rig plan (the floor, or a chosen height), of how
+  many cameras see each cell unoccluded. Registration needs shared views, so a cell one camera sees
+  is still a blind spot for it. It is geometry alone, of what never moves (the room, planes, boxes,
+  poles, and props with neither a path nor a clip), read from how far each camera sees along its rays
+  and lain's own projection: it describes the installation, not one frame. A cell is seen when the
+  projection puts it inside the camera's image and the distance along its ray reaches it. It counts
+  from the rig plan's nominal poses, as the viewport draws them. Predicting which camera pairs would
+  register is left to registering a capture. _Avoid_: coverage (calibration's
+  coverage is how widely features spread over one image), heatmap when the count is meant.
+- **Sensor specification** — the body half of a camera: resolution, pixel pitch, its physical body,
+  and where its optical centre sits relative to the mount, with the tolerances on sensor placement,
+  and its sensor model. Pixels are square until a sensor needs otherwise. _Avoid_: camera body when
+  the imager's geometry is meant.
+- **Sensor model** — how a sensor turns the scene light a capture render produced into the image it
+  records: a fixed gain to its full scale, read and shot noise, then quantisation and encoding. In
+  a datasheet's terms: the gain turns light into a charge in electrons against the full well; shot
+  noise (the square root of the charge) and read noise add in quadrature; a linear ADC quantises the
+  charge at its depth and saturates at the full well; and each ADC code is encoded through the output
+  curve (sRGB, Rec.709 or linear) at the output depth (8 or 16 bits), in grey or colour. It runs in
+  lain's own code after the light is rendered, so the same light records the same codes on every
+  machine: every step is exact arithmetic, and the curve is a fixed table. The light itself differs
+  by device; the sensor model does not. The gain is fixed per sensor and never metered from the
+  scene: auto-exposure, auto-white-balance and every other automatic adjustment are refused, since a
+  detector's evidence must not change with what happens to be in view. _Avoid_: camera response, ISP,
+  post-processing.
+- **Noise scale** — the 0-to-1 number a realisation multiplies a sensor model's noise by, beside the
+  deviation scales: 0 records the rendered light exactly. Each pixel's noise is drawn from the rig
+  plan's seed, the camera, the frame and the pixel, by a counter rather than a running generator, so
+  a pixel's noise is the same on every machine and however many threads record the frame. _Avoid_:
+  deviation scale (a deviation is fixed for the life of a unit; noise is new every frame).
+- **Lens specification** — the optical half of a camera: a fixed focal length, a distortion model
+  and its coefficients, and their tolerances. Its distortion is stated in normalised image
+  coordinates, so one lens means the same on any sensor. Its distortion tolerance is one percentage
+  on the distortion's strength, scaling every coefficient together, so a unit keeps the lens's shape
+  and differs in how much; a lens with no nominal distortion has none to vary. _Avoid_: optics, lens
+  model.
+- **Camera specification** — one sensor specification paired with one lens specification. Its
+  nominal camera model is derived from the pair (focal length over pixel pitch, the principal point
+  at the sensor's centre), never typed in, so each tolerance stays in the unit of the part that
+  causes it. Placed cameras that share one share every edit to it; a camera that must differ is
+  another specification, never an override. Single-sensor for now: a device with several imagers (a
+  D455) is several specifications in one body, and waits for a camera-authoring view. _Avoid_:
+  camera template (a template is a linked group's document), camera model (that is one set of
+  intrinsics, not a nominal plus tolerances), camera type.
+- **Placed camera** — a camera specification put into a rig plan: its own camera identity, the mount
+  it is fixed to, and its pose on that mount. _Avoid_: camera instance, camera node.
+- **Tolerance** — the symmetric bound a specification states for how far one parameter of a real
+  unit may stray from its nominal value, in that parameter's own unit (a percentage of focal length,
+  micrometres of decentring). A realised value lies within it. _Avoid_: noise (a tolerance is a
+  fixed error of one unit, not a per-frame fluctuation), error range, Measurement (that bounds an
+  observation's true value, not a part's variation).
+- **Realisation** — one draw of every tolerance in a rig plan, standing for one physical build of
+  it: each placed camera's realised camera model, which its capture renders use and its ground truth
+  records. The rig plan itself stays nominal. Each parameter's draw is a fixed unit deviation chosen
+  by the rig plan's seed, the stable identity of what it belongs to (a placed camera's, a mount's, a
+  placed light's) and the parameter's key, so an edit to one camera never re-rolls another, a rename
+  re-rolls nothing, and two captures of one rig plan and seed agree. A duplicate is a new unit, with
+  a draw of its own. A draw that does not make a valid camera model is refused with the camera
+  named, never drawn again. _Avoid_: instance, sample, perturbed rig plan.
+- **Deviation scale** — a number from 0 to 1 that a realisation multiplies a category's drawn
+  deviations by: 0 is the nominal rig plan exactly, 1 is every parameter at its drawn place within
+  its full tolerance. There is one per category, **intrinsic** (the camera specifications') and
+  **installation** (the mounts' and placements'), locked together unless a user separates them,
+  since intrinsic mismatch stresses calibration and registration where installation error mostly
+  changes coverage. A seed fixes each deviation's direction, so sweeping a scale degrades the same
+  build steadily rather than drawing a new one. _Avoid_: noise level, error amount.
+- **Plan frame** — the world frame every rig plan is stored in: right-handed `XRightYForwardZUp`, in
+  metres, with the floor at Z = 0, so a floor plan is the XY plane and a height is a Z value. It is
+  one named convention, never metadata on a rig plan; if a user ever chooses another up axis, that
+  changes how a rig plan is shown and edited, not how it is stored. An asset's own up axis is
+  converted to it once, at import. _Avoid_: world frame unqualified (registration's frame is its
+  reference camera's), scene frame.
+- **Mount** — a rigid fixture with a pose in the plan frame, carrying any number of placed cameras
+  and placed lights, whose poses are relative to it. A **pole** stands on the floor, with a height
+  and a diameter, and is real geometry: it is in every capture render and occludes what is behind
+  it. So a camera's optical centre, or a light, may not lie inside its own pole, as far as its
+  tolerances could move it; a rig plan placing one there is refused. A **fixed point** is a bare
+  frame with no geometry, for a camera fixed to a wall or ceiling.
+  _Avoid_: rig (a rig is the cameras), stand, bracket.
+- **Aim** — how a placed camera or light is turned on its mount, in degrees and in the mount's frame.
+  At rest it looks along the mount's +Y with its image's down along -Z; then it rolls about its
+  forward axis (clockwise as seen from behind), tilts about the mount's +X (positive looks up), and
+  pans about the mount's +Z (positive turns left), in that order, so a pan never changes what tilt
+  and roll mean. _Avoid_: orientation (it is three named turns, not a quaternion), direction.
+- **Installation tolerance** — a tolerance on where a mount stands or how a camera is aimed on it:
+  millimetres of position, degrees of pan, tilt and roll. A realisation draws them as it draws
+  intrinsic ones, so a capture's ground truth is the realised pose of every camera, never the
+  planned one. _Avoid_: placement noise, extrinsic error.
+- **Capture timeline** — the frames a synthetic capture records, at one frame rate, every camera
+  firing at the same instant (a genlocked rig, so by-position grouping is correct). Each frame is an
+  instant: a global shutter with no exposure time, so nothing is blurred and nothing is skewed by a
+  rolling shutter, and the capture says so. The rig plan itself does not move. _Avoid_: animation
+  (that is a mover's), sequence when the frames of a capture are meant.
+- **Current frame** — the frame of the capture timeline an editor shows: the viewport draws the
+  movers there, looking through a camera shows that frame, and a key made with the Key action is made
+  there, as is the key a mover dragged in the viewport is given when the frame has none. While a key
+  is selected it is that key's frame; otherwise it is the editor's own, kept within the timeline and
+  never saved. _Avoid_: time, playhead when the frame is meant.
+- **Light specification** — what a datasheet states about one kind of light, as a camera
+  specification does for a camera: its kind (point or spot), its beam, its output and its colour. A
+  **placed light** is one on a mount, posed on it as a camera is. The first cut states little more
+  than a kind, an intensity and a colour; brightness in physical units, colour temperature, area
+  lights and shadows are later, and each lands as a field of the same two things rather than as a
+  new one. _Avoid_: lamp, light source when the product is meant.
+- **Room** — a parametric axis-aligned box in the plan frame, its floor, ceiling and four walls each
+  switchable and each with its own material; resizing it moves its walls. Planes and boxes stand
+  beside it for partitions and furniture, and anything more complex is a prop. The walls are named
+  as a floor plan is drawn: north is +Y, east is +X. _Avoid_: environment map, level, set.
+- **Prop** — a mesh asset placed in a rig plan, in its file's own materials, static unless it
+  follows a path, when it is a prop mover. Its mesh keeps its file's own frame and units, and the
+  prop states its up axis and how many metres a unit is, so the conversion to the plan frame happens
+  once; it states too whether its mesh is a clip, rather than having that guessed from the file's
+  name. _Avoid_: model (a camera model is something else), object, asset when the placement is
+  meant.
+- **Material** — how a surface looks, from a closed set: a flat **colour**, an **image texture**
+  with a stated physical size per tile, or a seeded **procedural texture** with a scale in metres,
+  rich in the features targetless methods need. A prop's mesh keeps its own MTL materials, drawn as
+  the file states them: its diffuse colour times its picture, and its specular. A procedural
+  texture is made into an image once per surface it covers, in lain's own code, so it has one
+  implementation however it is drawn; its seed is mixed with that surface's identity, so two
+  surfaces of one material never show the same pattern, which a targetless method would match as
+  one. Any of them may add a specular sheen, as MTL states one, and is matte otherwise. _Avoid_:
+  shader, texture when the whole surface response is meant.
+- **Mover** — something in a rig plan that changes from one frame to the next: a **board mover**
+  shows a board specification through the board renderer, so the board in a capture is the pattern a
+  detector expects; a **prop mover** shows a prop, for moving content. A mover follows a **path**:
+  poses keyed at frames of the capture timeline (never at times, so a change of frame rate moves no
+  key off its frame), interpolated between keys linearly in position and by slerp in rotation, and
+  held before the first key and after the last. A key aims its mover as a camera is aimed, so a
+  camera with the same aim sees it face on and upright: a board's key places the centre of its
+  squares, and a prop's stands it upright at rest, a pan being its yaw. A board is a printed sheet
+  with a plain back, since the renderer lights both faces of a surface and a board seen from behind
+  must not show its pattern mirrored. Cameras and mounts never move. A rig plan with a board mover
+  renders a capture only where a board renderer exists, and is refused elsewhere rather than drawn
+  without its board, whose ground truth would then describe corners the pixels lack. _Avoid_:
+  animated object, actor, dynamic object.
+- **Mesh clip** — a finite run of meshes at a frame rate, which a prop mover may play on a loop in
+  place while its path moves it; a static mesh is a clip of one. A capture frame shows the clip
+  frame nearest its time, never a blend, since the meshes of a clip need not share a topology. The
+  first source is an OBJ sequence named by a frame pattern; a skinned animation is a later one.
+  _Avoid_: animation (a path is animation too), mesh sequence, vertex cache.
 
 ## Graph boundary & host binding — the pipeline I/O model
 

@@ -6,6 +6,7 @@
 #include <archimedes/archimedes.h>
 
 #include <cstdint>
+#include <utility>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -32,12 +33,23 @@ namespace lain::app
 	Application& Window::app() const { return *m->app; }
 
 	const std::string& Window::title() const { return m->spec.title; }
+	void Window::setTitle(std::string title)
+	{
+		m->spec.title = std::move(title);
+		if (m->window)
+			glfwSetWindowTitle(m->window, m->spec.title.c_str());
+	}
 	acm::Extent2D Window::extent() const { return m->swapChain.extent(); }
 	bool Window::shouldClose() const { return m->window && glfwWindowShouldClose(m->window); }
 	void Window::requestClose()
 	{
 		if (m->window)
 			glfwSetWindowShouldClose(m->window, GLFW_TRUE);
+	}
+	void Window::cancelClose()
+	{
+		if (m->window)
+			glfwSetWindowShouldClose(m->window, GLFW_FALSE);
 	}
 
 	acm::Renderer Window::renderer() const { return m->renderer; }

@@ -2,7 +2,7 @@
 
 Graph documents to open in flowview (**File ▸ Open**), to run headless, and for the test suite.
 Every example opens and shows a result on its own, except `sequence-render`, which is driven by a
-frame position, and the camera examples, which calibrate or register footage you bind. Media paths are stored relative to this folder, so it can be opened from any clone
+frame position, and the camera examples, which calibrate, register or compare what you bind. Media paths are stored relative to this folder, so it can be opened from any clone
 or copied elsewhere whole.
 
 ```sh
@@ -41,6 +41,8 @@ The root flags (`--size`, `--threads`, `-v`) go before `run`.
 | `register` | a rig registered by a board: its report and its rig document (needs a camera build). Bind `--footage` (a folder of per-camera folders or videos) and `--models` (a folder of camera-model documents named alike) |
 | `register-targetless` | a rig registered from the scene its cameras share, no board (needs a camera build). Bind `--footage` and `--models` |
 | `calibrate-and-register` | each camera of a rig calibrated through a map, then the rig registered with those models (needs a camera build). Bind `--footage` |
+| `compare-rigs` | a registered rig scored against an expected one, such as a synthetic capture's `truth/rig.json`: per camera, its turn and its centre's distance after a scale-only fit, written as one line. Bind `--expected` and `--found`, two rig documents; the expected rig may be relative to another camera |
+| `compare-models` | a camera model scored against an expected one, such as a synthetic capture's `truth/models/<camera>.json`: where the found model sends the expected one's rays, written as one line. Bind `--expected` and `--found`, two camera-model documents |
 
 The camera examples expect a pinhole and a 7 x 5 board of 24 mm squares, which is what their footage
 shows. For real footage, change the board specification and each calibration's `model`. Their footage

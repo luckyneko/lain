@@ -1,9 +1,8 @@
 #include "lain/camera/serialize/registeredrig.h"
 
-#include "versioned.h"
-
 #include <lain/data/data.h>
 #include <lain/data/strict.h>
+#include <lain/data/versioned.h>
 #include <lain/string/format.h>
 
 #include <algorithm>
@@ -65,7 +64,7 @@ namespace lain::camera::registration
 	// {version, reference, scale, cameras}.
 	static data::Value documentOf(const RigDocument& parts)
 	{
-		return versionedDocument(kRegisteredRigDocumentVersion, data::toValue(parts));
+		return data::versionedDocument(kRegisteredRigDocumentVersion, data::toValue(parts));
 	}
 
 	data::Value registeredRigToValue(const RegisteredRig& rig)
@@ -83,7 +82,7 @@ namespace lain::camera::registration
 	RegisteredRigRead registeredRigFromValue(const data::Value& document)
 	{
 		RegisteredRigRead result;
-		result.problems = versionProblems(document, "rig", kRegisteredRigDocumentVersion);
+		result.problems = data::versionProblems(document, "rig", kRegisteredRigDocumentVersion);
 		if (!result.problems.empty())
 			return result;
 

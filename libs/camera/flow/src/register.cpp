@@ -6,6 +6,8 @@
 #include "lain/camera/flow/calibrationattemptsnode.h"
 #include "lain/camera/flow/calibrationmethodnode.h"
 #include "lain/camera/flow/cameramodelnode.h"
+#include "lain/camera/flow/comparemodelsnode.h"
+#include "lain/camera/flow/comparerigsnode.h"
 #include "lain/camera/flow/detectboardnode.h"
 #include "lain/camera/flow/nextattemptnode.h"
 #include "lain/camera/flow/registercamerasnode.h"
@@ -18,6 +20,7 @@
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/calibration/attempts.h>
 #include <lain/camera/calibration/estimator.h>
+#include <lain/camera/comparison.h>
 #include <lain/camera/feature/features.h>
 #include <lain/camera/feature/geometry.h>
 #include <lain/camera/feature/matching.h>
@@ -29,7 +32,8 @@ namespace lain::camera
 {
 	// What each kind needs to run. A specification is only worth making for something that uses one;
 	// board calibration detects and then estimates; and a model only ever comes out of a calibration,
-	// of either method.
+	// of either method. A comparison needs no backend of its own, but is offered beside what makes what
+	// it compares: a model's beside a calibration, a rig's beside a registration.
 	static bool canUseBoard()
 	{
 		return board::canRender() || board::canDetect();
@@ -98,9 +102,11 @@ namespace lain::camera
 		{kNextAttemptKey, &canUseCalibration, &add<NextAttemptNode>},
 		{kCalibrationAttemptsKey, &canUseCalibration, &add<CalibrationAttemptsNode>},
 		{kCameraModelKey, &canUseCalibration, &add<CameraModelNode>},
+		{kCompareModelsKey, &canUseCalibration, &add<CompareModelsNode>},
 		{kRegisterCamerasKey, &canRegister, &add<RegisterCamerasNode>},
 		{kRegisterCamerasTargetlessKey, &canRegisterTargetless, &add<RegisterCamerasTargetlessNode>},
 		{kRegisteredRigKey, &canUseRegistration, &add<RegisteredRigNode>},
+		{kCompareRigsKey, &canUseRegistration, &add<CompareRigsNode>},
 	};
 
 	std::vector<std::string> cameraNodeKeys()
@@ -139,5 +145,7 @@ namespace lain::camera
 		flow::registerPortType<std::vector<CameraModel>>("ListOfCameraModel");
 		flow::registerPortType<registration::Report>("RegistrationReport");
 		flow::registerPortType<registration::RegisteredRig>("RegisteredRig");
+		flow::registerPortType<ModelComparison>("ModelComparison");
+		flow::registerPortType<RigComparison>("RigComparison");
 	}
 } // namespace lain::camera

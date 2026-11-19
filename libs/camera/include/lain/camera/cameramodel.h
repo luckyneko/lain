@@ -102,6 +102,16 @@ namespace lain::camera
 		std::vector<ModelDiagnostic> diagnostics; // empty exactly when `model` is set
 	};
 
+	// `model` at another resolution: the same lens over the same rectangle of its sensor, sampled by
+	// `image`'s pixels, as when a capture is drawn smaller to be looked at. The intrinsics are scaled
+	// about the image's top-left CORNER, where pixel coordinates are (-0.5, -0.5), so a point of the
+	// scene lands at the same fraction of the image: fx by the ratio of the widths and cx as cx + 0.5 is,
+	// fy and cy by the heights'. The distortion is unchanged, since it acts on normalised coordinates,
+	// which the scaling leaves alone. So the ray through a point of the image is the ray through the
+	// same fraction of it in `model`. A model, or create()'s reasons there is none: an empty image, or
+	// one of another shape whose corners the distortion folds before.
+	ModelResult scaled(const CameraModel& model, const ImageGeometry& image);
+
 	// Whether a model may be reused for footage of this geometry (CONTEXT.md, "Camera-model
 	// applicability"). A different geometry is Incompatible. A matching one is Unknown, not
 	// Compatible: nothing here yet records the lens setting, crop or camera identity that would

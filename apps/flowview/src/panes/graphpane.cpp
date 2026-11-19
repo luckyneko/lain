@@ -19,6 +19,7 @@
 #include <lain/flow/serialize/loadresult.h> // EditorData (applyLayout)
 #include <lain/gui/color.h>					// gui::packColor
 #include <lain/gui/gui.h>
+#include <lain/gui/keys.h> // keysAreFree — Delete waits while a popup or a text field has the keys
 #include <lain/gui/nodes.h>
 #include <lain/image/image.h>
 #include <lain/math/types.h>
@@ -852,9 +853,13 @@ namespace flowview
 			}
 		}
 
-		if (!editable && canvasActive && gui::IsKeyPressed(ImGuiKey_Delete) && !selectedNodes(ctx.canvas).empty())
+		// Delete waits for the keys to be free, as well as for the canvas to be active: the add-node
+		// palette below is a popup of this window, so it leaves the canvas active, and Delete pressed
+		// with it open deleted the selection behind it (gui::keysAreFree).
+		const bool deletePressed = canvasActive && gui::keysAreFree() && gui::IsKeyPressed(ImGuiKey_Delete);
+		if (!editable && deletePressed && !selectedNodes(ctx.canvas).empty())
 			ctx.noteReadOnlyEdit();
-		if (editable && canvasActive && gui::IsKeyPressed(ImGuiKey_Delete))
+		if (editable && deletePressed)
 		{
 			// Resolve the selection to stable values first, then delete in one edit.
 			const std::vector<flow::Graph::Edge> edgesToRemove = selectedEdges(graph, ctx.canvas);

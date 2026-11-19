@@ -109,6 +109,7 @@ jobs:
             linux_deps: true
             jobs: 4
             flowview: build/apps/flowview/flowview
+            rigplan: build/apps/rigplan/rigplan
 
           # Every optional dependency off, on the fastest runner.
           - name: Linux Release (video off)
@@ -120,6 +121,7 @@ jobs:
             linux_deps: true
             jobs: 4
             flowview: build/apps/flowview/flowview
+            rigplan: build/apps/rigplan/rigplan
 
           # OpenCV without Ceres, the one leg where `ceres` does not follow `camera` (above).
           - name: Linux Release (no refiner)
@@ -131,6 +133,7 @@ jobs:
             linux_deps: true
             jobs: 4
             flowview: build/apps/flowview/flowview
+            rigplan: build/apps/rigplan/rigplan
 
           # Debug with libstdc++'s assertions on, so `*optional`, `operator[]`, `front()`, `back()` and
           # their kin abort on a broken precondition instead of reading past it. MSVC's Debug library
@@ -147,6 +150,7 @@ jobs:
             linux_deps: true
             jobs: 4
             flowview: build/apps/flowview/flowview
+            rigplan: build/apps/rigplan/rigplan
             cxxflags: -D_GLIBCXX_ASSERTIONS
 
           # libc++'s extensive hardening, the counterpart of the Linux Debug leg's assertions. Release
@@ -163,6 +167,7 @@ jobs:
             linux_deps: false
             jobs: 3
             flowview: build/apps/flowview/flowview
+            rigplan: build/apps/rigplan/rigplan
             cxxflags: -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
 
           # Visual Studio's generator is multi-config, so --config / -C carry the build type here
@@ -177,6 +182,7 @@ jobs:
             linux_deps: false
             jobs: 4
             flowview: build/apps/flowview/Release/flowview.exe
+            rigplan: build/apps/rigplan/Release/rigplan.exe
 
     steps:
       # submodules: recursive is the one thing this workflow needs that archimedes' does not —
@@ -272,6 +278,55 @@ jobs:
           ${{ matrix.flowview }} list
           ${{ matrix.flowview }} run
 
+      # The same question for rigplan, whose dynamic dependencies are its own list (the Vulkan runtime,
+      # OpenCV's DLLs for the board renderer). The next step is what makes it render.
+      - name: Smoke the rigplan binary
+        run: |
+          ${{ matrix.rigplan }} --version
+          ${{ matrix.rigplan }} render --help
+
+      # The synthetic-capture vertical (WORK.md M15 slice 7) through the SHIPPED binaries, which ctest's
+      # test-flowview-capture does not run: the committed example rig plan rendered on archimedes' CPU
+      # device (no runner has a GPU, and --device cpu says so rather than leaving it to the ranking),
+      # then registered by register.json and scored by compare-rigs.json, from a folder that is neither
+      # the plan's nor flowview's examples'. What a leg can do follows what it built: with no board
+      # renderer the render is refused, naming it; with no refiner the registration reports it. It ends
+      # on `test -s`, since `run` exits 0 when a bound output is empty. Release legs only: the Debug leg
+      # renders and detects for minutes, and its ctest case skips anyway.
+      - name: Render, register and score the example rig plan
+        if: matrix.build_type == 'Release'
+        run: |
+          root="$PWD"
+          plan="$root/apps/rigplan/examples/three-poles.json"
+          examples="$root/apps/flowview/examples"
+          mkdir -p "$root/capture-elsewhere"
+          cd "$root/capture-elsewhere"
+          if [ "${{ matrix.camera }}" != "ON" ]; then
+            if "$root/${{ matrix.rigplan }}" --device cpu render "$plan" --out capture > render.log 2>&1; then
+              cat render.log
+              echo "a build with no board renderer rendered a plan that waves a board"
+              exit 1
+            fi
+            cat render.log
+            grep -q "no board renderer" render.log
+            test ! -e capture
+            exit 0
+          fi
+          "$root/${{ matrix.rigplan }}" --device cpu render "$plan" --out capture
+          "$root/${{ matrix.flowview }}" run -g "$examples/register.json" --footage capture/rig \
+            --models capture/truth/models --report report.txt --rig rig.json
+          cat report.txt
+          if [ "${{ matrix.ceres }}" != "ON" ]; then
+            grep -q "^Failed: NoRefiner" report.txt
+            test ! -e rig.json
+            exit 0
+          fi
+          grep -q "^Ready" report.txt
+          "$root/${{ matrix.flowview }}" run -g "$examples/compare-rigs.json" --expected capture/truth/rig.json \
+            --found rig.json --comparison comparison.txt
+          test -s comparison.txt
+          cat comparison.txt
+
       # An example document, run from a folder that is NOT the document's: its data paths are
       # stored relative to the document (ADR-0027), so this checks the shipped binary resolves them
       # against the document rather than the working directory. $PWD is POSIX-form in every leg's
@@ -286,8 +341,9 @@ jobs:
           "$root/${{ matrix.flowview }}" run -g "$example" --result "$root/smoke-elsewhere/folder-average.png"
           test -s "$root/smoke-elsewhere/folder-average.png"
 
+      # Every leg: each one's notices differ by what it built (ADR-0015, amended 2026-10-23), and
+      # this is the shipped executable's text, which test_notices.cpp checks through lain::app.
       - name: Report third-party licences
-        if: ${{ matrix.video == 'ON' }}
         run: ${{ matrix.flowview }} --licenses
 
   # Proves TWO claims with one job, because LAIN_BUILD_TESTING / _APPS / _FORMAT all default to

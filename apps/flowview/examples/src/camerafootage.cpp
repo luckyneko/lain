@@ -3,8 +3,8 @@
 #include <lain/camera/board/pattern.h>
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/serialize/cameramodel.h>
-#include <lain/camera/testing/testcameraparameters.h> // the textured rig's camera, the tests' own
-#include <lain/camera/testing/texturedscene.h>		  // the scene with no board in it
+#include <lain/camera/serialize/registeredrig.h>
+#include <lain/camera/testing/texturedscene.h> // the scene with no board in it
 #include <lain/core/length.h>
 #include <lain/core/uri.h>
 #include <lain/image/image.h>
@@ -176,30 +176,21 @@ namespace flowview::examples::footage
 		}
 	}
 
-	math::RigidTransformd texturedRigCamera(std::size_t camera)
+	// The rig three cameras were drawn from, at `worldFromCamera`, as the rig document a registration
+	// of them is scored against (compare-rigs.json): relative to cam0, the identity exactly, metric.
+	static void saveTruthRig(const fs::path& file, const std::vector<math::RigidTransformd>& worldFromCamera)
 	{
-		static const double angles[] = {-0.25, 0.0, 0.25};
-		return camera::synthetic::arcCamera(angles[camera]);
-	}
-
-	void writeTexturedRig(const fs::path& dir, bool rendered)
-	{
-		const camera::CameraModel model =
-			*camera::CameraModel::create(camera::testing::parametersWith(camera::testing::brownConrady())).model;
-		const camera::synthetic::Scene scene = camera::synthetic::defaultScene();
-		fs::create_directories(dir / "models");
-		for (std::size_t c = 0; c < 3; ++c)
+		const math::RigidTransformd cam0FromWorld = worldFromCamera.front().inverse();
+		camera::registration::RegisteredRig rig;
+		rig.reference = camera::capture::CameraIdentity{"cam0"};
+		rig.scale = {camera::registration::Scale::Metric, "the poses the footage was drawn from"};
+		for (std::size_t c = 0; c < worldFromCamera.size(); ++c)
 		{
-			const std::string name = "cam" + std::to_string(c);
-			const fs::path folder = dir / "rig" / name;
-			fs::create_directories(folder);
-			// A still scene draws the same frame every time, so each camera's is drawn once.
-			const image::Image frame = rendered ? camera::synthetic::render(scene, model, texturedRigCamera(c))
-												: image::Image(int(model.image().width), int(model.image().height));
-			for (std::size_t i = 0; i < 3; ++i)
-				save(folder / stillName(i), frame);
-			saveModel(dir / "models" / (name + ".json"), model);
+			rig.cameras.push_back({camera::capture::CameraIdentity{"cam" + std::to_string(c)},
+								   c == 0 ? math::RigidTransformd{} : cam0FromWorld * worldFromCamera[c]});
 		}
+		if (!io::data::save(core::Uri::fromPath(file), camera::registration::registeredRigToValue(rig)))
+			fail("could not write " + file.string());
 	}
 
 	void writeAll(const fs::path& folder)
@@ -207,26 +198,35 @@ namespace flowview::examples::footage
 		writeBoardFootage(folder / "board", 24);
 		writeMovingFootage(folder / "moving", 40);
 		writeBoardRig(folder / "board-rig", 24, true);
-		writeTexturedRig(folder / "textured-rig", true);
+
+		// What each was drawn with, for the comparison examples to score a result against: the board
+		// camera's model, and the rig's poses.
+		saveModel(folder / "board" / "truth.json", boardCameraModel());
+		saveTruthRig(folder / "board-rig" / "truth.json", {boardRigCamera(0), boardRigCamera(1), boardRigCamera(2)});
 
 		std::ofstream readme(folder / "README.txt");
 		readme << "Camera footage for apps/flowview/examples, drawn by flowview-examples --camera-footage.\n"
 				  "Run from this folder, with EX standing for the examples folder; or open the example in\n"
 				  "flowview and bind the same folders in the Interface pane.\n\n"
-				  "board/footage         one camera, a 7 x 5 board of 24 mm squares, 24 frames\n"
+				  "board/footage         one camera, a 7 x 5 board of 24 mm squares, 24 frames; board/truth.json its model\n"
 				  "  flowview run -g EX/calibrate.json --footage board/footage --report report.txt --model model.json\n"
+				  "  flowview run -g EX/compare-models.json --expected board/truth.json --found model.json\n"
+				  "      --comparison comparison.txt\n"
 				  "  flowview run -g EX/calibrate-fallback.json --footage board/footage --method board-then-targetless\n"
 				  "      --attempts attempts.txt --model model.json\n\n"
 				  "moving/footage        one camera moving round a textured scene, no board, 40 frames\n"
 				  "  flowview run -g EX/calibrate-fallback.json --footage moving/footage --method board-then-targetless\n"
 				  "      --attempts attempts.txt --model model.json\n\n"
-				  "board-rig/            three cameras watching one board, 24 frames each, and their models\n"
+				  "board-rig/            three cameras watching one board, 24 frames each, their models, and truth.json\n"
+				  "                      the rig they were drawn from\n"
 				  "  flowview run -g EX/register.json --footage board-rig/rig --models board-rig/models\n"
 				  "      --report report.txt --rig rig.json\n"
-				  "  flowview run -g EX/calibrate-and-register.json --footage board-rig/rig --report report.txt --rig rig.json\n\n"
-				  "textured-rig/         three fixed cameras round a textured scene, and their models\n"
-				  "  flowview run -g EX/register-targetless.json --footage textured-rig/rig --models textured-rig/models\n"
-				  "      --report report.txt --rig rig.json\n";
+				  "  flowview run -g EX/calibrate-and-register.json --footage board-rig/rig --report report.txt --rig rig.json\n"
+				  "  flowview run -g EX/compare-rigs.json --expected board-rig/truth.json --found rig.json\n"
+				  "      --comparison comparison.txt\n\n"
+				  "register-targetless.json's footage is a rendered capture of a committed rig plan instead:\n"
+				  "cmake --build <build> --target synthetic-capture, then the README.txt in\n"
+				  "<build>/synthetic-capture/two-methods.\n";
 		if (!readme)
 			fail("could not write " + (folder / "README.txt").string());
 	}

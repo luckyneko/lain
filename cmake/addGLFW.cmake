@@ -22,3 +22,9 @@ FetchContent_Declare(glfw3
 	FIND_PACKAGE_ARGS NAMES glfw3
 )
 FetchContent_MakeAvailable(glfw3)
+
+# GLFW's notice for --licenses (lainNotices.cmake).
+include(lainNotices)
+lain_register_notice(glfw NAME "GLFW" VERSION "${GLFW_VER}" SPDX "Zlib"
+	SOURCE_DIR "${glfw3_SOURCE_DIR}" FILES LICENSE.md
+	PACKAGE_DIR "${glfw3_DIR}" PACKAGE_VERSION "${glfw3_VERSION}")

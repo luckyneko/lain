@@ -7,6 +7,7 @@
 #include <lain/camera/calibration/attempts.h>
 #include <lain/camera/calibration/report.h>
 #include <lain/camera/cameramodel.h>
+#include <lain/camera/comparison.h>
 #include <lain/camera/distortion.h>
 #include <lain/camera/flow/register.h>
 #include <lain/camera/registration/report.h>
@@ -1063,6 +1064,45 @@ namespace flowview::examples
 		return doc;
 	}
 
+	// A registered rig scored against an expected one (camera::compareRigs): a registration's rig
+	// document against a synthetic capture's truth/rig.json or a survey, its comparison written as one
+	// line. The truth may be relative to another reference than the registration chose: it is derived
+	// again for the registration's.
+	static Document compareRigs(const Context& ctx)
+	{
+		Document doc;
+		Level root{ctx, doc.graph, doc.layout};
+		root.inputPin<camera::registration::RegisteredRig>("expected");
+		root.inputPin<camera::registration::RegisteredRig>("found");
+		root.outputPin<camera::RigComparison>("comparison");
+		const NodeId in = root.input(0, 0);
+		const NodeId compare = root.add(camera::kCompareRigsKey, 1, 0);
+		const NodeId out = root.output(2, 0);
+		root.wire(in, "expected", compare, "expected");
+		root.wire(in, "found", compare, "found");
+		root.wire(compare, "comparison", out, "comparison");
+		return doc;
+	}
+
+	// A camera model scored against an expected one (camera::compareModels): a calibration's model
+	// document against a synthetic capture's truth/models/<camera>.json, or a manufacturer's against a
+	// calibration, its comparison written as one line.
+	static Document compareModels(const Context& ctx)
+	{
+		Document doc;
+		Level root{ctx, doc.graph, doc.layout};
+		root.inputPin<camera::CameraModel>("expected");
+		root.inputPin<camera::CameraModel>("found");
+		root.outputPin<camera::ModelComparison>("comparison");
+		const NodeId in = root.input(0, 0);
+		const NodeId compare = root.add(camera::kCompareModelsKey, 1, 0);
+		const NodeId out = root.output(2, 0);
+		root.wire(in, "expected", compare, "expected");
+		root.wire(in, "found", compare, "found");
+		root.wire(compare, "comparison", out, "comparison");
+		return doc;
+	}
+
 	const std::vector<Example>& catalog()
 	{
 		static const std::vector<Example> examples = {
@@ -1088,6 +1128,8 @@ namespace flowview::examples
 			{"register", "a rig registered by a board: its report and its rig (bind --footage and --models, two folders)", false, "", &registerRig, true, true},
 			{"register-targetless", "a rig registered from the scene its cameras share, no board (bind --footage and --models)", false, "", &registerTargetless, true, true},
 			{"calibrate-and-register", "each camera of a rig calibrated through a map, then the rig registered with those models (bind --footage)", false, "", &calibrateAndRegister, true, true},
+			{"compare-rigs", "a registered rig scored against an expected one, such as a capture's truth (bind --expected and --found, two rig documents)", false, "", &compareRigs, false, true},
+			{"compare-models", "a camera model scored against an expected one, such as a capture's truth (bind --expected and --found, two model documents)", false, "", &compareModels, false, true},
 			{"broken-missing-template", "a link to a template that is not there", false, "could not be resolved", &brokenMissingTemplate},
 			{"broken-map-hole", "folder-average over a folder holding one unreadable file", false, "elements produced no", &brokenMapHole},
 			{"broken-cast-pair", "a Cast from Image to Int, a pair nothing converts", false, "no conversion from", &brokenCastPair},

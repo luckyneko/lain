@@ -16,6 +16,7 @@ target_include_directories(flow-serialize PUBLIC include)
 target_link_libraries(flow-serialize
 	PUBLIC lain::flow lain::data lain::core # core::Factory<Node> is in the public toValue/fromValue signature
 	PRIVATE lain::log lain::warnings		# the load path logs each issue as it records it
+	PRIVATE lain::io						# the document-path rule for one path (ADR-0027, io/documentpath.h)
 )
 
 if(LAIN_BUILD_TESTING)

@@ -64,12 +64,12 @@ endif()
 
 catch_discover_tests(test-camera-fixture TEST_PREFIX "(camera::fixture) ")
 
-# Registration end to end through both real backends, on footage drawn in plain C++: board and
-# targetless registration each alone, and one rig registered by both and compared (the comparison
-# and its measurements run in Release only). OpenCV detects, extracts and poses, Ceres refines. Built
-# only where both plugins are.
+# Registration end to end through both real backends, on footage drawn in plain C++: board
+# registration, and a rig's feature tracks measured against their truth (in Release only). OpenCV
+# detects, extracts and poses, Ceres refines. Targetless registration end to end is the comparison's,
+# on a committed rig plan's capture (test-camera-comparison, below). Built only where both plugins are.
 if(TARGET lain::camera::opencv AND TARGET lain::camera::ceres)
-	add_executable(test-camera-registration-e2e test_registration.cpp test_rendering.cpp test_targetlesse2e.cpp test_comparison.cpp)
+	add_executable(test-camera-registration-e2e test_registration.cpp test_rendering.cpp test_tracktruth.cpp)
 	target_compile_features(test-camera-registration-e2e PRIVATE cxx_std_17)
 	target_link_libraries(test-camera-registration-e2e PRIVATE
 		lain::camera::backends
@@ -106,4 +106,57 @@ if(TARGET lain::camera::opencv AND TARGET lain::camera::ceres)
 	)
 	lain_opencv_stage_runtime(test-camera-calibration-e2e)
 	catch_discover_tests(test-camera-calibration-e2e TEST_PREFIX "(camera::calibration) " PROPERTIES PROCESSORS 4)
+endif()
+
+# The capture pass's claim (ADR-0028, M15 slice 4c): a board rendered through each of the six
+# distortion models, by lain::render on every kind of device the machine offers and by
+# texturedscene.h on the CPU, detected where lain projects the truth. Release only. Built only where
+# the renderer and the OpenCV plugin both are.
+if(TARGET lain::render AND TARGET lain::camera::opencv)
+	add_executable(test-camera-capture test_capture.cpp)
+	target_compile_features(test-camera-capture PRIVATE cxx_std_17)
+	target_link_libraries(test-camera-capture PRIVATE
+		lain::render
+		lain::render::testing # the devices, the distorted cameras and the scene it draws
+		lain::rigplan::scene # its bake density, which 4d measures
+		lain::camera::backends
+		lain::camera::testing
+		lain::testing
+		lain::warnings
+		Catch2::Catch2WithMain
+	)
+	lain_opencv_stage_runtime(test-camera-capture)
+	acm_stage_vulkan_runtime(test-camera-capture)
+	if(ACM_SWIFTSHADER_ICD)
+		target_compile_definitions(test-camera-capture PRIVATE LAIN_EXPECT_CPU_DEVICE)
+	endif()
+	catch_discover_tests(test-camera-capture TEST_PREFIX "(camera::capture) " ${LAIN_TEST_DL_PATHS})
+endif()
+
+# One rig registered by both methods and compared, on the committed rig plan two-methods.json rendered
+# by lain::rigplan::writeCapture on every kind of device the machine offers, its truth read from the
+# capture. Release only. Built only where the renderer and both plugins are. Each case renders a
+# capture and keeps the process pool busy for minutes, so ctest counts it as four processors.
+if(TARGET lain::render AND TARGET lain::camera::opencv AND TARGET lain::camera::ceres)
+	add_executable(test-camera-comparison test_comparison.cpp)
+	target_compile_features(test-camera-comparison PRIVATE cxx_std_17)
+	target_link_libraries(test-camera-comparison PRIVATE
+		lain::rigplan::testing # the committed rig plan, its capture, and what a camera's ray met
+		lain::render::testing  # the devices it renders the capture on
+		lain::camera::backends
+		lain::camera::serialize # the capture's models and rig as camera documents
+		lain::io::image::codecs
+		lain::io::sequence
+		lain::io::data::codecs
+		lain::camera::testing
+		lain::testing
+		lain::warnings
+		Catch2::Catch2WithMain
+	)
+	lain_opencv_stage_runtime(test-camera-comparison)
+	acm_stage_vulkan_runtime(test-camera-comparison)
+	if(ACM_SWIFTSHADER_ICD)
+		target_compile_definitions(test-camera-comparison PRIVATE LAIN_EXPECT_CPU_DEVICE)
+	endif()
+	catch_discover_tests(test-camera-comparison TEST_PREFIX "(camera::comparison) " ${LAIN_TEST_DL_PATHS} PROPERTIES PROCESSORS 4)
 endif()

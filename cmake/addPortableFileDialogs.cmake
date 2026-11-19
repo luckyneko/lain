@@ -30,3 +30,8 @@ FetchContent_MakeAvailable(portablefiledialogs)
 add_library(portable_file_dialogs INTERFACE)
 target_include_directories(portable_file_dialogs SYSTEM INTERFACE "${portablefiledialogs_SOURCE_DIR}")
 add_library(pfd::pfd ALIAS portable_file_dialogs)
+
+# portable-file-dialogs' notice for --licenses (lainNotices.cmake).
+include(lainNotices)
+lain_register_notice(portable_file_dialogs NAME "portable-file-dialogs" VERSION "${PFD_TAG}" SPDX "WTFPL"
+	SOURCE_DIR "${portablefiledialogs_SOURCE_DIR}" FILES COPYING)

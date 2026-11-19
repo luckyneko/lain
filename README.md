@@ -17,7 +17,11 @@ third-party types through lain-owned interfaces.
 Versions marked **current** are pinned by the repository's CMake modules unless a compatible system
 package satisfies the target. Versions marked **planned** are approved for the camera work but are
 not part of the build yet. This inventory does not replace the license and notice files shipped by
-each upstream source or binary package; those remain authoritative for redistribution.
+each upstream source or binary package; those remain authoritative for redistribution. It does not
+travel with a binary either: every `lain::app` binary prints, with `--licenses`, a notice for lain,
+its submodules and each dependency it was built with, taken from that dependency's own licence file
+at configure time ([ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md),
+amended 2026-10-23).
 
 FFmpeg is **on by default** for a top-level build (`-DLAIN_IO_VIDEO_FFMPEG=OFF` leaves it out; it is
 off when lain is bundled, and skipped on a platform with no prebuilt) and is linked **dynamically** — LGPL's relinking requirement is satisfied by dynamic linking alone, whereas a
@@ -39,6 +43,7 @@ a video keeps its nodes and edges and reports a missing capability when run.
 | [magic_enum](https://github.com/Neargye/magic_enum) | 0.9.8, current | [MIT] | Enum reflection |
 | [nlohmann/json](https://github.com/nlohmann/json) | 3.11.3, current | [MIT] | JSON codec plugin |
 | [stb](https://github.com/nothings/stb) | `31c1ad3`, current | [MIT] OR public domain | JPEG codec plugin |
+| [tinyobjloader](https://github.com/tinyobjloader/tinyobjloader) | `v2.0.0rc13`, current | [MIT] | OBJ / MTL mesh codec plugin |
 | [libpng](https://github.com/pnggroup/libpng) | 1.6.44, current | [libpng-2.0] | PNG codec plugin |
 | [zlib](https://github.com/madler/zlib) | 1.3.1, current | [Zlib] | PNG/TIFF codec dependency |
 | [libtiff](https://gitlab.com/libtiff/libtiff) | 4.7.0, current | [libtiff] | TIFF codec plugin |
@@ -46,16 +51,18 @@ a video keeps its nodes and edges and reports a missing capability when run.
 | [CLI11](https://github.com/CLIUtils/CLI11) | 2.4.2, current | [BSD-3-Clause] | App command-line parsing |
 | [Dear ImGui](https://github.com/ocornut/imgui) | `162ce49`, current | [MIT] | GUI implementation |
 | [imnodes](https://github.com/Nelarius/imnodes) | `eb36902`, current | [MIT] | Flow graph canvas |
+| [ImGuizmo](https://github.com/CedricGuillemet/ImGuizmo) | `105e4fd`, current | [MIT] | 3D manipulation gizmo (rigplan's Viewport) |
 | [portable-file-dialogs](https://github.com/samhocevar/portable-file-dialogs) | 0.1.0, current | [WTFPL] (version 2) | Native app file dialogs |
 | [Vulkan-Headers](https://github.com/KhronosGroup/Vulkan-Headers) | SDK 1.4.341.0, current | [Apache-2.0] OR [MIT] | Vulkan API headers |
 | [Vulkan-Loader](https://github.com/KhronosGroup/Vulkan-Loader) | SDK 1.4.341.0, current | [Apache-2.0] | Vulkan runtime loader |
 | [MoltenVK](https://github.com/KhronosGroup/MoltenVK) | 1.4.1, current on macOS | [Apache-2.0] | Vulkan portability runtime |
+| [SwiftShader](https://swiftshader.googlesource.com/SwiftShader) | 2026.10.14-cddb5c91, a [prebuilt](https://github.com/luckyneko/swiftshader-prebuilt) with one patch (its thread count from the environment), staged by archimedes | [Apache-2.0] | CPU Vulkan driver (archimedes' CPU device), in `vulkan/` beside every runnable target: what CI renders on, and `--device cpu` |
 | [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) | selected by MoltenVK, current on macOS | [MIT] | MoltenVK shader translation |
 | [Catch2](https://github.com/catchorg/Catch2) | 3.14.0, test only | [BSL-1.0] | Unit and integration tests |
-| [glslang](https://github.com/KhronosGroup/glslang) | SDK 1.4.341.0, build only | [BSD-3-Clause] | Standalone Archimedes shader compilation fallback |
+| [glslang](https://github.com/KhronosGroup/glslang) | SDK 1.4.341.0, build only | [BSD-3-Clause] | GLSL to SPIR-V for `lain::render`'s embedded shaders (and archimedes' testbed), through archimedes' setup: built from source when no system `glslc` or `glslang` is found |
 | [clang-format static binaries](https://github.com/muttleyxd/clang-tools-static-binaries) | LLVM 20, build only | [Apache-2.0] WITH [LLVM-exception] | Reproducible formatting tool |
 | [OpenCV](https://github.com/opencv/opencv) | 4.14.0, `calib` profile (core, imgproc, flann, features2d, calib3d, objdetect), **shared**, on by default where the prebuilt exists (`LAIN_CAMERA_OPENCV`; off for a bundled lain and for platforms with no archive) | [Apache-2.0]; vendored code compiled in: zlib 1.3.2 ([Zlib]), SoftFloat, KAZE/AKAZE, MSER chi-table ([BSD-3-Clause]), DLPack ([Apache-2.0]) | Camera plugin (`lain::camera::opencv`), behind `lain::camera`'s seams: ChArUco board rendering and detection, a board's pose in one view (IPPE), calibration estimation (no distortion, Brown-Conrady 5, rational 8, Kannala-Brandt 4), SIFT features, matching (exact brute force, or approximate through FLANN), and candidate poses and fundamental matrices for lain to measure; plus a probe of the linked library. Every camera node kind registers whatever the build, and flowview's menu offers only those a backend can run; [prebuilt](https://github.com/luckyneko/opencv-prebuilt), commit- and hash-pinned, no optional third party, manifest verified at configure time ([ADR-0026](docs/adr/0026-opencv-from-a-pinned-minimal-prebuilt.md)) |
-| [Ceres Solver](https://github.com/ceres-solver/ceres-solver) | 2.2.0, current: built from source, **static**, with its bundled miniglog and Eigen's sparse Cholesky; SuiteSparse, METIS, LAPACK, CUDA, Accelerate, gflags and the fixed-size Schur specialisations off; on by default for a top-level build (`LAIN_CAMERA_CERES`; off for a bundled lain) | [BSD-3-Clause] | Camera plugin (`lain::camera::ceres`): the refiner behind `lain::camera::refinement`, a sparse bundle adjustment for board and targetless registration and for targetless calibration's free camera models ([ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md)). Every residual goes through `lain::camera`'s one projection, whose automatic derivatives a test checks against finite differences |
+| [Ceres Solver](https://github.com/ceres-solver/ceres-solver) | 2.2.0, current: built from source, **static**, with its bundled miniglog and Eigen's sparse Cholesky; SuiteSparse, METIS, LAPACK, CUDA, Accelerate, gflags and the fixed-size Schur specialisations off; on by default for a top-level build (`LAIN_CAMERA_CERES`; off for a bundled lain) | [BSD-3-Clause]; the Abseil-derived `fixed_array.h` and `memory.h` it compiles in, [Apache-2.0] | Camera plugin (`lain::camera::ceres`): the refiner behind `lain::camera::refinement`, a sparse bundle adjustment for board and targetless registration and for targetless calibration's free camera models ([ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md)). Every residual goes through `lain::camera`'s one projection, whose automatic derivatives a test checks against finite differences |
 | [Eigen](https://gitlab.com/libeigen/eigen) | 3.4.0, current, header-only, only where the Ceres plugin is built; approved exception | [MPL-2.0] | Ceres' linear algebra, compiled with `EIGEN_MPL2_ONLY` for Ceres' sources as well as lain's, so no LGPL-licensed Eigen code is included |
 | [FFmpeg](https://github.com/FFmpeg/FFmpeg) | 8.1.2, `lgpl` tier, **shared**, on by default where the prebuilt exists (`LAIN_IO_VIDEO_FFMPEG`; off for a bundled lain, and skipped on Linux without libva); approved exception | [LGPL-2.1-or-later] | Video decoding behind `lain::io::video` (demux, seek, decode to RGB8), LGPL configuration only (no `--enable-gpl`/`--enable-nonfree`, no x264/x265); [prebuilt](https://github.com/luckyneko/ffmpeg-prebuilt), hash-pinned, tier verified at configure time |
 

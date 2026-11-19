@@ -5,6 +5,7 @@ add_executable(test-data
 	test_serialize.cpp
 	test_strict.cpp
 	test_macro_variant.cpp
+	test_versioned.cpp
 )
 
 target_compile_features(test-data PRIVATE cxx_std_17)

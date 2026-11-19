@@ -196,6 +196,53 @@ namespace
 				app.exit();
 		}
 	};
+
+	// A window that refuses its first close, as an editor does while it asks whether to save, and
+	// accepts the second. Asked to close at frame 2 and again at frame 6: the loop must carry on past
+	// the first and end at the second. The close flag is set by requestClose, exactly as the window's
+	// close button sets it, so no display event is needed.
+	struct VetoWindow : app::WindowDelegate
+	{
+		int asked = 0;
+		std::uint64_t lastFrame = 0;
+		std::vector<std::uint64_t> askedAt;
+
+		void onRender(app::Window& window, const app::TimeState& time) override
+		{
+			lastFrame = time.frame;
+			if (time.frame == 2 || time.frame == 6)
+				window.requestClose();
+			window.renderer().render([](acm::CommandBuffer, uint32_t) {});
+		}
+
+		bool onCloseRequested(app::Window&) override
+		{
+			askedAt.push_back(lastFrame);
+			return ++asked >= 2;
+		}
+	};
+
+	struct VetoApp : app::ApplicationDelegate
+	{
+		VetoWindow window;
+
+		bool onStart(app::Application& app) override
+		{
+			app::WindowSpec spec;
+			spec.title = "lain::app veto";
+			spec.width = 320;
+			spec.height = 240;
+			app.createWindow(spec, window);
+			return true;
+		}
+
+		// A net: a loop that ignored the veto ends at frame 2, one that ignored the acceptance runs here.
+		void onUpdate(app::Application& app, const app::TimeState& time, const app::InputState&) override
+		{
+			if (time.frame >= 20)
+				app.exit();
+		}
+	};
 } // namespace
 
 // The three phases in the order main writes them, so a case reads as one line and the suite
@@ -377,6 +424,24 @@ TEST_CASE("gui: a window delegate shuts down after the GPU has finished its fram
 
 	REQUIRE(runApp(app, 1, argv) == 0);
 	REQUIRE(delegate.window.landed);
+}
+
+TEST_CASE("gui: a window that refuses to close stays open, and closes when it agrees", "[app][gpu]")
+{
+	if (!std::getenv("LAIN_GUI_SMOKE"))
+		SKIP("set LAIN_GUI_SMOKE=1 to run the windowed smoke (needs a display + driver)");
+
+	VetoApp delegate;
+	app::Application app(delegate, {"test-app", {0, 0, 0}});
+	char arg0[] = "test-app";
+	char* argv[] = {arg0};
+
+	REQUIRE(runApp(app, 1, argv) == 0);
+	// Asked once per request, at the top of the frame after it: refused, then accepted.
+	REQUIRE(delegate.window.askedAt == std::vector<std::uint64_t>{2, 6});
+	// The loop carried on past the refusal, and ended at the acceptance, before onUpdate's net.
+	REQUIRE(delegate.window.lastFrame == 6);
+	REQUIRE(delegate.window.asked == 2);
 }
 
 TEST_CASE("headless: onProcess's status is the process's exit code", "[app]")
@@ -590,6 +655,67 @@ TEST_CASE("the task pool is running by onProcess, and --threads sizes it", "[app
 		REQUIRE(runApp(app, 3, argv) == 0);
 		REQUIRE(delegate.workers == 0);
 		REQUIRE(delegate.sawParallel); // inline on the caller, which is the documented behaviour
+	}
+}
+
+TEST_CASE("the device flag chooses the kind of device, and the CPU device gets every logical core", "[app]")
+{
+	// A headless app's device, as onProcess finds it. The CPU device is archimedes' SwiftShader,
+	// staged beside this test; where none is staged the CPU sections have nothing to choose and say so.
+	struct DeviceApp : app::ApplicationDelegate
+	{
+		std::optional<acm::PhysicalDeviceType> type;
+		std::string threads;
+		bool onStart(app::Application&) override { return true; } // no windows -> headless
+		int onProcess(app::Application& app) override
+		{
+			acm::Device& device = app.device();
+			if (device.valid())
+				type = device.deviceInfo().type;
+			const char* cap = std::getenv("SWIFTSHADER_THREAD_COUNT");
+			threads = cap ? cap : "";
+			return 0;
+		}
+	} delegate;
+
+	char arg0[] = "test-app";
+	char flag[] = "--device";
+
+	SECTION("cpu draws on the CPU device, which runs on every logical core")
+	{
+		char cpu[] = "cpu";
+		char* argv[] = {arg0, flag, cpu};
+		app::Application app(delegate, {"test-app", {0, 0, 0}});
+		REQUIRE(runApp(app, 3, argv) == 0);
+#ifdef LAIN_EXPECT_CPU_DEVICE
+		REQUIRE(delegate.type == acm::PhysicalDeviceType::Cpu);
+#else
+		if (!delegate.type)
+			SKIP("no CPU driver is staged beside this test");
+#endif
+		CHECK(delegate.threads == std::to_string(std::max(1u, std::thread::hardware_concurrency())));
+	}
+	SECTION("gpu, the default, draws on hardware wherever there is any")
+	{
+		char* argv[] = {arg0};
+		app::Application app(delegate, {"test-app", {0, 0, 0}});
+		REQUIRE(runApp(app, 1, argv) == 0);
+		if (!delegate.type)
+			SKIP("no Vulkan device on this machine");
+		acm::useStagedVulkanRuntime();
+		acm::Instance probe("test-app-probe", acm::Version{0, 1, 0});
+		bool hardware = false;
+		for (const acm::DeviceInfo& info : probe.devices())
+			hardware = hardware || info.type != acm::PhysicalDeviceType::Cpu;
+		CHECK((delegate.type != acm::PhysicalDeviceType::Cpu) == hardware); // the CPU device only when there is nothing else
+	}
+	SECTION("any other device is refused")
+	{
+		char tpu[] = "tpu";
+		char* argv[] = {arg0, flag, tpu};
+		app::Application app(delegate, {"test-app", {0, 0, 0}});
+		CHECK(runApp(app, 3, argv) != 0);
+		CHECK_FALSE(delegate.type);
 	}
 }
 

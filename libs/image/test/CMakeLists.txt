@@ -9,6 +9,7 @@ add_executable(test-image
 	test_traverse.cpp
 	test_convert.cpp
 	test_operations.cpp
+	test_procedural.cpp
 )
 
 target_compile_features(test-image PRIVATE cxx_std_17)

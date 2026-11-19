@@ -51,8 +51,8 @@ namespace flowview
 		m_ctx.session = loadSession();
 		gui::setLastDirectory(m_ctx.session.lastDialogDir);
 		appDelegate.setStrategy(m_ctx.session.scheduler); // the scheduler the last session ran with
-		if (!appDelegate.useExample() && !m_ctx.session.lastGraph.empty())
-			m_menuBar.openGraphPath(m_ctx, m_ctx.session.lastGraph);
+		if (!appDelegate.useExample() && !m_ctx.session.graphs.last.empty())
+			m_menuBar.openGraphPath(m_ctx, m_ctx.session.graphs.last);
 		return true;
 	}
 
@@ -174,9 +174,9 @@ namespace flowview
 		m_statusBar.draw(m_ctx);
 
 		// A topology edit asks for a run, and the previews need refreshing (added/removed ports now;
-		// recomputed images when the run publishes). Mark them dirty; refreshIfDirty below upserts in
-		// place where it can. (Deferred, not per-frame — acm::Texture::upload is a stalling
-		// synchronous submit.)
+		// recomputed images when the run publishes). Mark them dirty; refreshIfDirty below makes a new
+		// texture for each port whose value changed. (Deferred, not per-frame — acm::Texture::upload is
+		// a stalling synchronous submit.)
 		if (edited)
 		{
 			appDelegate.requestRun(); // always runs the ROOT: the plan expands groups, so one run covers every level
@@ -197,8 +197,8 @@ namespace flowview
 		m_preview.draw(m_ctx, graph, evaluation, m_previews, m_valueViews, *m_guiCtx);
 		m_issues.draw(m_ctx, graph, evaluation);
 
-		// The unsaved-changes guard for New (opened by requestNew when m_ctx.dirty).
-		m_menuBar.drawConfirmModal(m_ctx, graph);
+		// The unsaved-changes guard for New, Open and Quit (raised when m_ctx.dirty).
+		m_menuBar.drawConfirmModal(m_ctx, graph, window.app());
 
 		// A group's ports mirror its interior, so re-derive them for every group we are inside — the
 		// Interface panel's ± and renames act on the INNER boundary, and nothing else would carry that
@@ -317,8 +317,15 @@ namespace flowview
 		// later frame starts the next.
 		appDelegate.pumpRun(m_ctx.options.trigger, gestureEnded);
 
-		window.renderer().render([&](acm::CommandBuffer cmd, uint32_t)
-								 { m_guiCtx->render(cmd); });
+		window.renderer().render([&](acm::CommandBuffer cmd, uint32_t frame)
+								 { m_guiCtx->render(cmd, frame); });
+	}
+
+	bool MainWindow::onCloseRequested(app::Window& window)
+	{
+		// With nothing unsaved this quits at once; otherwise the guard holds it for the modal, which
+		// quits on Save or Discard and keeps the window on Cancel.
+		return m_menuBar.requestQuit(m_ctx, window.app());
 	}
 
 	void MainWindow::onShutdown(app::Window&)

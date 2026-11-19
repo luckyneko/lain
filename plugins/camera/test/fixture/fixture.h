@@ -5,6 +5,7 @@
 #include <lain/camera/calibration/request.h>
 #include <lain/camera/cameramodel.h>
 #include <lain/camera/capturerecord.h>
+#include <lain/camera/comparison.h>
 #include <lain/camera/distortion.h>
 #include <lain/camera/serialize/board.h>
 #include <lain/camera/serialize/capturerecord.h>
@@ -154,6 +155,10 @@ namespace lain::camera::fixture
 		Intrinsics imported;
 		std::optional<Intrinsics> estimated;			// the session's own estimate, when it produced one
 		std::optional<IntrinsicsDifference> difference; // imported against estimated
+		// Where the imported model sends the estimate's rays (camera::compareModels, the estimate the
+		// expected model), when the session produced an estimate: what CONTEXT.md's factory-model
+		// comparison is measured by.
+		std::optional<ModelComparison> mapping;
 	};
 
 	struct FixtureReport

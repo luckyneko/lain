@@ -45,11 +45,11 @@ namespace flowview
 		// that may have changed images / added / removed ports).
 		void markDirty() { m_dirty = true; }
 
-		// Rebuild the cache from the graph iff it was marked dirty: upsert a thumbnail per port whose
-		// value `views` can poster (upload in place when the size/format matches, else reallocate via
-		// `ctx`) — skipping a port whose payload is the one its thumbnail was made from — and prune
-		// thumbnails whose port is gone (an erased gui::Texture's GPU objects outlive the frames that
-		// drew it). `path` is the level `graph` sits at — it goes into every key this builds, so
+		// Rebuild the cache from the graph iff it was marked dirty: a new thumbnail via `ctx` per port
+		// whose value `views` can poster — never one rewritten in place, which frames in flight may
+		// still be sampling — skipping a port whose payload is the one its thumbnail was made from, and
+		// prune thumbnails whose port is gone (a replaced or erased gui::Texture's GPU objects outlive
+		// the frames that drew it). `path` is the level `graph` sits at — it goes into every key this builds, so
 		// entries from two levels (or two evaluations of one definition) can never be mistaken for
 		// each other.
 		//

@@ -1,4 +1,4 @@
-// lain::math::isFinite: a vector, a quaternion or a rigid transform holds only finite numbers.
+// lain::math::isFinite: a vector, a matrix, a quaternion or a rigid transform holds only finite numbers.
 
 #include "lain/math/finite.h"
 
@@ -27,6 +27,35 @@ TEST_CASE("a vector is finite when every component is", "[math][finite]")
 		CHECK_FALSE(isFinite(v));
 	}
 	CHECK_FALSE(isFinite(Vec4d{1.0, 2.0, 3.0, kInfinity}));
+}
+
+TEST_CASE("a matrix is finite when every element is", "[math][finite]")
+{
+	CHECK(isFinite(Mat4d{1.0}));
+	CHECK(isFinite(Mat3f{2.0f}));
+	// Every element in turn, off the diagonal as well as on it, and a matrix that is not square, so a
+	// walk that stops at the diagonal or swaps columns for rows is caught.
+	for (length_t c = 0; c < 4; ++c)
+	{
+		for (length_t r = 0; r < 4; ++r)
+		{
+			Mat4d m{1.0};
+			m[c][r] = kNaN;
+			CHECK_FALSE(isFinite(m));
+			m[c][r] = kInfinity;
+			CHECK_FALSE(isFinite(m));
+		}
+	}
+	for (length_t c = 0; c < 3; ++c)
+	{
+		for (length_t r = 0; r < 2; ++r)
+		{
+			Mat<3, 2, double> m{1.0};
+			CHECK(isFinite(m));
+			m[c][r] = -kInfinity;
+			CHECK_FALSE(isFinite(m));
+		}
+	}
 }
 
 TEST_CASE("a quaternion is finite when every component is", "[math][finite]")
