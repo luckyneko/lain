@@ -16107,7 +16107,22 @@ The rest of the answers' follow-ups, each its own commit. *(§NOTES.txt (2026-11
 
 - **Catch2 3.14.0 → 3.16.1.** Intended, and decided by the repo owner on 2026-11-01 to land on its own
   branch rather than in feature/M9's PR, because it renames every ctest test. *(§Catch2's `FAIL` and
-  `SKIP` do not return.)*
+  `SKIP` do not return.)* **Checked 2026-11-19 for CI speed, and it saves seconds, not minutes**, so it
+  is routine upkeep for a convenient moment (after M15 merges, say), not a CI improvement.
+  - **Discovery** is the speedup the release notes lead with (about 4–5× in 3.15.3, then about 3× in
+    3.16.0). Under 3.14 every discovery in a full build took about 2.5 s on the repo owner's machine
+    (1,216 tests; `test-flowview`'s 177 add under a second): 0.6 s listing the binaries and 1.9 s in
+    the CMake script. 3.16.1's script could not be timed against binaries built with 3.14, which it
+    cannot list.
+  - **Test start-up** (`--order decl`, faster registration and filtering) is measured on Catch2's own
+    self-test binary, which holds thousands of cases; lain's largest holds 177, and its ~1,600
+    sub-second cases take 1–2 test-minutes in all. **Compile time** gains are a few percent of test
+    sources at most; the GCC one needs unity builds or template-product tests, which lain has neither
+    of.
+  - **No fix in 3.15–3.16.1 touches lain.** The MSVC benchmark one (Catch2's guard against the
+    benchmarked code being optimised away was never used under MSVC) applies only to Catch2's
+    `BENCHMARK`, and `bench-camera-*` time themselves in plain `TEST_CASE`s. The rest concern C++26,
+    the `<target>_TESTS` variable lain never reads, or reporter edge cases.
 
 ### Backlog tiers — speculative and foundational
 
