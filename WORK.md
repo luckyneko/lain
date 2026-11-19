@@ -11062,7 +11062,8 @@ fetched only when it is ON.
 
 No compiler cache yet, deliberately: a stale one producing baffling errors is the last thing wanted
 while diagnosing genuine MSVC breakage. Read the real timings off the discovery run and add `ccache`
-via plain `actions/cache` in a follow-up if a leg is painfully slow.
+via plain `actions/cache` in a follow-up if a leg is painfully slow. *(The repo owner declined one on
+2026-11-19, when the slow legs were cut another way: *Two test tiers, and Ninja on every leg*.)*
 
 ### Found while building this: `flowview` staged no FFmpeg DLLs
 
@@ -11488,6 +11489,55 @@ caught it (*Catch2's `FAIL` and `SKIP` do not return*, under Outstanding work). 
   `catch_discover_tests` call with `RUN_SERIAL`, as `test-camera-ceres`' are (*After sub-slice 10e*,
   item 8). Each times or measures what it runs, which means something only while it has the cores.
   Discovery still registers 13 cases and ctest 1334 in all, and exactly those four carry the property.
+
+### Two test tiers, and Ninja on every leg (2026-11-19)
+
+A run took 24–48 minutes, and Windows Release was always the slowest leg. Two changes, decided with the
+repo owner, cut the Windows leg from 24.4 to 10.6 minutes.
+
+- **Where the test time went.** On M15's PR run, about 1,600 of 1,728 cases took under a second each,
+  1–2 minutes in all. The 27 cases that take 20 s or more on some runner were 90 to 95 percent of each
+  leg's test time.
+- **The tier.** A case taking 20 s or more on any CI runner is tagged `[comprehensive]` (the repo owner's
+  rule): 18 on develop, all 8 `[scale]` cases among them. Its executable registers through
+  `lain_discover_tests` (`cmake/addcatch2.cmake`), which discovers once per tier so the tag becomes one
+  ctest label, `comprehensive`. `ADD_TAGS_AS_LABELS` was not used: it would make every tag a label,
+  about 160, and ctest prints a line per label after every run. Plain `ctest` runs every case and
+  `ctest -LE comprehensive` the CI tier. A tagged case in an executable still on `catch_discover_tests`
+  is unlabelled and runs in the CI tier, which costs time but not correctness.
+- **Where it runs.** macOS Release runs every case, and the other legs run the CI tier. macOS because
+  the slow cases are mostly release-only, and that leg is the only one running those with the standard
+  library checking anything (*The standard library checks its preconditions*). It is also where SIFT
+  turned out to differ. A `workflow_dispatch` input, `tests: comprehensive`, runs every case on every
+  leg.
+- **Ninja on every leg**, the `add_subdirectory` smoke included, so every leg is single-config:
+  `--config` and `-C` are gone, and Windows' flowview is `build/apps/flowview/flowview.exe`. Windows
+  gets cl's environment from `ilammy/msvc-dev-cmd`, which also brings Visual Studio's Ninja, and sets
+  `CC`/`CXX` to `cl`, since CMake's own search tries `c++` and `g++` first.
+- **What did not help: compiling a project's sources in parallel under MSBuild** (scratch run
+  44485222875, `-p:UseMultiToolTask=true -p:EnforceProcessCountAcrossBuilds=true`). Ceres and Catch2
+  finished at the same minute with it as without, about 4 and 5. With about 150 projects, `/m:4` already
+  keeps four cores busy. The diagnosis had come from M15's PR run, a slow runner with more projects
+  queued ahead of Catch2.
+- **Measured, one run each.** Two runs of one commit can differ by 25–35 percent, so a comparison
+  normalises by the summed time of tests both runs ran.
+
+  | leg (minutes) | develop, 44437752651 | Ninja, CI tier, 44493095641 | Ninja, every case, 44493100657 |
+  |---|---|---|---|
+  | Windows Release | 24.4 (build 12.0, test 10.3) | 10.6 (8.0, 1.3) | 21.8 (10.2, 10.3) |
+  | Linux Release | 19.5 (apt 4.1, build 6.7, test 7.9) | 9.8 (0.3, 7.2, 1.6) | 29.4 (14.0, 6.5, 7.9) |
+  | macOS Release | 18.4 (8.7, 8.4) | 17.9 (8.4, 8.3) | 16.3 (7.0, 8.0) |
+  | whole run | 24.5 | 22.3 | 29.5 |
+
+  Ninja's own effect is on Windows only: its build took 10.2 minutes against 12.0 on a runner of the
+  same speed (every test, 26.6 against 26.8 summed minutes), and 8.0 on the CI-tier run. Linux and macOS
+  moved within run-to-run noise.
+- **What sets the run now.** The CI-tier run's 22.3 minutes was Linux Debug, 12.5 of them installing
+  packages: three Linux legs spent 12–14 minutes there, against under a minute on a good day, all
+  downloading from a slow mirror. Without it the run is macOS Release's, about 18 minutes.
+- **Owed when M15 merges:** its 9 cases over 20 s (`flowview::capture`'s two among them) need the tag,
+  and their executables `lain_discover_tests`. They add about 4 minutes to macOS Release's Test step.
+- **Not taken: a compiler cache**, at the repo owner's call (2026-11-19).
 
 ### Not covered, and deliberately
 

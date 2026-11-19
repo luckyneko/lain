@@ -74,7 +74,7 @@ namespace
 	}
 } // namespace
 
-TEST_CASE("a moving camera's tracks are the same on the pool and agree with the truth", "[camera][opencv][feature]")
+TEST_CASE("a moving camera's tracks are the same on the pool and agree with the truth", "[camera][opencv][feature][comprehensive]")
 {
 	ensureBackend();
 	synthetic::Scene scene = synthetic::defaultScene();
@@ -201,7 +201,7 @@ TEST_CASE("a moving camera's tracks are the same on the pool and agree with the 
 	CHECK(double(wrong) / double(still) < 0.03);
 }
 
-TEST_CASE("what a fundamental matrix keeps through four lenses", "[camera][opencv][feature][scale]")
+TEST_CASE("what a fundamental matrix keeps through four lenses", "[camera][opencv][feature][scale][comprehensive]")
 {
 	lain::testing::skipInDebug("runs in Release builds: it draws and searches 16 frames of 1920 x 1080");
 	ensureBackend();
@@ -354,7 +354,7 @@ TEST_CASE("what a fundamental matrix keeps through four lenses", "[camera][openc
 	CHECK(share(kept[3][far][at4].outer, found[3][far].outer) < 0.95);
 }
 
-TEST_CASE("every pair of 40 frames along the path is matched and verified", "[camera][opencv][feature][scale]")
+TEST_CASE("every pair of 40 frames along the path is matched and verified", "[camera][opencv][feature][scale][comprehensive]")
 {
 	lain::testing::skipInDebug("runs in Release builds: it draws and searches 40 frames of 1920 x 1080");
 	ensureBackend();

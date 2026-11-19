@@ -92,4 +92,4 @@ if(TARGET lain::camera::opencv)
 	lain_opencv_stage_runtime(test-flowview)
 endif()
 
-catch_discover_tests(test-flowview TEST_PREFIX "(flowview) " ${LAIN_TEST_DL_PATHS})
+lain_discover_tests(test-flowview TEST_PREFIX "(flowview) " ${LAIN_TEST_DL_PATHS})

@@ -33,3 +33,20 @@ if(catch2_SOURCE_DIR)
 	list(APPEND CMAKE_MODULE_PATH "${catch2_SOURCE_DIR}/extras")
 endif()
 include(Catch)
+
+# lain_discover_tests(<target> <catch_discover_tests arguments>...)
+#
+# catch_discover_tests, with the [comprehensive] cases registered under the ctest label
+# `comprehensive`. A case is tagged [comprehensive] when it takes 20 s or more on any CI runner.
+# Plain `ctest` runs every case; `ctest -LE comprehensive` runs the CI tier, which is what CI runs on
+# every leg but one.
+#
+# It discovers twice, once per tier, so that one tag becomes the one label. ADD_TAGS_AS_LABELS would
+# make every tag a label, about 160 of them, and ctest prints a line for each label after every run.
+#
+# Only an executable holding a [comprehensive] case needs this. Anywhere else such a case is not
+# labelled, so it runs in the CI tier: that costs CI time, not correctness.
+function(lain_discover_tests target)
+	catch_discover_tests(${target} ${ARGN} TEST_SPEC "~[comprehensive]")
+	catch_discover_tests(${target} ${ARGN} TEST_SPEC "[comprehensive]" PROPERTIES LABELS comprehensive)
+endfunction()

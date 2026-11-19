@@ -138,7 +138,7 @@ TEST_CASE("the plugin registers an estimator for the models OpenCV estimates", "
 	CHECK_FALSE(canEstimate(DistortionModel::ModifiedBrownConrady5));
 }
 
-TEST_CASE("each estimatable model is recovered from its own synthetic views", "[camera][opencv][calibration]")
+TEST_CASE("each estimatable model is recovered from its own synthetic views", "[camera][opencv][calibration][comprehensive]")
 {
 	ensureBackend();
 	const cb::Specification spec = boardSpec();

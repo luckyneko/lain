@@ -503,7 +503,7 @@ TEST_CASE("a landmark behind a camera at the start fails the solve", "[camera][c
 	CHECK(solution.landmarks.empty());
 }
 
-TEST_CASE("a rig of 100 cameras and 50000 landmarks refines", "[camera][ceres][landmark][scale]")
+TEST_CASE("a rig of 100 cameras and 50000 landmarks refines", "[camera][ceres][landmark][scale][comprehensive]")
 {
 	lain::testing::skipInDebug("the scale test runs in Release builds: a Debug refinement is some 65 times slower");
 	ensureCeres();

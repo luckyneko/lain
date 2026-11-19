@@ -82,7 +82,7 @@ if(TARGET lain::camera::opencv AND TARGET lain::camera::ceres)
 		Catch2::Catch2WithMain
 	)
 	lain_opencv_stage_runtime(test-camera-registration-e2e)
-	catch_discover_tests(test-camera-registration-e2e TEST_PREFIX "(camera::registration) ")
+	lain_discover_tests(test-camera-registration-e2e TEST_PREFIX "(camera::registration) ")
 endif()
 
 # Calibration end to end through both real backends, on footage drawn in plain C++: one camera
@@ -105,5 +105,5 @@ if(TARGET lain::camera::opencv AND TARGET lain::camera::ceres)
 		Catch2::Catch2WithMain
 	)
 	lain_opencv_stage_runtime(test-camera-calibration-e2e)
-	catch_discover_tests(test-camera-calibration-e2e TEST_PREFIX "(camera::calibration) " PROPERTIES PROCESSORS 4)
+	lain_discover_tests(test-camera-calibration-e2e TEST_PREFIX "(camera::calibration) " PROPERTIES PROCESSORS 4)
 endif()

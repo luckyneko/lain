@@ -1430,6 +1430,22 @@ Two cases renamed, none added or removed. Full notes in WORK.md's *Measurements 
 changed; a new case and two sabotages hold it. Not taken: `ea273a1`'s M15-only comparison half. Full
 notes in WORK.md's *A golden is compared line by line*.
 
+### Update 2026-11-19 — CI: two test tiers, and Ninja on every leg
+
+A CI run took 24–48 minutes, set by Windows Release. Now the 18 cases on develop taking 20 s or more on
+some runner are tagged `[comprehensive]` and run on macOS Release only, or on every leg when a
+dispatched run asks (`tests: comprehensive`). The rule is in *Conventions to inherit*, under Tests.
+Every leg builds with Ninja. Measured on scratch runs, one each: Windows Release 24.4 → 10.6 minutes,
+Linux Release 19.5 → 9.8, macOS Release unchanged at about 18. Full notes in WORK.md's *Two test
+tiers, and Ninja on every leg*.
+
+- **The run is now set by the Linux package install**, 12–14 minutes on three legs of that run from a
+  slow mirror, or else by macOS Release.
+- **MSBuild's parallel compilation did not help** (Ceres and Catch2 finished at the same minute), and
+  a compiler cache was declined.
+- **Owed when M15 merges:** tag its 9 cases over 20 s. The branch conflicts with M15 in `ci.yml`,
+  this file, `apps/flowview/test/CMakeLists.txt` and `test_comparison.cpp`.
+
 ### Update 2026-11-09 — `lain::camera::testing`: the camera tests' shared code is a target
 
 The fifth NOTES.txt follow-up. The twelve headers the camera tests share (test camera and board,
@@ -7068,6 +7084,12 @@ beside this repo) before writing:
   A **TEST_CASE name is ASCII** — `catch_discover_tests` hands it back to the executable
   as an argv filter, and a non-ASCII byte does not survive that trip on Windows. Prose and
   SECTION names keep their em dashes.
+  A case that takes **20 s or more on any CI runner is tagged `[comprehensive]`**, and its
+  executable registers through `lain_discover_tests` (cmake/addcatch2.cmake) rather than
+  `catch_discover_tests`, which gives it the ctest label `comprehensive`. Plain `ctest` runs every
+  case; `ctest -LE comprehensive` is the CI tier, which every CI leg but macOS Release runs. A
+  tagged case in an executable still on `catch_discover_tests` is not labelled, and runs in the CI
+  tier.
 - **Where a body lives.** Three homes, and the split must buy something.
   1. **In the class** — the default. Anything a reader takes in at a glance: a forwarder,
      a comparison, a one-expression accessor.

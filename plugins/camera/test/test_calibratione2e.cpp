@@ -212,7 +212,7 @@ namespace
 } // namespace
 
 TEST_CASE("one camera calibrated with a board and without one agrees with itself and its truth",
-		  "[camera][calibration][e2e]")
+		  "[camera][calibration][e2e][comprehensive]")
 {
 	lain::testing::skipInDebug("calibration end to end runs in Release builds: a Debug build takes seconds to draw each frame");
 	fixture::ensureRegistered();
@@ -280,7 +280,7 @@ TEST_CASE("one camera calibrated with a board and without one agrees with itself
 	// the second adjustment leaves out. The next case pins the worst of the three.
 }
 
-TEST_CASE("a printed board's repeated corners do not pull the targetless model off", "[camera][calibration][e2e]")
+TEST_CASE("a printed board's repeated corners do not pull the targetless model off", "[camera][calibration][e2e][comprehensive]")
 {
 	lain::testing::skipInDebug("calibration end to end runs in Release builds: a Debug build takes seconds to draw each frame");
 	fixture::ensureRegistered();
@@ -309,7 +309,7 @@ TEST_CASE("a printed board's repeated corners do not pull the targetless model o
 }
 
 TEST_CASE("the default sampled frames calibrate a moving camera through a normal, a wide and an HD lens",
-		  "[camera][calibration][e2e]")
+		  "[camera][calibration][e2e][comprehensive]")
 {
 	lain::testing::skipInDebug("calibration end to end runs in Release builds: a Debug build takes seconds to draw each frame");
 	fixture::ensureRegistered();
@@ -410,7 +410,7 @@ TEST_CASE("a rendered pan is refused before any start", "[camera][calibration][e
 	CHECK(t.seed.empty());
 }
 
-TEST_CASE("a strongly distorted lens leaves no frame unplaced", "[camera][calibration][e2e]")
+TEST_CASE("a strongly distorted lens leaves no frame unplaced", "[camera][calibration][e2e][comprehensive]")
 {
 	lain::testing::skipInDebug("calibration end to end runs in Release builds: a Debug build takes seconds to draw each frame");
 	fixture::ensureRegistered();

@@ -375,7 +375,7 @@ TEST_CASE("corners with a measured covariance are weighted by it", "[camera][cer
 	CHECK(unweighted.diagnostics.refinement->finalCost > 3 * summary.finalCost);
 }
 
-TEST_CASE("a rig of 100 cameras and 4000 capture groups registers", "[camera][ceres][scale]")
+TEST_CASE("a rig of 100 cameras and 4000 capture groups registers", "[camera][ceres][scale][comprehensive]")
 {
 	lain::testing::skipInDebug("the scale test runs in Release builds: a Debug refinement is some 65 times slower");
 	ensureCeres();

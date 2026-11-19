@@ -719,7 +719,7 @@ TEST_CASE("a targetless registration's matching travels in its document by name"
 	CHECK(found == 1);
 }
 
-TEST_CASE("run calibrates every camera of a rig and registers it with those models", "[camera][runmode]")
+TEST_CASE("run calibrates every camera of a rig and registers it with those models", "[camera][runmode][comprehensive]")
 {
 	// The committed calibrate-and-register.json: the rig's footage alone is bound, each camera is
 	// calibrated through a map, and the models it gathers register the rig by the same board. Nothing
@@ -885,7 +885,7 @@ TEST_CASE("the calibration fallback accepts the board's attempt and never makes 
 	CHECK(readText(elsewhere / "model.json") == readText(dir / "model.json"));
 }
 
-TEST_CASE("the calibration fallback falls back to targetless calibration when the board's attempt fails", "[camera][runmode][fallback]")
+TEST_CASE("the calibration fallback falls back to targetless calibration when the board's attempt fails", "[camera][runmode][fallback][comprehensive]")
 {
 	ensureRegistered();
 	if (!camera::feature::canExtract())
